@@ -1,8 +1,8 @@
 {
   "name": "ps5upload-client",
   "private": true,
-  "version": "2.2.34",
-  "description": "PS5 Upload — Tauri 2 desktop client",
+  "version": "2.2.35",
+  "description": "The all-in-one PS5 companion app.",
   "homepage": "https://github.com/phantomptr/ps5upload",
   "author": "PhantomPtr <phantomptr@gmail.com>",
   "scripts": {

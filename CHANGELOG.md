@@ -4,6 +4,59 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.2.35
+
+**Stale-tmp silent corruption — close the resume-path gap (real user
+report)**
+
+A user reported that 2.2.29's stale-`.ps5up2-tmp` fix didn't actually
+solve their corruption: upload reports success, the destination
+files are silently wrong, the same source folder transferred over
+FTP launches fine. The 120-GB game was Mafia: The Old Country.
+
+The 2.2.29 fix swept stale tmps at `BEGIN_TX` time, but only on the
+**`!is_resume`** branch (`runtime.c:7468`). Resumes intentionally
+preserve partial tmps so they can be picked up where they left off
+— but that means a stale tmp from a *prior aborted run* of the same
+destination, where some file was non-packed then but is packed now,
+survives into the resumed tx. The pack worker writes correct
+content directly to the file path; the COMMIT rename loop then
+promotes the stale `.ps5up2-tmp` over the just-written content,
+silently. FTP doesn't have this layer at all, so it just works.
+
+Two defense-in-depth fixes:
+
+- **Pack worker unlinks stale tmps after a successful write**
+  (`runtime.c` pack pool, ~line 2010). After the pack-direct write
+  to `<file>` completes, also `unlink("<file>.ps5up2-tmp")`. This
+  attacks the corruption at the moment it would otherwise be
+  created, regardless of whether the BEGIN_TX sweep ran. ENOENT is
+  the common case and not an error.
+
+- **COMMIT rename loop pre-checks the destination**
+  (`runtime.c:7965`). Before renaming `<file>.ps5up2-tmp` →
+  `<file>`, stat both and compare against the manifest's expected
+  size. Only when **both** layouts hold:
+    - file exists at expected size (packed/prior-run delivered it)
+    - tmp exists but is *strictly smaller* than expected (stale partial)
+  …unlink the tmp instead of renaming. The asymmetric size check
+  avoids the false positive where the user is replacing an existing
+  same-size file (in that case the new tmp holds the full new
+  content, the rename runs as normal, and the new content lands).
+  Legitimate resumes also satisfy `tmp_size == expected` by COMMIT,
+  so this guard only catches the bug case.
+
+Both fixes are independent of `is_resume` so the resume path
+regains the same protection that fresh-tx had since 2.2.29. Logged
+at `stderr` when the COMMIT pre-check fires, so future bug reports
+will surface the exact path that hit the guard.
+
+The `BEGIN_TX` sweep is still the first line of defense; these are
+the safety net for the cases where it can't run (resume) or might
+miss (path encoding drift between manifest and disk).
+
+---
+
 ## 2.2.34
 
 **Library → Game Details: PS4 (BC) titles now show cover art too**
