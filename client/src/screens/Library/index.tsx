@@ -858,11 +858,31 @@ function LibraryRow({
       // again, works." Retry once with a brief backoff to absorb
       // those without a UI round-trip; the second failure is
       // surfaced normally.
+      //
+      // Also retry once on `fs_mount_source_unstable` — the payload
+      // gate that refuses to mount a file whose mtime is < N
+      // seconds old. We disabled that gate in the 2.2.39 payload
+      // (the COMMIT_TX_ACK is the real stability signal), but
+      // older payloads still reject; honoring the suggested wait
+      // and retrying transparently keeps the UX clean for users
+      // who haven't pushed the new payload yet.
       let res;
       try {
         res = await fsMount(addr, entry.path, opts);
       } catch (firstErr) {
-        await new Promise((resolve) => setTimeout(resolve, 350));
+        const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+        const sourceUnstable = /fs_mount_source_unstable/i.test(msg);
+        // 3500 ms covers the legacy 3-second payload gate plus a
+        // small safety margin; 350 ms is enough for transient
+        // driver-init races. Picked branch matches the user-
+        // visible cause so the retry's wait isn't a black box.
+        const waitMs = sourceUnstable ? 3500 : 350;
+        if (sourceUnstable) {
+          setMountNote(
+            `Image was modified seconds ago — waiting ${(waitMs / 1000).toFixed(1)}s for the upload to settle, then retrying mount…`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
         try {
           res = await fsMount(addr, entry.path, opts);
         } catch {
