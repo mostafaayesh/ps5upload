@@ -64,6 +64,14 @@ pub async fn title_meta_fetch(url: String) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .user_agent(USER_AGENT)
+        // Disable redirects so the hostname allowlist actually
+        // gates every byte the renderer can see. Default reqwest
+        // policy follows up to 10 redirects automatically — a 3xx
+        // from prosperopatches.com to attacker.example would
+        // silently be followed and the body returned, defeating
+        // the SSRF defense the allowlist is here to provide.
+        // 3xx responses are surfaced as an error below.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("title-meta client init: {e}"))?;
 
@@ -80,7 +88,11 @@ pub async fn title_meta_fetch(url: String) -> Result<String, String> {
     }
 
     if let Some(len) = resp.content_length() {
-        if len as usize > MAX_BODY_BYTES {
+        // Compare in u64 space — `len as usize` truncates on 32-bit
+        // targets (Windows x86 builds), letting a 5 GiB
+        // Content-Length sneak past the cap and OOM the desktop on
+        // the subsequent .bytes().await.
+        if len > MAX_BODY_BYTES as u64 {
             return Err(format!(
                 "title-meta body too large ({len} > {MAX_BODY_BYTES} cap)"
             ));

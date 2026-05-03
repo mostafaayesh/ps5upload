@@ -71,6 +71,40 @@ export function effectiveMount(
   return s.mountMap.get(imagePath) ?? s.pendingMounts.get(imagePath) ?? null;
 }
 
+/** Reverse lookup: given a path that lives somewhere inside one of
+ *  the active mounts, return the backing image_path. Used by the
+ *  Library row to render a "from disk image" badge on game folders
+ *  that live inside a currently-mounted image (so the user can tell
+ *  uploaded-folder games apart from games-that-disappear-on-unmount).
+ *
+ *  Longest mount-point match wins so nested mounts attribute
+ *  correctly — i.e., a game at `/mnt/ext1/foo/bar` where both
+ *  `/mnt/ext1` and `/mnt/ext1/foo` are mounted attributes the row
+ *  to the deeper mount.
+ *
+ *  Centralised here (vs reimplementing the union loop inline) so the
+ *  badge always matches the row's MOUNTED-state — both ultimately
+ *  derive from the same source of truth. */
+export function findOwningImage(
+  s: Pick<LibraryState, "mountMap" | "pendingMounts">,
+  candidatePath: string,
+): string | null {
+  let bestImage: string | null = null;
+  let bestMountLen = -1;
+  const consider = (image: string, mount: string) => {
+    const root = mount.endsWith("/") ? mount : mount + "/";
+    if (candidatePath === mount || candidatePath.startsWith(root)) {
+      if (mount.length > bestMountLen) {
+        bestImage = image;
+        bestMountLen = mount.length;
+      }
+    }
+  };
+  for (const [image, mount] of s.mountMap) consider(image, mount);
+  for (const [image, mount] of s.pendingMounts) consider(image, mount);
+  return bestImage;
+}
+
 export const useLibraryStore = create<LibraryState>((set) => ({
   entries: null,
   mountMap: new Map(),

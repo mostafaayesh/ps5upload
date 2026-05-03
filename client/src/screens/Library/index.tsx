@@ -53,7 +53,7 @@ import {
   resolveMoveDestination,
   sourceBasename,
 } from "../../lib/moveTarget";
-import { useLibraryStore } from "../../state/library";
+import { useLibraryStore, findOwningImage } from "../../state/library";
 import { useElapsed } from "../../lib/useElapsed";
 import { createLimiter } from "../../lib/limitConcurrency";
 import { deleteWithRetry } from "../../lib/deleteWithRetry";
@@ -128,7 +128,6 @@ export default function LibraryScreen() {
   const loading = useLibraryStore((s) => s.loading);
   const error = useLibraryStore((s) => s.error);
   const lastRefreshedAt = useLibraryStore((s) => s.lastRefreshedAt);
-  const setData = useLibraryStore((s) => s.setData);
   const setLoading = useLibraryStore((s) => s.setLoading);
   const setError = useLibraryStore((s) => s.setError);
 
@@ -181,20 +180,33 @@ export default function LibraryScreen() {
       // probe — and let the next scheduled refresh produce a real
       // count. The user-visible symptom this fixes: "library goes
       // blank after mounting an image, must click Refresh manually."
-      const hadEntries = (useLibraryStore.getState().entries ?? []).length > 0;
-      if (result.length === 0 && hadEntries) {
-        // Stale-empty: keep the entries we already had, but still
-        // update mountMap/volumes from the probe AND prune
-        // pendingMounts entries the probe now confirms (mirrors
-        // setData's prune logic; can't just call setData because
-        // that would clobber `entries` with []).
-        useLibraryStore.setState((s) => {
-          const prunedPending = new Map<string, string>();
-          for (const [imagePath, mountPoint] of s.pendingMounts) {
-            if (!next.has(imagePath)) {
-              prunedPending.set(imagePath, mountPoint);
-            }
+      // Stale-empty guard: a transient race during fs_mount /
+      // fs_unmount can cause scanLibrary to return zero entries
+      // even though there are still games on disk (volumes are
+      // mid-update on the kernel side). If we previously had
+      // entries and the new scan returned nothing, keep the old
+      // entries — only update mountMap + volumes from the fresh
+      // probe — and let the next scheduled refresh produce a real
+      // count.
+      //
+      // Both branches go through a single `useLibraryStore.setState`
+      // callback so the read-of-entries and the conditional write
+      // are atomic against any concurrent setData (e.g. from a
+      // parallel `ps5upload:library:invalidate` event). Reading
+      // `getState().entries` first and then committing via a
+      // separate `setState` would TOCTOU between the two: a
+      // concurrent `clear()` could flip entries to null between
+      // the read and the write, causing us to wipe the display
+      // with the stale empty result.
+      useLibraryStore.setState((s) => {
+        const hadEntries = (s.entries ?? []).length > 0;
+        const prunedPending = new Map<string, string>();
+        for (const [imagePath, mountPoint] of s.pendingMounts) {
+          if (!next.has(imagePath)) {
+            prunedPending.set(imagePath, mountPoint);
           }
+        }
+        if (result.length === 0 && hadEntries) {
           return {
             mountMap: next,
             pendingMounts: prunedPending,
@@ -202,16 +214,22 @@ export default function LibraryScreen() {
             lastRefreshedAt: Date.now(),
             error: null,
           };
-        });
-      } else {
-        setData(result, next, writable);
-      }
+        }
+        return {
+          entries: result,
+          mountMap: next,
+          pendingMounts: prunedPending,
+          volumes: writable,
+          lastRefreshedAt: Date.now(),
+          error: null,
+        };
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [host, setData, setLoading, setError]);
+  }, [host, setLoading, setError]);
 
   // Auto-refresh policy:
   //   - First time Library is visited after mount → always refresh
@@ -615,24 +633,19 @@ function LibraryRow({
    *  return the backing image's path. Lets the row render a
    *  visually-distinct "from disk image" badge so the user can
    *  tell uploaded-folder games apart from games-inside-a-mount-
-   *  that-disappears-when-unmounted. */
-  const fromImagePath: string | null = (() => {
-    if (entry.kind !== "game") return null;
-    const all = new Map<string, string>();
-    for (const [k, v] of mountMap) all.set(k, v);
-    for (const [k, v] of pendingMounts) all.set(k, v);
-    let best: { image: string; mount: string } | null = null;
-    for (const [imagePath, mount] of all) {
-      const root = mount.endsWith("/") ? mount : mount + "/";
-      if (entry.path.startsWith(root) || entry.path === mount) {
-        // Longest match wins so nested mounts attribute correctly.
-        if (!best || mount.length > best.mount.length) {
-          best = { image: imagePath, mount };
-        }
-      }
-    }
-    return best?.image ?? null;
-  })();
+   *  that-disappears-when-unmounted. Uses the same `findOwningImage`
+   *  helper that lives in state/library.ts so this badge stays in
+   *  sync with the row's MOUNTED-state semantics — both ultimately
+   *  read from the same union of probe + pending mounts. Memoized
+   *  so the per-row reverse-walk doesn't run on every sort/query
+   *  change. */
+  const fromImagePath = useMemo(
+    () =>
+      entry.kind === "game"
+        ? findOwningImage({ mountMap, pendingMounts }, entry.path)
+        : null,
+    [entry.kind, entry.path, mountMap, pendingMounts],
+  );
   const fromImageBasename = fromImagePath
     ? (fromImagePath.split("/").pop() ?? fromImagePath)
     : null;
@@ -883,11 +896,13 @@ function LibraryRow({
           );
         }
         await new Promise((resolve) => setTimeout(resolve, waitMs));
-        try {
-          res = await fsMount(addr, entry.path, opts);
-        } catch {
-          throw firstErr;
-        }
+        // Don't wrap-and-rethrow — let the outer catch handle the
+        // retry's failure naturally. The retry's error (disk full,
+        // bad mount point, etc.) is what the user actually needs
+        // to see; the prior shape that caught and rethrew firstErr
+        // hid the real second-attempt cause and sent users down
+        // the wrong debug path.
+        res = await fsMount(addr, entry.path, opts);
       }
       // Optimistic mountMap update — flips the row to MOUNTED +
       // Unmount-button immediately, before the background rescan
