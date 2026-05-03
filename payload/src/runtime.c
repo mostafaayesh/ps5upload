@@ -2011,6 +2011,24 @@ static void *pack_worker_thread(void *arg) {
                 }
             }
 
+            /* Pack records write directly to `<file>` and never produce a
+             * `.ps5up2-tmp`. But a *stale* tmp can still exist from a
+             * prior aborted run where this file was non-packed — and the
+             * 2.2.29 BEGIN_TX sweep skips the resume path. If a stale
+             * tmp survives to COMMIT, the rename loop promotes it over
+             * our just-written packed content (silent corruption with
+             * "FTP works fine" symptom). Unlinking here closes the gap
+             * regardless of is_resume. ENOENT is the common case and
+             * not an error. */
+            if (!terminal && pool->worker_error == 0 && item.path) {
+                char stale_tmp[1024];
+                int  n = snprintf(stale_tmp, sizeof(stale_tmp),
+                                  "%s.ps5up2-tmp", item.path);
+                if (n > 0 && (size_t)n < sizeof(stale_tmp)) {
+                    (void)unlink(stale_tmp);
+                }
+            }
+
             /* Fold per-item timings into the shared accumulator. */
             pthread_mutex_lock(&pool->lock);
             pool->t_open_us       += t_op;
@@ -7943,7 +7961,47 @@ static int handle_binary_frame(runtime_state_t *state, int client_fd,
                          * that this branch used to do — and removing it is what
                          * keeps packed-record content from being wiped. ENOENT on
                          * the rename means "packed path already landed the file at
-                         * the destination" which is success, not failure. */
+                         * the destination" which is success, not failure.
+                         *
+                         * Defense-in-depth pre-check (added 2.2.35): a stale
+                         * tmp from a prior aborted run can survive into the
+                         * fresh tx if the BEGIN_TX sweep was skipped (resume
+                         * path) or missed the tmp due to manifest-vs-disk
+                         * path encoding drift. The bug signature is:
+                         *   - file_path exists at the manifest's expected
+                         *     size (pack worker delivered it correctly OR a
+                         *     prior successful run did), AND
+                         *   - tmp_path exists but is *smaller* than expected
+                         *     (a partial write from a prior aborted run).
+                         * In that exact shape, renaming would clobber good
+                         * content with stale partial bytes; unlinking the
+                         * tmp preserves the correct file.
+                         *
+                         * The asymmetric size check avoids false positives:
+                         *   - User replacing a same-size file → new tmp_path
+                         *     holds full new content (size == expected),
+                         *     condition does NOT trigger, rename runs.
+                         *   - Legitimate resume → by COMMIT all shards
+                         *     acked, tmp is at full size; condition does
+                         *     NOT trigger.
+                         * Only the bug case (full file at dest + partial
+                         * stale tmp) hits this guard. */
+                        struct stat st_file;
+                        struct stat st_tmp;
+                        int have_file = (stat(file_path, &st_file) == 0);
+                        int have_tmp  = (stat(tmp_path,  &st_tmp)  == 0);
+                        if (have_file && have_tmp &&
+                            idx[fi].size > 0 &&
+                            (uint64_t)st_file.st_size == idx[fi].size &&
+                            (uint64_t)st_tmp.st_size  <  idx[fi].size) {
+                            fprintf(stderr,
+                                    "[payload2] commit: %s already at expected size %llu, tmp partial (%llu) — unlinking stale tmp\n",
+                                    file_path,
+                                    (unsigned long long)idx[fi].size,
+                                    (unsigned long long)st_tmp.st_size);
+                            (void)unlink(tmp_path);
+                            continue;
+                        }
                         if (rename(tmp_path, file_path) != 0 && errno != ENOENT) {
                             fprintf(stderr, "[payload2] direct multi rename %s -> %s errno=%d\n",
                                     tmp_path, file_path, errno);
