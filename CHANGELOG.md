@@ -4,6 +4,44 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.2.39
+
+**Mount-after-upload no longer blocked by source-stability gate**
+
+User report: clicking Mount immediately after upload (or via the
+mount-after-upload checkbox) failed with
+
+    engine HTTP 502 Bad Gateway: payload rejected
+    FS_MOUNT(/data/homebrew/PPSA09519.exfat):
+    fs_mount_source_unstable: image modified 1 s ago (<3 s);
+    wait for the upload to settle
+
+The gate was originally a defense against "user mounts mid-upload",
+but ps5upload's COMMIT_TX_ACK already proves the file is whole +
+fsync'd. Clicking Mount immediately after upload is the *expected*
+flow, and the 3-second mtime wall bit every normal user.
+
+Two-tier fix:
+
+  - **Payload (2.2.39):** `FS_MOUNT_STABILITY_SECONDS` set to 0,
+    disabling the gate entirely. The COMMIT_TX_ACK is the real
+    stability signal we trust. Other ingest paths (FTP, manual cp)
+    that lack a clean "I'm done" signal will surface as natural
+    mount errors during LVD attach / nmount instead of a misleading
+    "modified 1 s ago" rejection. Constant kept (vs deleting the
+    if-block) so a future build can flip it back without protocol
+    changes.
+
+  - **Client (2.2.39):** the existing fsMount retry now branches
+    by error type: 350 ms backoff for the lvd/md driver-init
+    race, 3500 ms for `fs_mount_source_unstable`. Users still on
+    older payloads with the 3-second gate get the retry done for
+    them automatically, with a "waiting 3.5s for the upload to
+    settle, then retrying" note in the row so the wait isn't a
+    black box.
+
+---
+
 ## 2.2.38
 
 **Library mount UX, sort, and "from disk image" badge — real user

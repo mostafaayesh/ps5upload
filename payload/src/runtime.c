@@ -233,14 +233,26 @@ extern int posix_fallocate(int fd, off_t offset, off_t len);
 #define FS_MOUNT_PFS_EKPFS_HEX \
     "0000000000000000000000000000000000000000000000000000000000000000"
 
-/* Source-stability gate. Refuse to mount an image whose mtime is
- * newer than this many seconds — prevents mounting an in-progress
- * upload (the file size keeps growing while we attach, the kernel
- * reads garbage past the snapshot size, mount fails or succeeds with
- * a corrupt fs view). 3s is enough for FTX2 uploads since the
- * engine fsync's + closes before the user clicks Mount, but small
- * enough not to feel laggy during legitimate use. */
-#define FS_MOUNT_STABILITY_SECONDS 3
+/* Source-stability gate. When non-zero, refuses to mount an image
+ * whose mtime is newer than this many seconds. Originally a defense
+ * against "user mounts mid-upload" but in practice it bites every
+ * normal user: ps5upload's COMMIT_TX_ACK already proves the file is
+ * whole + fsync'd, and the user clicking Mount right after upload
+ * is the *expected* flow. The gate as a 3-second wall produced
+ * `fs_mount_source_unstable: image modified 1 s ago` failures on
+ * legitimate mounts and forced the user to wait + retry.
+ *
+ * Set to 0 (disabled) since the COMMIT_TX_ACK is the real
+ * stability signal we trust. Other ingest paths (FTP, manual cp,
+ * etc.) that lack a clean "I'm done" signal will surface as
+ * natural mount errors during the LVD attach / nmount step
+ * instead of a misleading "modified 1 s ago" rejection.
+ *
+ * The constant is kept (vs ripping the whole if-block) so a
+ * future build that needs to re-enable a stability heuristic for
+ * a specific ingest path can flip it back without protocol
+ * changes. */
+#define FS_MOUNT_STABILITY_SECONDS 0
 
 typedef struct {
     uint16_t source_type;      /* +0x00: 1 = file, 2 = block/char device */
