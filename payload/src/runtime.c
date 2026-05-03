@@ -4298,7 +4298,14 @@ static int handle_fs_list_dir(runtime_state_t *state, int client_fd,
         return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
                           "fs_list_dir_bad_path", 20);
     }
-    if (strstr(path, "..") != NULL) {
+    /* Component-scoped traversal check: rejects `..` only when it
+     * appears as a path component of its own. A bare `strstr("..")`
+     * here used to false-positive on legitimate filenames like
+     * `..some-cache` or `something..bak`, locking the user out of
+     * their own directories via the File-System tab. The
+     * destructive-op path already uses path_has_dotdot_component
+     * for the same reason; FS_LIST_DIR was the lone outlier. */
+    if (path_has_dotdot_component(path)) {
         free(resp);
         return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
                           "fs_list_dir_path_denied", 23);
@@ -4346,8 +4353,17 @@ static int handle_fs_list_dir(runtime_state_t *state, int client_fd,
         }
 
         if (snprintf(full, sizeof(full), "%s/%s", path, name) >= (int)sizeof(full)) {
-            idx += 1;
-            continue;  /* name too long — skip rather than truncate JSON */
+            /* Skip without incrementing `idx`: the client uses
+             * (entries.is_empty() || !truncated) to decide when
+             * to stop paginating. If a page is dominated by
+             * name-too-long entries, incrementing idx but emitting
+             * nothing produced a 0-entry, !truncated response that
+             * the client read as "directory exhausted" — making
+             * everything past that page invisible. Leaving idx
+             * untouched keeps the skipped entries invisible to
+             * pagination so the loop continues and emits the
+             * subsequent in-range entries on the next page. */
+            continue;
         }
         stat_ok = (lstat(full, &st) == 0);
         if (stat_ok) {

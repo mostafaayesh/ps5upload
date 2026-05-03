@@ -4,6 +4,76 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.2.41
+
+**Audit-pass fixes — 9 bugs across the recently-changed mount/title/list paths**
+
+Code-review audit of the 2.2.31 → 2.2.40 churn surfaced 9 real
+issues. None of them block normal use, but each could bite a
+specific user — fixing them all so the recent UX work doesn't
+quietly produce wrong outputs.
+
+**Critical**
+
+- `title_meta_fetch` (Rust): the reqwest client used the default
+  redirect policy, which silently follows up to 10 hops. The
+  hostname allowlist (`prosperopatches.com`, `orbispatches.com`)
+  was applied only to the initial URL — a 3xx from either upstream
+  to an arbitrary host would have been followed and the body
+  returned, defeating the SSRF defense the allowlist exists to
+  provide. Now uses `redirect::Policy::none()`; 3xx responses
+  surface as errors like 4xx/5xx.
+- `runMount` retry: the `try { fsMount(retry) } catch { throw firstErr }`
+  shape always rethrew the *first* error even when the retry's
+  failure was meaningfully different (disk full, bad mount point,
+  out-of-allowlist path). Users were sent down the wrong debug
+  path. Now rethrows the second error, which is the real reason
+  the operation didn't succeed.
+
+**Important**
+
+- `FS_LIST_DIR` pagination: name-too-long entries used to
+  increment the offset (`idx`) without emitting an entry. With
+  enough such entries on a page, the response came back as
+  `entries.is_empty() && !truncated`, which the client read as
+  "directory exhausted." Everything after the skipped entries was
+  invisible. Now the skip leaves `idx` untouched so pagination
+  continues past them naturally.
+- `FS_LIST_DIR` traversal check: used `strstr(path, "..")`, a
+  substring match that false-positives on legitimate filenames
+  like `..bak` or `something..cache`. Now uses
+  `path_has_dotdot_component`, the component-scoped helper the
+  destructive-op paths were already using.
+- Library `refresh()` stale-empty guard: read `getState().entries`
+  in one call and committed via a separate `setState`, which
+  TOCTOU-races with a concurrent `clear()` from the
+  `ps5upload:library:invalidate` event. Both branches now go
+  through a single Zustand `set` callback so the read and write
+  are atomic.
+- `title_meta_fetch` body-size cap: `len as usize` truncates on
+  32-bit builds (Windows x86), letting a 5 GiB Content-Length
+  sneak past and OOM the `bytes().await`. Now compares in `u64`
+  space.
+- `parsePatchesHtml` regex fallback: required `name`/`property`
+  to appear before `content` on `<meta>` tags. HTML doesn't
+  constrain attribute order, and a content-first variant would
+  have silently dropped the cover URL. Split into two regexes:
+  match the tag-with-right-name first, then extract content
+  attribute-order-independent.
+- `findOwningImage` helper extracted in `state/library.ts`. The
+  Library row's "from disk image" badge now reuses the same
+  reverse-lookup as the row's MOUNTED-state derivation, so any
+  future change to `effectiveMount` semantics propagates to the
+  badge automatically (vs the prior in-row IIFE that would have
+  silently diverged).
+- `fetchTitleInfo` cache-on-error: a transient network error wrote
+  `null` to the 7-day cache, hiding cover art for a week after a
+  single network blip. Now only definitive HTTP 404s poison the
+  cache as `null`; transient errors leave the cache empty so the
+  next modal open retries.
+
+---
+
 ## 2.2.40
 
 **Mount picker no longer surfaces ghost USB slots, mismatch warning

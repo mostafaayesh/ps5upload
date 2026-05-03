@@ -190,11 +190,22 @@ export function parsePatchesHtml(
   } else {
     const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
     if (titleMatch) title = stripTitleIdPrefix(titleMatch[1]);
-    const imgMatch = html.match(
-      /<meta[^>]+(?:name="twitter:image"|property="og:image")[^>]+content="([^"]+)"/i,
-    );
-    if (imgMatch && coverHostRe.test(imgMatch[1])) {
-      coverImageUrl = imgMatch[1];
+    // Match the full <meta…> tag with the right name/property
+    // first, then pull `content` out of it. Splitting in two lets
+    // the attributes appear in any order (HTML doesn't constrain
+    // ordering) — the previous single-regex required name/property
+    // to come *before* content and silently missed
+    // `<meta content="…" name="twitter:image">` shape. Word
+    // boundaries (`\b`) intentionally avoided around `"…"` since
+    // those chars are non-word and the boundary wouldn't fire
+    // between two non-word chars; relying on `[^>]` and the
+    // explicit literal substrings is enough to disambiguate.
+    const metaTagRe =
+      /<meta(?=\s)[^>]*(?:name="twitter:image"|property="og:image")[^>]*>/i;
+    const metaTag = html.match(metaTagRe)?.[0] ?? "";
+    const contentMatch = metaTag.match(/content="([^"]+)"/i);
+    if (contentMatch && coverHostRe.test(contentMatch[1])) {
+      coverImageUrl = contentMatch[1];
     }
   }
 
@@ -246,9 +257,18 @@ export async function fetchTitleInfo(
     return parsed;
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") return null;
-    // Unknown title (404), network failure, body cap, etc. Cache
-    // null so we don't re-hit the network on every modal open.
-    writeTitleCache(trimmed, null);
+    // Cache only *definitive* misses — a real HTTP 404 from the
+    // upstream means the title genuinely isn't there, and the next
+    // 7 days of opens shouldn't re-hit the network. Transient
+    // errors (DNS hiccup, TLS handshake fail, body-too-large from
+    // a hostile redirect, allowlist violation, etc.) should NOT
+    // poison the cache: a single network blip when the user opens
+    // Game Details should not silently hide the cover for a week.
+    const msg = e instanceof Error ? e.message : String(e);
+    const definitive404 = /title-meta http 404/i.test(msg);
+    if (definitive404) {
+      writeTitleCache(trimmed, null);
+    }
     return null;
   }
 }
