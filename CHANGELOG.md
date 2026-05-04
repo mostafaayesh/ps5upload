@@ -4,6 +4,22 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.2.58
+
+**Install Package: replace per-row NPXS warning with a page-level note**
+
+The 2.2.56 per-row pre-flight warning ("System app pkg (NPXS-prefix)…")
+was repeating the same paragraph on every NPXS row. Replaced with a
+single subdued info note at the top of the page: "Game pkgs only —
+this installer is built around Sony's game-pkg API. System pkgs
+(NPXS-prefix) will register but typically can't complete here; for
+those use Settings → Debug Settings → Game → Package Installer on
+the PS5 itself." The post-register green "verify on PS5" panel
+already covers the done-state messaging, so the row-level warning
+was redundant.
+
+---
+
 ## 2.2.57
 
 **NPXS system-pkg fast-path: register-accepted = success in the UI**
