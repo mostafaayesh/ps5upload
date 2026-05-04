@@ -19,6 +19,7 @@ import {
   Server,
   CircleDot,
   Package,
+  Info,
 } from "lucide-react";
 
 import { PageHeader, Button, WarningCard } from "../../components";
@@ -229,22 +230,12 @@ export default function InstallPackageScreen() {
     } catch (e) {
       warnings = [`could not read header: ${e}`];
     }
-    // 2.2.55: NPXS-prefix system pkgs (Store updates, Settings,
-    // built-in apps) DO register cleanly — Sony accepts the
-    // sceAppInstUtilInstallByPackage call and the engine sees
-    // `register_path=shellui-rpc accepted`. But the actual install
-    // destabilises the PS5: the mgmt service stops responding mid-
-    // install and the user sees "Can't reach your PS5's management
-    // service". The API is designed for game pkgs, not system app
-    // patches; we can't replicate Sony's internal Settings → Debug
-    // Settings → Game → Package Installer code path. Pre-flight
-    // warning gives the user a chance to abort before destabilising
-    // the system, with concrete guidance on what to do instead. */
-    if (/^[A-Z]{2}\d{4}-NPXS\d+/i.test(contentId)) {
-      warnings.push(
-        "System app pkg (NPXS-prefix). Sony will accept the register but the install may freeze the PS5's mgmt service mid-flight — `sceAppInstUtilInstallByPackage` is for game pkgs, not system patches. Use Settings → Debug Settings → Game → Package Installer on the PS5 itself for these.",
-      );
-    }
+    // 2.2.58: NPXS-prefix system pkgs were getting a noisy per-row
+    // pre-flight warning here — replaced with a single page-level
+    // note (see the InfoCard near the page header) plus the
+    // post-register green "verify on PS5" panel that already shows
+    // for these in the done state. The row-level warning was
+    // redundant once both of those landed.
 
     add({
       pkgPath: path,
@@ -269,6 +260,23 @@ export default function InstallPackageScreen() {
           "Install .pkg files via Sony's BGFT service. The PS5 fetches each file from this PC over HTTP and installs it.",
         )}
       />
+
+      {/* Page-level note about system pkgs. Replaces the per-row
+        * NPXS warning (2.2.58) — same information, surfaced once
+        * for the whole page instead of repeating on every NPXS row. */}
+      <div className="mb-4 flex items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-[12px] text-[var(--color-muted)]">
+        <Info size={13} className="mt-0.5 shrink-0" />
+        <div>
+          <span className="font-medium text-[var(--color-text)]">
+            {t("install.note.gamePkgsOnly.title", "Game pkgs only")}
+          </span>
+          {" — "}
+          {t(
+            "install.note.gamePkgsOnly.body",
+            "this installer is built around Sony's game-pkg API. System pkgs (NPXS-prefix — Store updates, Settings patches, built-in apps) will register but typically can't complete here; for those use Settings → Debug Settings → Game → Package Installer on the PS5 itself.",
+          )}
+        </div>
+      </div>
 
       {pickError && (
         <div className="mb-4">
