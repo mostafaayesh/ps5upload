@@ -27,7 +27,12 @@
 //! rename to avoid leaving half-written ELFs on the stick if the
 //! user yanks it mid-write.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+// `Path` is only used inside the macOS/Linux `enumerate_drives` +
+// `statvfs_or_zero` paths. On Windows neither cfg block compiles, so
+// an unconditional `Path` import trips `-D unused-imports`.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
