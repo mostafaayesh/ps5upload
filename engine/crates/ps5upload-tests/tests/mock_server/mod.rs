@@ -82,6 +82,37 @@ pub(crate) struct MockServer {
 }
 
 impl MockServer {
+    /// Plant a pre-existing "interrupted" tx so a subsequent BeginTx
+    /// with `TX_FLAG_RESUME` (using the same `tx_id`) reports back a
+    /// non-zero `last_acked_shard`. Mirrors what the real payload
+    /// would have on disk after a prior connection drop.
+    ///
+    /// Used by single-file-resume tests that don't need to actually
+    /// drop the connection — they want to verify the protocol contract
+    /// "client supplies tx_id with TX_FLAG_RESUME → server adopts and
+    /// reports already-acked count."
+    #[allow(dead_code)]
+    pub(crate) fn plant_interrupted_tx(
+        &self,
+        tx_id: [u8; 16],
+        dest_root: &str,
+        total_shards: u64,
+        shards_received: u64,
+    ) {
+        let mut st = self.state.lock().unwrap();
+        st.txs.insert(
+            tx_id_hex(&tx_id),
+            MockTx {
+                state: "interrupted".to_string(),
+                shards_received,
+                bytes_received: 0,
+                dest_root: dest_root.to_string(),
+                total_shards,
+                spool: Default::default(),
+            },
+        );
+    }
+
     /// Start a mock FTX2 server on a random loopback port.
     pub(crate) fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");

@@ -4,6 +4,40 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.4.0
+
+- Save data backup is now a clean `<title_id>.zip` with just the image
+  and sealed key inside — matches the format save-resigning tools use.
+  Restores re-add the on-PS5 prefix automatically, so backups and
+  resigner output are now interchangeable.
+- Save backup correctly handles PS2/PSP-Classic titles whose layout on
+  PS5 hides the real data inside nested wrapper folders; the backup
+  zip now contains the actual save, not an empty folder or duplicate
+  copies.
+- Single-file uploads (.pkg / .ffpkg / large images) can now resume
+  from where they stopped after a wifi drop or other failure — the
+  next click of Retry picks up at the last acknowledged shard instead
+  of restarting from zero. Retry budget for single-file uploads
+  raised to survive several wifi blips per long upload.
+- Pre-flight free-space check on the destination drive before a
+  single-file upload starts. If the drive can't fit the file, you
+  see a clear "needs X more GB free" message in seconds instead of
+  the upload silently dying hours later.
+- Failed-upload error cards now show a humanized hint (e.g. "PS5 ran
+  out of free space — free space and click Retry") with the raw
+  payload error tucked in a collapsible "raw error" expander for
+  debugging.
+- Install Package: better warning that the PS5 screen may go black
+  during install — that's normal, the install keeps running.
+- Install Package: queue progress now survives a tab switch — opening
+  another tab and coming back no longer resets the in-flight bar.
+- Listener cleanup race fixed across screens — no more occasional
+  "TypeError: undefined is not an object" console errors during
+  navigation or hot-reload.
+- Startup is faster: language packs (18 locales, ~1 MB total) now
+  lazy-load on demand instead of all-eagerly. The main JS bundle
+  drops from ~1 MB to ~200 KB.
+
 ## 2.3.0
 
 - Install Package: tries the in-process installer first (no home-screen

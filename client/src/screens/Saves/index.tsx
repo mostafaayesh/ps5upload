@@ -13,7 +13,14 @@ import {
   startTransferDir,
   fsReadPreview,
   fsDelete,
+  fsListDir,
   waitForJob,
+  saveArchiveMakeTemp,
+  saveArchiveCleanupTemp,
+  saveArchiveZip,
+  saveArchiveUnzip,
+  saveArchiveBackupFinalize,
+  saveArchiveRestorePrepare,
   type SaveEntry,
 } from "../../api/ps5";
 import { useConnectionStore, PS5_PAYLOAD_PORT } from "../../state/connection";
@@ -23,7 +30,7 @@ import { useConfirm } from "../../components/ConfirmDialog";
 import { useTr } from "../../state/lang";
 import { startTransferDownload } from "../../api/ps5";
 import { formatBytes } from "../../lib/format";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { pushNotification } from "../../state/notifications";
 
 /**
@@ -46,6 +53,23 @@ export default function SavesScreen() {
   const [saves, setSaves] = useState<SaveEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set of entry paths currently being backed up / restored. Used to
+  // disable the per-row buttons so a rapid double-click doesn't race
+  // two ops over the same PS5 save path (which would deletes-and-
+  // uploads in undefined order and leave the live save corrupt).
+  const [busy, setBusy] = useState<Set<string>>(() => new Set());
+  const isBusy = useCallback(
+    (path: string) => busy.has(path),
+    [busy],
+  );
+  const markBusy = useCallback((path: string, on: boolean) => {
+    setBusy((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }, []);
   const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirm();
 
   const refresh = useCallback(async () => {
@@ -82,58 +106,125 @@ export default function SavesScreen() {
 
   async function handleDownload(entry: SaveEntry) {
     if (!host?.trim()) return;
-    const dest = await openDialog({
-      directory: true,
-      title: tr(
-        "saves_download_picker",
-        undefined,
-        "Pick a folder to save the backup into",
-      ),
-    });
-    if (!dest || typeof dest !== "string") return;
+    if (isBusy(entry.path)) return;
+    // Claim the entry IMMEDIATELY (before any dialog) so a rapid
+    // second click while the picker is open is rejected. The dialogs
+    // are async-await-able from the user's POV — the window from
+    // "click Backup" to "user picks file" can be many seconds and a
+    // second click in that window would otherwise race two ops over
+    // the same PS5 path.
+    markBusy(entry.path, true);
+    let tempDir: string | null = null;
     try {
-      await startTransferDownload(
+      // File-save dialog so the user picks a .zip target directly. The
+      // default name `<title_id>.zip` matches the layout we enforce on
+      // restore — keep the two in sync.
+      const destZip = await saveDialog({
+        defaultPath: `${entry.title_id}.zip`,
+        filters: [{ name: "ZIP archive", extensions: ["zip"] }],
+        title: tr(
+          "saves_download_picker",
+          undefined,
+          "Save backup as…",
+        ),
+      });
+      if (!destZip || typeof destZip !== "string") return;
+      // 1) Scratch dir under the OS temp root. The engine's download
+      // walker will create `<scratch>/<title_id>/<files>` for us.
+      tempDir = await saveArchiveMakeTemp(entry.title_id);
+      // 2) Pull the PS5 save folder into the scratch dir.
+      const jobId = await startTransferDownload(
         entry.path,
-        dest,
+        tempDir,
         `${host.trim()}:${PS5_PAYLOAD_PORT}`,
         "folder",
       );
+      await waitForJob(jobId);
+      // 3) Format-aware cleanup: strip `sdimg_` prefix from PS4-format
+      // images, drop Sony's nested emulator-bookkeeping subdirectories,
+      // keep only the immediate files + `sce_sys/`. Matches garlic-
+      // savemgr's view of the save and the cross-tool resigner format.
+      await saveArchiveBackupFinalize(tempDir, entry.title_id);
+      // 4) Zip the cleaned `<scratch>/<title_id>/` → user-picked .zip.
+      await saveArchiveZip(tempDir, entry.title_id, destZip);
+      pushNotification("success", `Backed up ${entry.title_id}`, {
+        body: `Saved to ${destZip}`,
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      pushNotification("error", `Backup failed: ${entry.title_id}`, { body: msg });
+    } finally {
+      // 4) Best-effort cleanup. The Rust side refuses any path outside
+      // the OS temp root, so a stale `tempDir` reference can't trash
+      // user data even if state somehow got mixed up.
+      if (tempDir) await saveArchiveCleanupTemp(tempDir).catch(() => {});
+      markBusy(entry.path, false);
     }
   }
 
   async function handleRestore(entry: SaveEntry) {
     if (!host?.trim()) return;
-    const ok = await confirmDialog({
-      title: tr(
-        "saves_restore_confirm_title",
-        { title: entry.title_id },
-        `Restore ${entry.title_id} from local backup?`,
-      ),
-      message: tr(
-        "saves_restore_confirm_body",
-        undefined,
-        "Pick the LOCAL backup folder you want to restore from. The current PS5 save will be overwritten.",
-      ),
-      destructive: true,
-      confirmLabel: tr("saves_restore_confirm_label", undefined, "Restore"),
-    });
-    if (!ok) return;
-    const localFolder = await openDialog({
-      directory: true,
-      title: tr(
-        "saves_restore_picker",
-        undefined,
-        "Pick the local backup folder to restore from",
-      ),
-    });
-    if (!localFolder || typeof localFolder !== "string") return;
+    if (isBusy(entry.path)) return;
+    // Claim before any dialog — see comment in handleDownload.
+    markBusy(entry.path, true);
+    let tempDir: string | null = null;
     try {
+      const ok = await confirmDialog({
+        title: tr(
+          "saves_restore_confirm_title",
+          { title: entry.title_id },
+          `Restore ${entry.title_id} from a .zip backup?`,
+        ),
+        message: tr(
+          "saves_restore_confirm_body",
+          undefined,
+          "Pick a .zip whose top-level folder is named the same as the title ID. The current PS5 save will be overwritten.",
+        ),
+        destructive: true,
+        confirmLabel: tr("saves_restore_confirm_label", undefined, "Restore"),
+      });
+      if (!ok) return;
+
+      const localZip = await openDialog({
+        multiple: false,
+        filters: [{ name: "ZIP archive", extensions: ["zip"] }],
+        title: tr(
+          "saves_restore_picker",
+          undefined,
+          "Pick the .zip backup to restore from",
+        ),
+      });
+      if (!localZip || typeof localZip !== "string") return;
+      // 1) Scratch dir + strict-validate the zip layout before we touch
+      // the live save. Bad layout → throw before any delete fires.
+      tempDir = await saveArchiveMakeTemp(entry.title_id);
+      await saveArchiveUnzip(localZip, tempDir, entry.title_id);
+      // 1.5) Format-aware prep: re-add `sdimg_` prefix to any bare image
+      // file (PS4-style backups have it stripped) so the PS5 path matches
+      // what Sony's emulator expects. PS5-native / .bin / sce_sys/ pass
+      // through unchanged.
+      await saveArchiveRestorePrepare(tempDir, entry.title_id);
+      // 2) Wipe the existing save's CONTENTS but leave the title_id
+      // folder itself in place. The savedata_prospero parent on PS5 is
+      // managed by Sony's PFS subsystem and rejects raw POSIX mkdir of
+      // a fresh title_id subdir (EACCES from ensure_parent_dir, see
+      // payload/src/runtime.c:2877). By preserving the folder we side-
+      // step that mkdir entirely — the upload's ensure_parent_dir hits
+      // EEXIST and proceeds.
       const addr = `${host.trim()}:${PS5_PAYLOAD_PORT}`;
-      await fsDelete(addr, entry.path);
+      const children = await fsListDir(addr, entry.path, { limit: 4096 });
+      for (const child of children) {
+        const childPath = entry.path.endsWith("/")
+          ? `${entry.path}${child.name}`
+          : `${entry.path}/${child.name}`;
+        // fsDelete is recursive on the payload side, so passing a
+        // subdir wipes its whole tree in one round trip.
+        await fsDelete(addr, childPath);
+      }
+      const extractedRoot = `${tempDir}/${entry.title_id}`;
       const jobId = await startTransferDir(
-        localFolder,
+        extractedRoot,
         entry.path,
         addr,
         null,
@@ -141,12 +232,15 @@ export default function SavesScreen() {
       );
       await waitForJob(jobId);
       pushNotification("success", `Restored ${entry.title_id}`, {
-        body: `Uploaded backup to ${entry.path}.`,
+        body: `Uploaded ${entry.title_id}.zip back to ${entry.path}.`,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
       pushNotification("error", `Restore failed: ${entry.title_id}`, { body: msg });
+    } finally {
+      if (tempDir) await saveArchiveCleanupTemp(tempDir).catch(() => {});
+      markBusy(entry.path, false);
     }
   }
 
@@ -161,7 +255,7 @@ export default function SavesScreen() {
         description={tr(
           "saves_description",
           undefined,
-          "Per-game save folders on the PS5. PS5 saves under savedata_prospero/, PS4 legacy saves under savedata/. Download a save folder to back it up; restore it later by uploading the same folder back.",
+          "Per-game save folders on the PS5. PS5 saves under savedata_prospero/, PS4 legacy saves under savedata/. Backup writes a portable <title-id>.zip; restore expects the same shape.",
         )}
         right={
           <Button
@@ -248,6 +342,7 @@ export default function SavesScreen() {
                     size="sm"
                     leftIcon={<Download size={11} />}
                     onClick={() => handleDownload(e)}
+                    disabled={isBusy(e.path)}
                   >
                     {tr("saves_download", undefined, "Backup")}
                   </Button>
@@ -256,10 +351,11 @@ export default function SavesScreen() {
                     size="sm"
                     leftIcon={<UploadIcon size={11} />}
                     onClick={() => handleRestore(e)}
+                    disabled={isBusy(e.path)}
                     title={tr(
                       "saves_restore_tooltip",
                       undefined,
-                      "Pick a local backup folder and upload it back to this save's PS5 path. Overwrites the live save.",
+                      "Pick a .zip backup and upload its contents back to this save's PS5 path. Overwrites the live save.",
                     )}
                   >
                     {tr("saves_restore", undefined, "Restore")}

@@ -158,6 +158,21 @@ pub fn run() {
             // ── Save data + screenshot listing ──────────────────────
             commands::saves_list,
             commands::screenshots_list,
+            // ── Save data .zip backup/restore ───────────────────────
+            // The Saves screen uses these to wrap a downloaded save
+            // folder into <title_id>.zip (and reverse on restore). The
+            // download/upload bytes themselves still go through the
+            // engine's transfer jobs; these commands only manage the
+            // temp scratch dir and the zip envelope around it.
+            commands::save_archive_make_temp,
+            commands::save_archive_cleanup_temp,
+            commands::save_archive_zip,
+            commands::save_archive_unzip,
+            // Format-aware backup/restore: strip `sdimg_` prefix from
+            // PS4-style images and drop Sony's nested bookkeeping so
+            // backups are clean and cross-tool compatible.
+            commands::save_archive_backup_finalize,
+            commands::save_archive_restore_prepare,
             // ── Filesystem search index (payload-side) ──────────────
             commands::fs_index_start,
             commands::fs_index_status,

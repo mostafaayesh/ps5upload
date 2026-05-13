@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { isTauriEnv } from "../../lib/tauriEnv";
+import { isTauriEnv, safeUnlisten } from "../../lib/tauriEnv";
 import {
   PackageOpen,
   Plus,
@@ -170,18 +170,15 @@ export default function InstallPackageScreen() {
       }
     });
     p.then((fn) => {
-      // Tauri unlisten can throw if the webview tore down its listener
-      // table between subscribe + cleanup (HMR, parent destroyed).
-      // Swallow — there's nothing actionable when the listener is
-      // already gone.
-      if (cancelled) { try { fn(); } catch { /* ignore */ } }
+      // Tauri unlisten can throw — sync or async — if the webview tore
+      // down its listener table between subscribe + cleanup (HMR,
+      // parent destroyed). `safeUnlisten` swallows both paths.
+      if (cancelled) safeUnlisten(fn);
       else unlisten = fn;
     }).catch(() => { /* subscribe-time rejection: nothing to clean */ });
     return () => {
       cancelled = true;
-      if (unlisten) {
-        try { unlisten(); } catch { /* ignore */ }
-      }
+      if (unlisten) safeUnlisten(unlisten);
     };
     // addPkgPath is stable across renders (defined inside the
     // component but doesn't depend on props/state that change), so
@@ -297,6 +294,19 @@ export default function InstallPackageScreen() {
             "this installer is built around Sony's game-pkg API. System pkgs (NPXS-prefix — Store updates, Settings patches, built-in apps) will register but typically can't complete here; for those use Settings → Debug Settings → Game → Package Installer on the PS5 itself.",
           )}
         </div>
+      </div>
+
+      <div className="mb-4">
+        <WarningCard
+          title={t(
+            "install.blackScreen.title",
+            "Your PS5 screen may go black during install — that's normal.",
+          )}
+          detail={t(
+            "install.blackScreen.body",
+            "The console stays on and the install keeps running. The picture comes back when it finishes.",
+          )}
+        />
       </div>
 
       {pickError && (
@@ -777,13 +787,10 @@ function InstallRow({
           <div className="mt-2 flex items-start gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-2 text-[11px] text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 size={12} className="mt-0.5 shrink-0" />
             <div>
-              Install dispatched to PS5 — Sony's queue is processing it
-              in the background. Verify completion via the PS5's
-              notification panel (top-right) or Settings → Notifications
-              → Downloads. We mark this row done as soon as the dispatch
-              is accepted because polling Sony's status API from our
-              process is unsafe for cross-process installs (would
-              segfault or hang the payload — see bgft.c).
+              {t(
+                "install.dispatched.body",
+                "Install dispatched. Check the PS5's notification panel (top-right) to confirm it finished.",
+              )}
             </div>
           </div>
         )}

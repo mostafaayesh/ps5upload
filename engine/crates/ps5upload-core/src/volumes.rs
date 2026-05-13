@@ -68,6 +68,36 @@ impl VolumeList {
     pub fn find(&self, path: &str) -> Option<&Volume> {
         self.volumes.iter().find(|v| v.path == path)
     }
+
+    /// Find the volume that hosts `dest_path` by longest-prefix match.
+    /// E.g. `dest_path = "/mnt/ext0/games/big.pkg"` matched against a
+    /// list containing `/`, `/data`, `/mnt/ext0` resolves to
+    /// `/mnt/ext0` — the deepest mount that's a strict-segment prefix.
+    ///
+    /// `/data` matches `/data/foo` but NOT `/database/foo` — the
+    /// prefix must end on a path separator (or equal the path).
+    /// Returns `None` when no volume covers the path (caller should
+    /// treat as "free space unknown" rather than refuse outright).
+    pub fn find_for_path(&self, dest_path: &str) -> Option<&Volume> {
+        let mut best: Option<&Volume> = None;
+        for v in &self.volumes {
+            if v.path.is_empty() {
+                continue;
+            }
+            let sep = if v.path.ends_with('/') { "" } else { "/" };
+            let prefix = format!("{}{}", v.path, sep);
+            let is_match = dest_path == v.path || dest_path.starts_with(&prefix);
+            if !is_match {
+                continue;
+            }
+            match best {
+                None => best = Some(v),
+                Some(cur) if v.path.len() > cur.path.len() => best = Some(v),
+                _ => {}
+            }
+        }
+        best
+    }
 }
 
 /// Connect to the payload, send FS_LIST_VOLUMES, await FS_LIST_VOLUMES_ACK,
@@ -117,6 +147,60 @@ mod tests {
         let placeholder = parsed.find("/mnt/ext0").expect("placeholder present");
         assert!(placeholder.is_placeholder);
         assert!(!placeholder.is_usable(), "placeholder should not be usable");
+    }
+
+    #[test]
+    fn find_for_path_longest_prefix() {
+        let vlist = VolumeList {
+            volumes: vec![
+                Volume {
+                    path: "/".to_string(),
+                    mount_from: String::new(),
+                    fs_type: "ufs".into(),
+                    total_bytes: 0,
+                    free_bytes: 0,
+                    writable: true,
+                    is_placeholder: false,
+                    source_image: String::new(),
+                },
+                Volume {
+                    path: "/data".to_string(),
+                    mount_from: String::new(),
+                    fs_type: "ufs".into(),
+                    total_bytes: 0,
+                    free_bytes: 1_000_000,
+                    writable: true,
+                    is_placeholder: false,
+                    source_image: String::new(),
+                },
+                Volume {
+                    path: "/mnt/ext0".to_string(),
+                    mount_from: String::new(),
+                    fs_type: "exfat".into(),
+                    total_bytes: 0,
+                    free_bytes: 50_000,
+                    writable: true,
+                    is_placeholder: false,
+                    source_image: String::new(),
+                },
+            ],
+        };
+        // Deeper mount wins.
+        assert_eq!(
+            vlist.find_for_path("/mnt/ext0/games/big.pkg").unwrap().path,
+            "/mnt/ext0"
+        );
+        // Exact path also matches.
+        assert_eq!(vlist.find_for_path("/data").unwrap().path, "/data");
+        // Strict-segment prefix: /data should NOT match /database/.
+        // Should fall through to the deepest matching parent (/ root).
+        assert_eq!(vlist.find_for_path("/database/x").unwrap().path, "/");
+        // Path that no mount covers (no `/` root in the list, say) →
+        // None.
+        let no_root = VolumeList {
+            volumes: vlist.volumes[1..].to_vec(),
+        };
+        assert!(no_root.find_for_path("/somewhere/else").is_none());
     }
 
     #[test]

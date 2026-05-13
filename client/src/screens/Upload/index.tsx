@@ -15,7 +15,7 @@ import {
 import clsx from "clsx";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { isTauriEnv } from "../../lib/tauriEnv";
+import { isTauriEnv, safeUnlisten } from "../../lib/tauriEnv";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import {
@@ -136,14 +136,8 @@ export default function UploadScreen() {
       }
     });
     p.then((fn) => {
-      if (cancelled) {
-        // Same try/catch as the cleanup below — Tauri's unlisten can
-        // throw if the webview already tore down its listener table
-        // (HMR, parent webview destroyed, etc).
-        try { fn(); } catch { /* ignore */ }
-      } else {
-        unlisten = fn;
-      }
+      if (cancelled) safeUnlisten(fn);
+      else unlisten = fn;
     }).catch(() => {
       // onDragDropEvent's Promise can reject if the webview is gone
       // before subscription completes. Silently ignore — there's no
@@ -151,15 +145,7 @@ export default function UploadScreen() {
     });
     return () => {
       cancelled = true;
-      if (unlisten) {
-        // Wrap in try/catch: Tauri 2's _unlisten looks up
-        // listeners[eventId].handlerId. If the webview tore down its
-        // listener table between subscribe + cleanup (HMR, route
-        // remount during dev, parent webview destroyed), the lookup
-        // throws TypeError. Cleanup is fire-and-forget; we don't
-        // care if the unregister fails.
-        try { unlisten(); } catch { /* ignore */ }
-      }
+      if (unlisten) safeUnlisten(unlisten);
     };
   }, [pickFile, pickFolder]);
 

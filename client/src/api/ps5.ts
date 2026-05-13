@@ -473,6 +473,60 @@ export async function fsDelete(
   });
 }
 
+export interface FsDirEntry {
+  name: string;
+  kind: "file" | "dir" | "unknown";
+  size: number;
+}
+
+/** Shallow directory listing. Auto-paginates: the payload caps its
+ *  per-frame response at 256 entries regardless of the `limit` we
+ *  request (see `payload/src/runtime.c::handle_fs_list_dir`'s
+ *  `limit_req > 256` clamp), so callers that need the full listing
+ *  of a large dir would otherwise silently see only the first 256.
+ *  We loop on the response's `truncated` flag until the payload says
+ *  it's exhausted.
+ *
+ *  Safety cap at 100k entries to bound a runaway/malicious dir. */
+export async function fsListDir(
+  transferAddr: string,
+  path: string,
+  _opts?: { offset?: number; limit?: number },
+): Promise<FsDirEntry[]> {
+  const addr = toMgmtAddr(transferAddr);
+  const PAGE = 256; // matches the payload's hard cap
+  const HARD_CAP = 100_000;
+  const out: FsDirEntry[] = [];
+  let offset = 0;
+  for (let i = 0; i < HARD_CAP / PAGE; i++) {
+    const res = await invoke<{
+      entries?: Array<{ name?: string; kind?: string; size?: number }>;
+      truncated?: boolean;
+    }>("ps5_list_dir", { addr, path, offset, limit: PAGE });
+    const page = (res.entries ?? [])
+      .filter(
+        (e): e is { name: string; kind?: string; size?: number } =>
+          typeof e.name === "string" &&
+          e.name !== "" &&
+          e.name !== "." &&
+          e.name !== "..",
+      )
+      .map((e) => ({
+        name: e.name,
+        kind: (e.kind === "file" || e.kind === "dir" ? e.kind : "unknown") as
+          | "file"
+          | "dir"
+          | "unknown",
+        size: typeof e.size === "number" ? e.size : 0,
+      }));
+    out.push(...page);
+    if (!res.truncated || page.length === 0) break;
+    offset += page.length;
+    if (out.length >= HARD_CAP) break;
+  }
+  return out;
+}
+
 export async function fsMove(
   transferAddr: string,
   from: string,
@@ -1241,6 +1295,111 @@ export interface ScreenshotList {
 /** List screenshots from /user/av_contents/thumbnails/photo. */
 export async function screenshotsList(addr: string): Promise<ScreenshotList> {
   return invoke<ScreenshotList>("screenshots_list", { addr });
+}
+
+// ─── Save data .zip backup / restore ──────────────────────────────────
+//
+// The Saves screen wraps backups into `<title_id>.zip` (containing
+// `<title_id>/<files>` at the zip root). These four commands are thin
+// helpers around the local zip envelope — the actual PS5 ↔ host bytes
+// still travel through `transfer_download` / `transfer_dir`.
+
+/** Create a scratch directory under the OS temp root. The returned
+ *  absolute path is what the caller passes as `destDir` to
+ *  `startTransferDownload` (for backup) or as `destDir` to
+ *  `saveArchiveUnzip` (for restore). Always pair with
+ *  `saveArchiveCleanupTemp` in a `finally` block. */
+export async function saveArchiveMakeTemp(prefix: string): Promise<string> {
+  return invoke<string>("save_archive_make_temp", { prefix });
+}
+
+/** Best-effort recursive delete of a scratch dir. Refuses to remove
+ *  anything outside the system temp root, so a bad call can't wipe
+ *  user data. Returns immediately on missing paths. */
+export async function saveArchiveCleanupTemp(path: string): Promise<void> {
+  await invoke("save_archive_cleanup_temp", { path });
+}
+
+/** Zip `<srcDir>/<innerRoot>/` into `destZip`. The resulting archive's
+ *  top-level entry is `<innerRoot>/` — i.e. the canonical
+ *  `<title_id>.zip` ⇒ `<title_id>/<files>` shape. */
+export async function saveArchiveZip(
+  srcDir: string,
+  innerRoot: string,
+  destZip: string,
+): Promise<void> {
+  await invoke("save_archive_zip", {
+    req: { src_dir: srcDir, inner_root: innerRoot, dest_zip: destZip },
+  });
+}
+
+export interface SaveArchiveUnzipResult {
+  inner_root: string;
+  file_count: number;
+}
+
+/** Strict-validate + extract `zipPath` into `destDir`. The zip must
+ *  contain exactly one top-level folder named `expectedInner`; any
+ *  other layout (flat files at root, multiple roots, wrong name) is
+ *  rejected before any bytes are written.
+ *
+ *  After success, the extracted save lives at
+ *  `<destDir>/<expectedInner>/…` and can be uploaded with
+ *  `startTransferDir`. */
+export async function saveArchiveUnzip(
+  zipPath: string,
+  destDir: string,
+  expectedInner: string,
+): Promise<SaveArchiveUnzipResult> {
+  return invoke<SaveArchiveUnzipResult>("save_archive_unzip", {
+    req: {
+      zip_path: zipPath,
+      dest_dir: destDir,
+      expected_inner: expectedInner,
+    },
+  });
+}
+
+export interface SaveArchiveBackupFinalizeResult {
+  kept_files: number;
+  stripped_count: number;
+  dropped_dirs: number;
+}
+
+/** Post-download cleanup before zipping. Strips Sony's `sdimg_` prefix
+ *  from PS4-format images (byte 0 = 0x01) so backups look like the
+ *  cross-tool resigner convention. Drops any subdirectory of the title
+ *  folder other than `sce_sys/` — that's where Sony stores nested
+ *  emulator bookkeeping for PS2-Classics, and it shouldn't pollute the
+ *  user-facing backup zip. PS5-native images (byte 0 = 0x02) and
+ *  `.bin` sealed keys are left alone. */
+export async function saveArchiveBackupFinalize(
+  srcDir: string,
+  titleId: string,
+): Promise<SaveArchiveBackupFinalizeResult> {
+  return invoke<SaveArchiveBackupFinalizeResult>(
+    "save_archive_backup_finalize",
+    { req: { src_dir: srcDir, title_id: titleId } },
+  );
+}
+
+export interface SaveArchiveRestorePrepareResult {
+  renamed_count: number;
+}
+
+/** Pre-upload preparation after unzipping. Re-adds `sdimg_` prefix to
+ *  bare top-level image files (those whose prefix was stripped during
+ *  backup) so the PS5 sees the filename it expects. Files that already
+ *  start with `sdimg_`, end in `.bin`, or live under `sce_sys/` pass
+ *  through unchanged. */
+export async function saveArchiveRestorePrepare(
+  srcDir: string,
+  titleId: string,
+): Promise<SaveArchiveRestorePrepareResult> {
+  return invoke<SaveArchiveRestorePrepareResult>(
+    "save_archive_restore_prepare",
+    { req: { src_dir: srcDir, title_id: titleId } },
+  );
 }
 
 // ─── Filesystem search index ──────────────────────────────────────────
@@ -2079,6 +2238,81 @@ export async function fetchVolumes(transferAddr: string): Promise<Volume[]> {
   return Array.isArray(res?.volumes) ? res.volumes : [];
 }
 
+/** Pick the volume a given on-PS5 destination path belongs to by
+ *  longest-prefix match. E.g. for `dest = "/mnt/ext0/games/big.pkg"`
+ *  and a volume list containing `/`, `/data`, `/mnt/ext0`, we pick
+ *  `/mnt/ext0` (the deepest mount that's a prefix of the dest). Returns
+ *  `null` when no volume covers the path — caller should treat that as
+ *  "unknown free space" and skip the pre-flight check rather than
+ *  refusing the upload outright. */
+export function volumeForPath(
+  volumes: readonly Volume[],
+  destPath: string,
+): Volume | null {
+  let best: Volume | null = null;
+  for (const v of volumes) {
+    if (!v.path) continue;
+    // Match either an exact path or a path with the volume as its
+    // strict prefix segment. A volume `/data` should match
+    // `/data/foo` but NOT `/database/foo`.
+    const sep = v.path.endsWith("/") ? "" : "/";
+    const isPrefix =
+      destPath === v.path || destPath.startsWith(`${v.path}${sep}`);
+    if (!isPrefix) continue;
+    if (!best || v.path.length > best.path.length) best = v;
+  }
+  return best;
+}
+
+export interface FreeSpaceCheck {
+  /** Volume the destination resolves to. `null` if none of the
+   *  reported volumes prefix the path — pre-flight skipped. */
+  volume: Volume | null;
+  /** Bytes free on the resolved volume. `null` when `volume` is
+   *  null. */
+  freeBytes: number | null;
+  /** True iff `freeBytes !== null` AND `freeBytes < requiredBytes`. */
+  insufficient: boolean;
+  /** Bytes the caller needs to free up. 0 when sufficient or
+   *  unknown. */
+  shortBy: number;
+}
+
+/** Pre-flight check: does the destination drive have enough room for
+ *  `requiredBytes`? Returns a structured result the caller can render
+ *  as either a hard block ("free up X more bytes") or a soft warning
+ *  ("we couldn't determine free space, proceeding anyway").
+ *
+ *  Defensive on errors — a `ps5_volumes` failure resolves to a
+ *  "unknown" result, not an exception, so a missing payload or
+ *  network blip doesn't gate the user out of an upload they could
+ *  have completed. */
+export async function checkDestinationFreeSpace(
+  transferAddr: string,
+  destPath: string,
+  requiredBytes: number,
+): Promise<FreeSpaceCheck> {
+  try {
+    const volumes = await fetchVolumes(transferAddr);
+    const volume = volumeForPath(volumes, destPath);
+    if (!volume) {
+      return { volume: null, freeBytes: null, insufficient: false, shortBy: 0 };
+    }
+    const freeBytes = volume.free_bytes;
+    const insufficient = freeBytes < requiredBytes;
+    return {
+      volume,
+      freeBytes,
+      insufficient,
+      shortBy: insufficient ? requiredBytes - freeBytes : 0,
+    };
+  } catch {
+    // Network blip / payload unreachable — degrade to "unknown" so
+    // the caller doesn't refuse an upload that might succeed.
+    return { volume: null, freeBytes: null, insufficient: false, shortBy: 0 };
+  }
+}
+
 /** Swap a PS5 transfer-port addr (`host:9113`) to the management-port
  *  addr (`host:9114`). FS_* frames run on mgmt; the transfer port
  *  rejects them with "wrong_port". Mirrors `mgmt_addr_for` in the engine. */
@@ -2174,6 +2408,61 @@ export interface JobSnapshot {
   shards_sent?: number;
   dest?: string;
   error?: string;
+  /** Machine-parseable error category lifted from the payload's
+   *  error frame body. Populated alongside `error` when the failure
+   *  originated from a PS5 protocol error frame. UI uses this for
+   *  humanized rendering (e.g. `direct_writer_io_error` → "PS5 is
+   *  out of free space"). `undefined` for local-side / non-payload
+   *  errors — fall back to `error` text. */
+  error_reason?: string;
+  /** Human-readable detail string lifted from the payload's error
+   *  frame `"detail"` field. Often pinpoints the on-PS5 path or
+   *  underlying errno. Shown as a secondary line under the
+   *  humanized title. */
+  error_detail?: string;
+}
+
+/** Job-failure exception carrying the structured `error_reason` +
+ *  `error_detail` from a failed `JobSnapshot`. Callers should catch
+ *  this in preference to a plain `Error` when they want to surface
+ *  the humanized message; `instanceof UploadJobError` lets the UI
+ *  branch on whether structured fields are available. */
+export class UploadJobError extends Error {
+  reason?: string;
+  detail?: string;
+  constructor(message: string, reason?: string, detail?: string) {
+    super(message);
+    this.name = "UploadJobError";
+    this.reason = reason;
+    this.detail = detail;
+  }
+}
+
+/** Humanize a payload's `error_reason` token into a one-line message
+ *  the user can act on. Returns `null` when the reason is unknown
+ *  (caller falls back to the raw `error` field). The hint is paired
+ *  in the UI with the raw `error_detail` for diagnostic depth. */
+export function humanizeJobErrorReason(reason: string | undefined): string | null {
+  if (!reason) return null;
+  switch (reason) {
+    case "preflight_insufficient_space":
+      return "The destination drive doesn't have enough free space for this file. Free up space on the PS5 (Settings → Storage) or pick a different destination, then click Retry.";
+    case "direct_writer_io_error":
+      return "The PS5 ran out of free space (or an external drive disconnected) while writing the file. Free up space on the destination drive and click Retry — the upload resumes from where it stopped.";
+    case "direct_tx_corrupt":
+      return "The PS5 detected protocol corruption on this transfer. Restart the payload from the Send Payload tab and retry.";
+    case "fs_write_failed_errno_28":
+    case "fs_write_failed_errno_27":
+      return "Destination filesystem rejected the write (out of space or file too big). Pick a different destination drive or free space.";
+    case "fs_delete_path_not_allowed":
+    case "fs_mkdir_path_not_allowed":
+    case "fs_list_dir_path_denied":
+      return "PS5 refused access to that path. Use /data/, /user/, or a mounted /mnt/ext*, /mnt/usb* path.";
+    case "tx_table_full":
+      return "Too many simultaneous transfers in flight on the PS5. Wait for some to finish or restart the payload.";
+    default:
+      return null;
+  }
 }
 
 export async function jobStatus(jobId: string): Promise<JobSnapshot> {
@@ -2201,7 +2490,11 @@ export async function waitForJob(
     const snap = await jobStatus(jobId);
     if (snap.status === "done") return snap;
     if (snap.status === "failed") {
-      throw new Error(snap.error ?? "job failed");
+      throw new UploadJobError(
+        snap.error ?? "job failed",
+        snap.error_reason,
+        snap.error_detail,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

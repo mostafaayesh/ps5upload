@@ -120,6 +120,12 @@ interface InstallQueueState {
   items: InstallQueueItem[];
   runId: number;
   isRunning: boolean;
+  /** True once `hydrate()` has loaded persisted items from localStorage.
+   *  Guards against a second hydrate call (e.g. when InstallPackage
+   *  re-mounts after a tab switch) overwriting live runtime state —
+   *  the persisted snapshot strips `status: "running"` → `"pending"`,
+   *  `phase` → `"idle"`, `bytesDownloaded` → 0, etc. */
+  _hydrated: boolean;
 
   add(item: Omit<InstallQueueItem, "id" | "addedAt" | "status" | "phase" |
     "bytesDownloaded" | "errCode" | "errMessage" | "sessionId" | "taskId" |
@@ -399,9 +405,18 @@ export const useInstallQueue = create<InstallQueueState>((set, get) => ({
   items: [],
   runId: 0,
   isRunning: false,
+  _hydrated: false,
 
   hydrate() {
-    set({ items: load() });
+    // One-shot: subsequent calls are no-ops. The InstallPackage screen
+    // calls hydrate() in a useEffect that re-fires every time the
+    // screen mounts (tab switch → unmount → mount on return). Without
+    // this guard, the load() result (which strips `status:"running"`
+    // → `"pending"`, `phase` → `"idle"`, `bytesDownloaded` → 0) wipes
+    // out the in-flight progress every time the user comes back to
+    // the tab mid-install.
+    if (get()._hydrated) return;
+    set({ items: load(), _hydrated: true });
   },
 
   add(input) {

@@ -35,7 +35,7 @@ describe("installQueue load() back-compat", () => {
     // Zustand stores hold global state across tests in the same
     // module — reset before each test so a leaked items[] from one
     // case doesn't poison the next.
-    useInstallQueue.setState({ items: [], runId: 0, isRunning: false });
+    useInstallQueue.setState({ items: [], runId: 0, isRunning: false, _hydrated: false });
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -160,7 +160,7 @@ describe("installQueue load() back-compat", () => {
         diag: badDiag,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify([row]));
-      useInstallQueue.setState({ items: [], runId: 0, isRunning: false });
+      useInstallQueue.setState({ items: [], runId: 0, isRunning: false, _hydrated: false });
       useInstallQueue.getState().hydrate();
       const got = useInstallQueue.getState().items[0];
       expect(got.diag).toEqual({
