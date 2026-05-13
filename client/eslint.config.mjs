@@ -40,6 +40,10 @@ export default tseslint.config(
       "src-tauri/**",
       "coverage/**",
       "vite.config.ts",
+      // Build-time scripts run in Node, not the browser, so the
+      // browser-globals config here gives false positives ("console"
+      // unknown). They're tooling, not shipped code.
+      "scripts/**",
     ],
   },
   js.configs.recommended,

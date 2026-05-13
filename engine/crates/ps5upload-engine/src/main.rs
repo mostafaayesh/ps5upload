@@ -217,8 +217,87 @@ enum JobState {
         started_at_ms: u64,
         completed_at_ms: u64,
         elapsed_ms: u64,
+        /// Raw stringified error chain. Kept for debuggability and as
+        /// the fallback rendering when structured fields below are
+        /// absent (older payloads, non-payload-origin errors).
         error: String,
+        /// Machine-parseable error category lifted from the payload's
+        /// error frame body (`{"error":"direct_writer_io_error",…}`).
+        /// `None` for errors that didn't originate from the payload's
+        /// JSON-bodied error frames — e.g. local I/O, connection
+        /// refused at TCP-connect time. UI uses this to humanize the
+        /// surface text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error_reason: Option<String>,
+        /// Human-readable detail from the payload's error frame
+        /// `"detail"` field. Often pinpoints the on-PS5 path or the
+        /// underlying errno. Shown to the user as the secondary line
+        /// in the error card.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error_detail: Option<String>,
     },
+}
+
+/// Build a `JobState::Failed` from a transfer error, populating the
+/// structured reason/detail fields when the payload's error body is
+/// parseable. Single call site for every transfer handler's `Err(e)`
+/// branch so the structured-field plumbing stays consistent.
+fn job_failed_from_err(started_at_ms: u64, completed_at_ms: u64, err: &anyhow::Error) -> JobState {
+    let (reason, detail) = extract_payload_error(err);
+    JobState::Failed {
+        started_at_ms,
+        completed_at_ms,
+        elapsed_ms: completed_at_ms.saturating_sub(started_at_ms),
+        error: format!("{err:#}"),
+        error_reason: reason,
+        error_detail: detail,
+    }
+}
+
+/// Walk an `anyhow::Error` chain looking for a JSON object body of the
+/// form `{"error":"…","detail":"…"}` — the shape payload error frames
+/// (and the engine's pass-through of them) carry. Returns the parsed
+/// `(reason, detail)` if a match is found anywhere in the chain. Both
+/// fields are independently optional so a body with only `"error"` is
+/// still useful.
+///
+/// The payload emits two body shapes today:
+///
+///   1. Bare token, e.g. `"fs_delete_path_not_allowed"` (no JSON).
+///   2. JSON with `"error"` + optional `"detail"` + tx-context.
+///
+/// This parser ignores (1) — the raw error string already carries the
+/// token verbatim, and there's nothing further to humanize. (2) is
+/// where the value comes from.
+fn extract_payload_error(err: &anyhow::Error) -> (Option<String>, Option<String>) {
+    // Each cause in the chain has a Display impl. We look for an
+    // embedded `{...}` substring with our shape inside.
+    for cause in err.chain() {
+        let s = cause.to_string();
+        // Cheap pre-filter: skip causes that obviously don't contain a
+        // JSON object so we don't pay the regex/parser cost.
+        let Some(open) = s.find('{') else { continue };
+        let close = match s.rfind('}') {
+            Some(c) if c > open => c,
+            _ => continue,
+        };
+        let candidate = &s[open..=close];
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(candidate);
+        if let Ok(v) = parsed {
+            let reason = v
+                .get("error")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+            let detail = v
+                .get("detail")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+            if reason.is_some() || detail.is_some() {
+                return (reason, detail);
+            }
+        }
+    }
+    (None, None)
 }
 
 /// Sum file sizes recursively under `root`. Used by transfer_dir_handler
@@ -527,6 +606,8 @@ impl Drop for JobFailOnDropGuard {
                 // whole closure, which adds complexity for marginal
                 // user-facing benefit.
                 error: "engine task panicked (see engine logs)".to_string(),
+                error_reason: None,
+                error_detail: None,
             },
         );
     }
@@ -1694,15 +1775,27 @@ async fn transfer_file_handler(
     Json(req): Json<TransferFileReq>,
 ) -> impl IntoResponse {
     let addr = req.addr.unwrap_or_else(|| state.default_ps5_addr.clone());
+    // Track whether the caller minted+supplied a tx_id (resume-capable
+    // client) vs. asked us to mint one (fresh attempt with no prior
+    // partial). Mirrors the dir handler's contract — a caller-supplied
+    // tx_id signals "adopt the payload's existing entry for this id if
+    // it has one." We pass TX_FLAG_RESUME on the very first BeginTx so
+    // an interrupted prior upload's last_acked_shard is honored.
+    let caller_supplied_tx_id = req.tx_id.is_some();
     let tx_id = match parse_or_random_tx_id(req.tx_id.as_deref()) {
         Ok(id) => id,
         Err(e) => return json_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    let initial_flags = if caller_supplied_tx_id {
+        TX_FLAG_RESUME
+    } else {
+        0
     };
 
     let job_id = Uuid::new_v4();
     let started_at_ms = now_ms();
     crate::log_info!(
-        "transfer_file: job={job_id} addr={addr} src={} dest={}",
+        "transfer_file: job={job_id} addr={addr} src={} dest={} resume={caller_supplied_tx_id}",
         req.src,
         req.dest
     );
@@ -1784,17 +1877,86 @@ async fn transfer_file_handler(
         let mut cfg = make_transfer_config(&addr);
         cfg.progress_bytes = Some(Arc::clone(&progress));
         apply_per_request_bandwidth(&mut cfg, bandwidth_cap);
-        // Resume-on-drop for single-file uploads: 1 fresh attempt + 2
-        // retries. Without this wrapper a connection hiccup on a multi-
-        // GiB single-file upload (e.g. a .pkg / .ffpkg image) would be
-        // unrecoverable without a full re-transfer.
+
+        // Pre-flight free-space check. Catches the most common cause
+        // of mid-stream `direct_writer_io_error` failures (PS5
+        // destination drive ran out of space) before the user wastes
+        // an hour uploading bytes that can't fit. Runs inside this
+        // spawn_blocking task — the ~200-500 ms list_volumes round-
+        // trip doesn't slow the API response, and any failure
+        // surfaces as a Failed job with the standard error-card
+        // plumbing (humanized hint + raw detail).
+        //
+        // We skip the check on resume attempts (caller_supplied_tx_id):
+        // the destination already has shards from a prior attempt, so
+        // free_bytes < total_bytes is the EXPECTED state — the bytes
+        // we need to write are smaller than total minus what's
+        // already there. Skipping avoids a false-positive block on
+        // every Retry click for a long-running upload.
+        //
+        // Errors during the check (network blip, payload restarting)
+        // are non-fatal: we log and proceed with the upload. Better
+        // UX than refusing a transfer that might have succeeded.
+        if !caller_supplied_tx_id {
+            let mgmt = mgmt_addr_for(&addr);
+            match list_volumes(&mgmt) {
+                Ok(vlist) => {
+                    if let Some(vol) = vlist.find_for_path(&req.dest) {
+                        if vol.free_bytes < total_bytes {
+                            let short = total_bytes - vol.free_bytes;
+                            let completed_at_ms = now_ms();
+                            set_job(
+                                &jobs,
+                                &events_tx,
+                                job_id,
+                                JobState::Failed {
+                                    started_at_ms,
+                                    completed_at_ms,
+                                    elapsed_ms: completed_at_ms
+                                        .saturating_sub(started_at_ms),
+                                    error: format!(
+                                        "Destination volume `{}` has only {} bytes free, but the source file is {} bytes ({} short).",
+                                        vol.path, vol.free_bytes, total_bytes, short
+                                    ),
+                                    error_reason: Some(
+                                        "preflight_insufficient_space".to_string(),
+                                    ),
+                                    error_detail: Some(format!(
+                                        "{} short by {} bytes (have {}, need {}).",
+                                        vol.path, short, vol.free_bytes, total_bytes
+                                    )),
+                                },
+                            );
+                            fail_guard.mark_succeeded();
+                            return;
+                        }
+                    }
+                    // No matching volume: don't block — better to let
+                    // the upload try than to refuse on a stale or
+                    // incomplete volume table.
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[preflight] free-space check failed for {addr}: {e:#}; proceeding with upload"
+                    );
+                }
+            }
+        }
+
+        // Resume-on-drop for single-file uploads: 1 fresh attempt + 5
+        // retries. WiFi-only PS5s see multi-hour uploads of 50+ GiB
+        // images, and a stack of 5 retries with exponential backoff
+        // (500 ms → 8 s capped) survives several wifi blips per upload
+        // before giving up. The lower 2-retry cap was tuned for wired
+        // gigabit; WiFi reality needs more headroom.
         //
         // The path-based core reads one shard at a time. It avoids both
         // whole-file Vec allocation and mmap address-space/page-cache
         // failure modes that can look like OOM on Windows/Linux with
         // 50-100 GiB game images.
         let src_path = std::path::PathBuf::from(&req.src);
-        let result = transfer_file_path_resumable(&cfg, tx_id, &req.dest, &src_path, 2);
+        let result =
+            transfer_file_path_resumable(&cfg, tx_id, &req.dest, &src_path, 5, initial_flags);
         let files_sent_count: u64 = 1;
         let skipped_files_count: u64 = 0;
         let skipped_bytes_count: u64 = 0;
@@ -1826,12 +1988,7 @@ async fn transfer_file_handler(
                     &jobs,
                     &events_tx,
                     job_id,
-                    JobState::Failed {
-                        started_at_ms,
-                        completed_at_ms,
-                        elapsed_ms: completed_at_ms.saturating_sub(started_at_ms),
-                        error: e.to_string(),
-                    },
+                    job_failed_from_err(started_at_ms, completed_at_ms, &e),
                 )
             }
         }
@@ -1962,12 +2119,7 @@ async fn transfer_dir_handler(
                     &jobs,
                     &events_tx,
                     job_id,
-                    JobState::Failed {
-                        started_at_ms,
-                        completed_at_ms,
-                        elapsed_ms: completed_at_ms.saturating_sub(started_at_ms),
-                        error: e.to_string(),
-                    },
+                    job_failed_from_err(started_at_ms, completed_at_ms, &e),
                 )
             }
         }
@@ -2104,12 +2256,7 @@ async fn transfer_file_list_handler(
                     &jobs,
                     &events_tx,
                     job_id,
-                    JobState::Failed {
-                        started_at_ms,
-                        completed_at_ms,
-                        elapsed_ms: completed_at_ms.saturating_sub(started_at_ms),
-                        error: e.to_string(),
-                    },
+                    job_failed_from_err(started_at_ms, completed_at_ms, &e),
                 )
             }
         }
@@ -2342,12 +2489,7 @@ async fn transfer_download_handler(
                     &jobs,
                     &events_tx,
                     job_id,
-                    JobState::Failed {
-                        started_at_ms,
-                        completed_at_ms,
-                        elapsed_ms: completed_at_ms.saturating_sub(started_at_ms),
-                        error: e.to_string(),
-                    },
+                    job_failed_from_err(started_at_ms, completed_at_ms, &e),
                 );
             }
         }
@@ -2581,6 +2723,8 @@ async fn transfer_dir_reconcile_handler(
                                 completed_at_ms,
                                 elapsed_ms: completed_at_ms.saturating_sub(started_at_ms),
                                 error: format!("can't read source folder: {walk_err}"),
+                                error_reason: None,
+                                error_detail: None,
                             },
                         );
                         fail_guard.mark_succeeded();
@@ -2713,12 +2857,7 @@ async fn transfer_dir_reconcile_handler(
                     &jobs,
                     &events_tx,
                     job_id,
-                    JobState::Failed {
-                        started_at_ms,
-                        completed_at_ms,
-                        elapsed_ms: completed_at_ms.saturating_sub(started_at_ms),
-                        error: e.to_string(),
-                    },
+                    job_failed_from_err(started_at_ms, completed_at_ms, &e),
                 )
             }
         }
@@ -3194,5 +3333,133 @@ mod helpers_tests {
             n > 1_700_000_000_000,
             "now_ms should be reasonable epoch ms"
         );
+    }
+
+    // ── extract_payload_error — Phase B error parser ───────────────────────
+
+    #[test]
+    fn extract_payload_error_plain_string_returns_none() {
+        let e = anyhow::anyhow!("just a plain error with no json");
+        let (r, d) = extract_payload_error(&e);
+        assert_eq!(r, None);
+        assert_eq!(d, None);
+    }
+
+    #[test]
+    fn extract_payload_error_finds_both_fields() {
+        let e = anyhow::anyhow!(
+            "CommitTx rejected (Error): {{\"error\":\"direct_writer_io_error\",\"tx_id\":\"abc\",\"detail\":\"writer thread reported a disk write error mid-stream\"}}"
+        );
+        let (r, d) = extract_payload_error(&e);
+        assert_eq!(r.as_deref(), Some("direct_writer_io_error"));
+        assert_eq!(
+            d.as_deref(),
+            Some("writer thread reported a disk write error mid-stream")
+        );
+    }
+
+    #[test]
+    fn extract_payload_error_finds_only_error_when_detail_absent() {
+        let e = anyhow::anyhow!("rejected: {{\"error\":\"fs_delete_path_not_allowed\"}}");
+        let (r, d) = extract_payload_error(&e);
+        assert_eq!(r.as_deref(), Some("fs_delete_path_not_allowed"));
+        assert_eq!(d, None);
+    }
+
+    #[test]
+    fn extract_payload_error_finds_only_detail_when_error_absent() {
+        let e = anyhow::anyhow!("ack body: {{\"detail\":\"freestanding detail\"}}");
+        let (r, d) = extract_payload_error(&e);
+        assert_eq!(r, None);
+        assert_eq!(d.as_deref(), Some("freestanding detail"));
+    }
+
+    #[test]
+    fn extract_payload_error_walks_chain() {
+        let inner = anyhow::anyhow!(
+            "payload body: {{\"error\":\"direct_tx_corrupt\",\"detail\":\"shard 4 hash mismatch\"}}"
+        );
+        let outer = inner.context("transfer_file failed");
+        let (r, d) = extract_payload_error(&outer);
+        assert_eq!(r.as_deref(), Some("direct_tx_corrupt"));
+        assert_eq!(d.as_deref(), Some("shard 4 hash mismatch"));
+    }
+
+    #[test]
+    fn extract_payload_error_open_brace_without_close_skips() {
+        // Defensive — a malformed log line should not crash the parser
+        // or accidentally match a partial substring.
+        let e = anyhow::anyhow!("error log opening {{ but no close");
+        let (r, d) = extract_payload_error(&e);
+        assert_eq!(r, None);
+        assert_eq!(d, None);
+    }
+
+    #[test]
+    fn extract_payload_error_unparseable_json_skips() {
+        // The `{...}` substring exists but isn't valid JSON. Parser
+        // must skip (not crash, not match) and continue down the chain.
+        let e = anyhow::anyhow!("garbage {{not valid json at all}}");
+        let (r, d) = extract_payload_error(&e);
+        assert_eq!(r, None);
+        assert_eq!(d, None);
+    }
+
+    #[test]
+    fn extract_payload_error_ignores_non_string_fields() {
+        // Defensive against a future payload variant emitting `error: 42`
+        // — we want a clean (None, None) rather than a stringified int.
+        let e = anyhow::anyhow!("body: {{\"error\":42,\"detail\":null}}");
+        let (r, d) = extract_payload_error(&e);
+        assert_eq!(r, None);
+        assert_eq!(d, None);
+    }
+
+    // ── job_failed_from_err integration ────────────────────────────────────
+
+    #[test]
+    fn job_failed_from_err_populates_reason_and_detail() {
+        let inner = anyhow::anyhow!(
+            "CommitTx rejected: {{\"error\":\"preflight_insufficient_space\",\"detail\":\"/mnt/ext0 short by 28 GiB\"}}"
+        );
+        let outer = inner.context("transfer pipeline failed at COMMIT");
+        let state = job_failed_from_err(1000, 2000, &outer);
+        match state {
+            JobState::Failed {
+                error,
+                error_reason,
+                error_detail,
+                elapsed_ms,
+                ..
+            } => {
+                assert_eq!(
+                    error_reason.as_deref(),
+                    Some("preflight_insufficient_space")
+                );
+                assert_eq!(error_detail.as_deref(), Some("/mnt/ext0 short by 28 GiB"));
+                assert_eq!(elapsed_ms, 1000);
+                // Raw error chain preserved so the UI's "View raw"
+                // expander has full context.
+                assert!(error.contains("CommitTx rejected"));
+            }
+            _ => panic!("expected Failed state"),
+        }
+    }
+
+    #[test]
+    fn job_failed_from_err_with_plain_error_leaves_structured_fields_none() {
+        let e = anyhow::anyhow!("network blip mid-transfer");
+        let state = job_failed_from_err(0, 500, &e);
+        match state {
+            JobState::Failed {
+                error_reason,
+                error_detail,
+                ..
+            } => {
+                assert_eq!(error_reason, None);
+                assert_eq!(error_detail, None);
+            }
+            _ => panic!("expected Failed state"),
+        }
     }
 }

@@ -605,6 +605,16 @@ fn transfer_file_with_flags(
     // unreachable; for resume attempts (flags=TX_FLAG_RESUME) it's how
     // we know where to pick up.
     let last_acked_shard = parse_last_acked_shard(&begin_ack, flags & TX_FLAG_RESUME != 0);
+    // Defensive: see comment on the same check in the path variant
+    // (`transfer_file_path_with_flags`). A `last_acked_shard >
+    // total_shards` value would otherwise produce a ghost commit
+    // here too.
+    if total_shards > 0 && last_acked_shard > total_shards {
+        bail!(
+            "payload reported last_acked_shard={last_acked_shard} > total_shards={total_shards}; \
+             refusing to commit a transfer that hasn't been transmitted"
+        );
+    }
 
     // `shards_sent` counts only what this call actually transmitted — on a
     // resume, shards 1..=last_acked_shard are skipped because they're
@@ -664,19 +674,17 @@ fn transfer_file_with_flags(
 /// That's still correct (the payload overwrites on direct-write, and
 /// spool-then-apply dedups on shard_seq), but slower than the true
 /// resume path.
+/// Slice-based counterpart to `transfer_file_path_resumable`. Same
+/// `initial_flags` contract — see that function's doc comment.
 pub fn transfer_file_resumable(
     cfg: &TransferConfig,
     tx_id: [u8; 16],
     dest: &str,
     data: &[u8],
     max_retries: u32,
+    initial_flags: u32,
 ) -> Result<TransferResult> {
-    // Single-file uploads don't currently have a cross-session resume
-    // flow (no persisted tx_id → no opportunity to re-supply one), so
-    // initial_flags=0 is the only sensible value here. If that ever
-    // changes, thread an initial_flags parameter through the way the
-    // dir/file_list wrappers do.
-    resumable_retry(max_retries, "transfer_file", 0, |flags| {
+    resumable_retry(max_retries, "transfer_file", initial_flags, |flags| {
         transfer_file_with_flags(cfg, tx_id, dest, data, flags)
     })
 }
@@ -718,6 +726,21 @@ fn transfer_file_path_with_flags(
         FrameType::BeginTxAck,
     )?;
     let last_acked_shard = parse_last_acked_shard(&begin_ack, flags & TX_FLAG_RESUME != 0);
+    // Defensive: a payload reporting last_acked_shard >= total_shards
+    // would otherwise cause the engine to skip the entire send loop
+    // and immediately COMMIT — a "ghost commit" that finalises a tx
+    // with no actual bytes from this attempt. That's only valid if
+    // the prior attempt truly completed all shards; otherwise it's a
+    // payload bookkeeping bug we should surface, not silently
+    // collude with. (Specifically allow `==` since a fully-acked
+    // prior attempt that lost only the COMMIT_TX round-trip is a
+    // legitimate "all shards in journal, just need to commit" case.)
+    if total_shards > 0 && last_acked_shard > total_shards {
+        bail!(
+            "payload reported last_acked_shard={last_acked_shard} > total_shards={total_shards}; \
+             refusing to commit a transfer that hasn't been transmitted"
+        );
+    }
 
     let mut shards_sent = 0u64;
     {
@@ -769,14 +792,29 @@ fn transfer_file_path_with_flags(
     })
 }
 
+/// `transfer_file_path` with automatic resume-on-network-drop.
+///
+/// `initial_flags` controls the very first BEGIN_TX: pass `0` for a
+/// fresh upload (random or newly-minted tx_id), or `TX_FLAG_RESUME`
+/// when handing in a tx_id that the payload is expected to already
+/// know about (user-initiated resume after a prior failure). Retries
+/// always use `TX_FLAG_RESUME`. Mirrors `transfer_dir_resumable`'s
+/// contract.
+///
+/// The payload's `TX_FLAG_RESUME` is a no-op when the tx_id is unknown
+/// (falls through to fresh-allocate), so it's safe to always pass
+/// `TX_FLAG_RESUME` even on the first attempt — the flag is effectively
+/// "adopt the existing entry if you have one." That's the pattern the
+/// folder uploader uses; the file uploader follows it now.
 pub fn transfer_file_path_resumable(
     cfg: &TransferConfig,
     tx_id: [u8; 16],
     dest: &str,
     src: &Path,
     max_retries: u32,
+    initial_flags: u32,
 ) -> Result<TransferResult> {
-    resumable_retry(max_retries, "transfer_file_path", 0, |flags| {
+    resumable_retry(max_retries, "transfer_file_path", initial_flags, |flags| {
         transfer_file_path_with_flags(cfg, tx_id, dest, src, flags)
     })
 }

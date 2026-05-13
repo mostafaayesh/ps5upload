@@ -1,6 +1,11 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { create } from "zustand";
-import { t as translate, type LanguageCode } from "../i18n";
+import {
+  t as translate,
+  ensureLocale,
+  subscribeLocaleLoaded,
+  type LanguageCode,
+} from "../i18n";
 
 const STORAGE_KEY = "ps5upload.lang";
 
@@ -68,6 +73,11 @@ export const useLangStore = create<LangState>((set) => ({
     window.localStorage.setItem(STORAGE_KEY, lang);
     applyLang(lang);
     set({ lang });
+    // Kick off the lazy chunk fetch for the newly selected locale.
+    // `t()` falls back to English until the import resolves; the
+    // load-listener subscribed in `useTr()` re-renders consumers as
+    // soon as the dict is in the cache.
+    if (lang !== "en") void ensureLocale(lang);
   },
 }));
 
@@ -75,6 +85,14 @@ export const useLangStore = create<LangState>((set) => ({
 // first paint — avoids LTR-to-RTL flicker for Arabic users.
 if (typeof document !== "undefined") {
   applyLang(initialLang());
+}
+// Trigger the initial locale's chunk fetch as soon as the module loads
+// (most users boot into a locale they've used before, stored in
+// localStorage — kicking off the import here means it's racing the
+// React render rather than waiting for the first `setLang()` call).
+{
+  const lang0 = initialLang();
+  if (lang0 !== "en") void ensureLocale(lang0);
 }
 
 /**
@@ -122,6 +140,14 @@ export interface Translator {
 
 export function useTr(): Translator {
   const lang = useLangStore((s) => s.lang);
+  // `bump` increments every time *any* locale finishes its lazy load.
+  // Components using `useTr()` need to re-render at that moment so the
+  // freshly-cached dictionary replaces the temporary English fallback
+  // they've been showing during the import. Without this hook, a user
+  // switching to Japanese would stay on English until something else
+  // unrelated triggered their next render.
+  const [bump, setBump] = useState(0);
+  useEffect(() => subscribeLocaleLoaded(() => setBump((n) => n + 1)), []);
   return useCallback<Translator>(
     (
       key: string,
@@ -142,6 +168,13 @@ export function useTr(): Translator {
       if (result === key && fb !== undefined) return fb;
       return result;
     },
-    [lang],
+    // `bump` is intentionally part of the dep list so the closure is
+    // re-created when a lazy locale resolves; without it, components
+    // that ran `useTr` once would keep the stale closure with the old
+    // lookup table. exhaustive-deps thinks the dep is unused because
+    // it's not referenced in the body — it's the *signal*, not the
+    // input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lang, bump],
   );
 }

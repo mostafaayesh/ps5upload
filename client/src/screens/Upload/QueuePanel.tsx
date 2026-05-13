@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../components";
+import { humanizeJobErrorReason } from "../../api/ps5";
 import { formatBytes, formatDuration } from "../../lib/format";
 import { useTr } from "../../state/lang";
 import {
@@ -335,11 +336,58 @@ function QueueRow({
       )}
 
       {item.status === "failed" && item.error && (
-        <div className="mt-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-2)] p-2 text-[11px] text-[var(--color-bad)]">
-          {item.error}
-        </div>
+        <FailedRowErrorCard
+          rawError={item.error}
+          reason={item.errorReason}
+          detail={item.errorDetail}
+        />
       )}
     </li>
+  );
+}
+
+/** Layered error card: humanized hint first (if we recognize the
+ *  payload's `error_reason`), then the payload's `detail` string,
+ *  then a collapsed `<details>` carrying the raw error chain for
+ *  power-user debugging. Falls back to plain raw-error rendering when
+ *  no structured fields are present (engine-internal failures, older
+ *  payloads). */
+function FailedRowErrorCard({
+  rawError,
+  reason,
+  detail,
+}: {
+  rawError: string;
+  reason: string | null;
+  detail: string | null;
+}) {
+  const humanized = humanizeJobErrorReason(reason ?? undefined);
+  return (
+    <div className="mt-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-2)] p-2 text-[11px] text-[var(--color-bad)]">
+      {humanized ? (
+        <>
+          <div className="font-medium">{humanized}</div>
+          {detail && (
+            <div className="mt-1 text-[10px] text-[var(--color-muted)]">
+              {detail}
+            </div>
+          )}
+          <details className="mt-1 cursor-pointer">
+            <summary className="text-[10px] text-[var(--color-muted)] hover:text-[var(--color-text)]">
+              raw error
+            </summary>
+            <code className="mt-1 block whitespace-pre-wrap break-all font-mono text-[10px] text-[var(--color-muted)]">
+              {rawError}
+              {reason && `\n[reason: ${reason}]`}
+            </code>
+          </details>
+        </>
+      ) : (
+        <code className="block whitespace-pre-wrap break-all font-mono text-[11px]">
+          {rawError}
+        </code>
+      )}
+    </div>
   );
 }
 

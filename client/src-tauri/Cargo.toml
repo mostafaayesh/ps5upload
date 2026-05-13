@@ -1,6 +1,6 @@
 [package]
 name = "ps5upload-desktop"
-version = "2.3.0"
+version = "2.4.0"
 description = "The all-in-one PS5 companion app."
 edition = "2021"
 rust-version = "1.77"
@@ -69,6 +69,13 @@ blake3 = "1"
 # as base64 so the renderer can use them as a `data:` URL for image
 # previews. Pure-Rust, no system deps.
 base64 = "0.22"
+
+# Save-data backup/restore as .zip archives. Pure-Rust deflate backend
+# (no system zlib linkage) so cross-compilation stays single-toolchain.
+# Default features pull in bzip2/zstd C libs we don't need — opt in to
+# `deflate` only. Used from commands/save_archive.rs to zip a downloaded
+# save folder into <title_id>.zip and validate/extract restore zips.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # mDNS service discovery for the Connection screen's "Find PS5s on the
 # network" button. Pure-Rust implementation — no system avahi/bonjour

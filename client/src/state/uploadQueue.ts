@@ -9,6 +9,7 @@ import {
   startTransferFile,
   uploadQueueLoad,
   uploadQueueSave,
+  UploadJobError,
   type ReconcileMode,
 } from "../api/ps5";
 import {
@@ -108,6 +109,16 @@ export interface QueueItem {
    *  about an image that mounted successfully but won't register. */
   mountWarnings: string[];
   error: string | null;
+  /** Payload-side error category, when the failure originated from a
+   *  PS5 protocol error frame (e.g. `direct_writer_io_error`,
+   *  `fs_write_failed_errno_28`). Used by the UI to render a
+   *  humanized hint via `humanizeJobErrorReason`. null for failures
+   *  that didn't come from the payload (local I/O, connection refuse). */
+  errorReason: string | null;
+  /** Free-form human-readable detail string from the payload's error
+   *  frame `"detail"` field. Shown as the secondary line under the
+   *  humanized hint when present. */
+  errorDetail: string | null;
   addedAt: number;
   startedAt: number | null;
   completedAt: number | null;
@@ -242,14 +253,20 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         bandwidthCap,
       );
     } else {
-      // Single-file uploads don't have a cross-session resume flow
-      // payload-side today (the engine mints its own tx_id), so the
-      // persisted txIdHex is unused here. Kept on the item anyway so
-      // the schema stays uniform across kinds.
+      // Single-file uploads now thread the persisted txIdHex through
+      // too. The engine sets TX_FLAG_RESUME when a caller-supplied
+      // tx_id is present, which is a no-op on the very first attempt
+      // (payload doesn't know the id yet, falls through to fresh-
+      // allocate) but lets a subsequent attempt for the SAME queue
+      // item — typically after wifi-drop retries are exhausted and the
+      // user clicks "Retry / Resume" — pick up from the payload's
+      // last-acked shard instead of restarting from zero. Same pattern
+      // as folder uploads.
       jobId = await startTransferFile(
         item.sourcePath,
         item.resolvedDest,
         item.addr,
+        item.txIdHex,
       );
     }
 
@@ -397,6 +414,12 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           // can blindly read .mountWarnings.length without optional-
           // chaining at every site.
           if (!Array.isArray(next.mountWarnings)) next.mountWarnings = [];
+          // Back-fill the structured-error fields added when payload
+          // failure-reason surfacing landed: older docs only carry the
+          // flat `error` string; null these so the UI doesn't read
+          // undefined and crash on `.startsWith` etc.
+          if (next.errorReason === undefined) next.errorReason = null;
+          if (next.errorDetail === undefined) next.errorDetail = null;
           return next;
         });
         set({
@@ -433,6 +456,8 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         mountedAt: null,
         mountWarnings: [],
         error: null,
+        errorReason: null,
+        errorDetail: null,
         addedAt: Date.now(),
         startedAt: null,
         completedAt: null,
@@ -495,6 +520,8 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
               totalBytes: 0,
               bytesPerSec: 0,
               error: null,
+              errorReason: null,
+              errorDetail: null,
             }),
           }));
           scheduleSave();
@@ -527,11 +554,23 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           } catch (e) {
             if (!isLive()) return;
             const message = e instanceof Error ? e.message : String(e);
+            // Lift the structured payload error fields onto the item
+            // if waitForJob's thrown error carries them. UI uses these
+            // to render a humanized hint via `humanizeJobErrorReason`
+            // — without the structured fields the user just sees the
+            // raw chain (which often ends in {"error":"…","detail":"…"}
+            // JSON that's hard to read in a queue row).
+            const reason =
+              e instanceof UploadJobError ? (e.reason ?? null) : null;
+            const detail =
+              e instanceof UploadJobError ? (e.detail ?? null) : null;
             set((s) => ({
               items: patchItem(s.items, next.id, {
                 status: "failed",
                 bytesPerSec: 0,
                 error: message,
+                errorReason: reason,
+                errorDetail: detail,
                 completedAt: Date.now(),
               }),
             }));

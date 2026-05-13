@@ -550,7 +550,7 @@ fn transfer_file_resumes_after_mid_stream_drop() {
         }
     });
 
-    let result = transfer_file_resumable(&cfg, tx_id, "/data/resume.bin", &data, 3)
+    let result = transfer_file_resumable(&cfg, tx_id, "/data/resume.bin", &data, 3, 0)
         .expect("resumable transfer must succeed after reconnect");
     watcher.join().unwrap();
 
@@ -596,12 +596,96 @@ fn transfer_with_resume_flag_on_fresh_txid_is_noop() {
     // uses flags=0 (fresh BeginTx). This test just exercises the code
     // path to prove transfer_file_resumable behaves identically to
     // transfer_file when nothing fails.
-    let result = transfer_file_resumable(&cfg, tx_id, "/data/fresh.bin", &data, 0).unwrap();
+    let result = transfer_file_resumable(&cfg, tx_id, "/data/fresh.bin", &data, 0, 0).unwrap();
     assert_eq!(result.bytes_sent, data.len() as u64);
     let st = srv.state.lock().unwrap();
     assert_eq!(
         st.applied.get("/data/fresh.bin").unwrap().as_slice(),
         data.as_slice()
+    );
+}
+
+/// Single-file user-initiated resume: caller supplies the same tx_id
+/// as a prior (interrupted) attempt, with `initial_flags=TX_FLAG_RESUME`.
+/// The mock has 3 shards already journalled from the prior run; the
+/// new attempt must skip those and send only shards 4..=10 — that's
+/// the protocol contract we wire up for the user-clicked Retry/Resume
+/// flow on a failed single-file upload (e.g. WiFi-drop on a 64 GiB
+/// image). Mirrors the directory uploader's resume contract.
+#[test]
+fn transfer_file_resumable_with_initial_resume_flag_skips_acked_shards() {
+    use ps5upload_core::transfer::TX_FLAG_RESUME;
+    let srv = MockServer::start();
+    // Plant a pre-existing interrupted tx with last_acked_shard=3 so a
+    // resume attempt sees the mock report "you're already at 3 — send
+    // shards 4-10." (Spool isn't populated because this test cares about
+    // the resume *contract* — which shards the sender sends — not about
+    // mock-side reassembly of pre-existing partial bytes.)
+    let tx_id = random_tx_id();
+    srv.plant_interrupted_tx(tx_id, "/data/userresume.bin", 10, 3);
+    let cfg = TransferConfig {
+        shard_size: 1024,
+        ..TransferConfig::new(&srv.addr)
+    };
+    let data: Vec<u8> = (0u32..10_240).map(|i| (i & 0xFF) as u8).collect();
+
+    // initial_flags=TX_FLAG_RESUME — the very first BeginTx asks the
+    // mock to adopt the existing entry. max_retries=0 means we expect
+    // success on the first attempt; no need to drop the connection.
+    let result = transfer_file_resumable(
+        &cfg,
+        tx_id,
+        "/data/userresume.bin",
+        &data,
+        0,
+        TX_FLAG_RESUME,
+    )
+    .expect("resumable transfer with supplied tx_id must succeed");
+
+    // The contract assertions: bytes_sent reflects the full plan size
+    // (regardless of resume split), shards_sent reflects only what
+    // this attempt actually transmitted.
+    assert_eq!(result.bytes_sent, data.len() as u64);
+    assert_eq!(
+        result.shards_sent, 7,
+        "first (and only) attempt sent shards 4..=10; shards 1-3 already on mock"
+    );
+    // Mock should record 3 (planted) + 7 (new) = 10 received shards
+    // total, and the tx state should be committed (not interrupted).
+    let st = srv.state.lock().unwrap();
+    let tx_hex = result.tx_id_hex.clone();
+    let tx = st.txs.get(&tx_hex).expect("tx present after commit");
+    assert_eq!(
+        tx.shards_received, 10,
+        "all 10 shards received across attempts"
+    );
+    assert_eq!(tx.state, "committed");
+}
+
+/// Defensive: if the payload (bug or stale state) reports
+/// `last_acked_shard > total_shards`, the engine must REFUSE to
+/// commit, not blindly send zero shards and finalize the tx. That
+/// would produce a "ghost commit" — an upload finalised against a
+/// destination that has only a partial prior attempt's bytes.
+#[test]
+fn transfer_file_refuses_ghost_commit_on_bogus_last_acked() {
+    use ps5upload_core::transfer::TX_FLAG_RESUME;
+    let srv = MockServer::start();
+    // Plant a tx where shards_received is impossibly high (15 > 10).
+    let tx_id = random_tx_id();
+    srv.plant_interrupted_tx(tx_id, "/data/ghost.bin", 10, 15);
+    let cfg = TransferConfig {
+        shard_size: 1024,
+        ..TransferConfig::new(&srv.addr)
+    };
+    let data: Vec<u8> = vec![0u8; 10_240]; // would fit in 10 shards
+
+    let r = transfer_file_resumable(&cfg, tx_id, "/data/ghost.bin", &data, 0, TX_FLAG_RESUME);
+    assert!(r.is_err(), "engine must refuse bogus last_acked_shard");
+    let err_str = r.unwrap_err().to_string();
+    assert!(
+        err_str.contains("last_acked_shard") && err_str.contains("total_shards"),
+        "error should explain the discrepancy: {err_str}"
     );
 }
 

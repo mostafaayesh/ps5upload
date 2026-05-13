@@ -35,7 +35,7 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const I18N_PATH = path.join(repoRoot, "client/src/i18n.ts");
+const LOCALES_DIR = path.join(repoRoot, "client/src/i18n/locales");
 const ALLOWLIST_PATH = path.join(repoRoot, "scripts/i18n-known-missing.json");
 
 const args = process.argv.slice(2);
@@ -43,46 +43,80 @@ const updateAllowlist = args.includes("--update-allowlist");
 const report = args.includes("--report");
 
 /**
- * Load `client/src/i18n.ts` data block.
+ * Load translations from the per-locale split layout under
+ * `client/src/i18n/locales/<code>.ts`.
  *
- * The file is plain TS with no runtime imports — its only runtime
- * surface is the `const translations = { ... }` object literal. We
- * extract that literal as a string and evaluate it in an isolated
- * V8 context (vm.runInNewContext) so type aliases, function bodies,
- * and the `export default` line don't trip up the parser.
+ * Each locale file is plain TS with one runtime surface: a top-level
+ * `const <safeId>: Translations = { ... }` object literal followed by
+ * `export default <safeId>;`. We extract that literal as a string and
+ * evaluate it in an isolated V8 context (`vm.runInNewContext`) so the
+ * `import type` line + `export default` don't trip up the parser.
  *
- * Why vm rather than `new Function()` or `eval`: vm.runInNewContext
- * runs in a fresh global with no access to require, process, fs, or
- * the surrounding closures — the strongest sandbox Node ships
- * without spawning a subprocess. The input here is repo-controlled
- * source we ship to users anyway, so the threat model is "did
- * someone commit a malformed literal" rather than "did someone
- * inject code via the file" — but the isolation costs nothing.
+ * The locale ID inside the file uses underscores (e.g. `zh_CN`) to
+ * stay a valid JS identifier; the filename keeps the canonical
+ * hyphenated form (`zh-CN.ts`). Both this script and the runtime
+ * code rely on the filename — the in-file identifier is internal.
  *
- * Why not `import("./i18n.ts")` directly: Node can't load .ts files
- * without a TS loader (tsx, ts-node) which we'd then need to install
- * as a script-only dep. Doing the extraction inline keeps the
- * dependency graph minimal.
+ * Why vm.runInNewContext: runs in a fresh global with no access to
+ * require/process/fs/etc — the strongest sandbox Node ships without
+ * spawning a subprocess.
+ *
+ * Why not `import(...)` directly: Node can't load .ts files without
+ * a TS loader (tsx, ts-node) which we'd need to install as a script-
+ * only dep. Extracting the literal inline keeps the dep graph
+ * minimal.
+ *
+ * Replaces the older monolithic `client/src/i18n.ts` scanner
+ * (extracted a single `const translations = { ... }` block). The
+ * locale-split refactor moved each locale to its own file so Vite
+ * could chunk-split the i18n bundle by ~50 KB lazy-load groups.
  */
 function loadTranslations() {
-  const src = fs.readFileSync(I18N_PATH, "utf8");
-  const startIdx = src.search(/^const translations\s*=\s*/m);
-  if (startIdx < 0) {
-    throw new Error("i18n.ts: could not find 'const translations =' declaration");
+  if (!fs.existsSync(LOCALES_DIR)) {
+    throw new Error(
+      `i18n locales dir not found: ${LOCALES_DIR} ` +
+        "(expected one file per locale, e.g. en.ts, zh-CN.ts, …)",
+    );
   }
-  const cutoff = src.indexOf("export type LanguageCode");
-  if (cutoff < 0) {
-    throw new Error("i18n.ts: could not find 'export type LanguageCode' marker");
+  const files = fs
+    .readdirSync(LOCALES_DIR)
+    .filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"));
+  const translations = {};
+  for (const f of files) {
+    const code = f.replace(/\.ts$/, "");
+    const fp = path.join(LOCALES_DIR, f);
+    const src = fs.readFileSync(fp, "utf8");
+    // Find the object literal: `const <id>: Translations = { ... };`
+    // The id might contain underscores for hyphenated locales
+    // (zh-CN → zh_CN inside the file). Match on any identifier.
+    const startMatch = src.match(
+      /^const\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*Translations\s*=\s*/m,
+    );
+    if (!startMatch) {
+      throw new Error(
+        `${fp}: could not find 'const <name>: Translations = ' declaration`,
+      );
+    }
+    const startIdx = startMatch.index + startMatch[0].length;
+    // The literal ends at `};` followed by the export default line.
+    // Look for `};\n\nexport default` (matches our generator's output).
+    const endMatch = src.slice(startIdx).match(/\n};\s*\n\s*export default/);
+    if (!endMatch) {
+      throw new Error(`${fp}: could not find end of literal (};\\nexport default)`);
+    }
+    const literalSrc = src.slice(
+      startIdx,
+      startIdx + endMatch.index + "\n}".length,
+    );
+    const dict = vm.runInNewContext(`(${literalSrc})`, Object.create(null), {
+      timeout: 1000,
+    });
+    translations[code] = dict;
   }
-  // Slice out just the literal assignment (cuts before the type alias
-  // + helper function block at the end of the file).
-  const literalSrc = src.slice(startIdx, cutoff)
-    .replace(/^const translations\s*=\s*/, "");
-  // Drop any trailing semicolon so we can wrap as `(\nliteral\n)`.
-  const trimmed = literalSrc.trim().replace(/;\s*$/, "");
-  return vm.runInNewContext(`(${trimmed})`, Object.create(null), {
-    timeout: 1000,
-  });
+  if (!translations.en) {
+    throw new Error("locales dir is missing en.ts (English is required)");
+  }
+  return translations;
 }
 
 function loadAllowlist() {
