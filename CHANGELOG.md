@@ -4,6 +4,22 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.5.1
+
+- **Windows release `.zip` opens in Windows Explorer again.** The
+  2.5.0 release workflow used `tar -a -c -f *.zip` (bsdtar /
+  libarchive) to wrap `PS5Upload.exe`. bsdtar streams output, so it
+  sets the zip local-header flag bit 3 ("data descriptor follows") —
+  Windows Explorer's built-in unzip rejects bit-3 zips on many
+  builds with "the compressed (zipped) folder is invalid", even
+  though 7-Zip / WinRAR / unzip open them fine. The workflow now
+  uses PowerShell's `Compress-Archive` (`.NET ZipFile`) which writes
+  sizes + CRC in the header — guaranteed openable by every Windows
+  Explorer build. If you grabbed 2.5.0 and saw the "invalid folder"
+  error, this is the fix.
+
+---
+
 ## 2.5.0
 
 - **`.jar` payloads** can now be sent — both from the Send Payload
