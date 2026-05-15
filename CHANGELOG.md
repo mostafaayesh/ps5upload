@@ -4,6 +4,34 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.5.2
+
+- **Windows `.exe` launches on a freshly-installed Windows 11**,
+  including arm64. Previous releases dynamically linked the MSVC C++
+  runtime (`VCRUNTIME140.dll`, `MSVCP140.dll`), which isn't preinstalled
+  on a vanilla Windows install — especially Windows 11 on arm64, where
+  almost nothing has pulled the Visual C++ Redistributable in yet. Users
+  saw "The code execution cannot proceed because VCRUNTIME140.dll was
+  not found." Both binaries shipped to Windows (`PS5Upload.exe` and the
+  `ps5upload-engine.exe` sidecar) now statically link the MSVC CRT via
+  `+crt-static`, so they're self-contained — no redistributable
+  required.
+- **Linux `.AppImage` launches on a freshly-installed Ubuntu 24.04+**.
+  Ubuntu 24.04 dropped `libfuse2` from the default install, which the
+  AppImage's type-2 self-mount needs at startup — so on a brand-new
+  desktop the AppImage just failed silently. The release zip now also
+  contains a `PS5Upload.sh` launcher that sets
+  `APPIMAGE_EXTRACT_AND_RUN=1` so the AppImage self-extracts to `/tmp`
+  instead of fuse-mounting — no apt install, no libfuse2, no kernel
+  module. Users with libfuse2 already installed can still run the
+  `.AppImage` directly if they prefer.
+- A new **Fresh-Install Verification Matrix** in `TESTING.md` documents
+  the historical "ships green, fails on fresh install" failure modes
+  per platform/arch and the hands-on test pass that catches them before
+  tagging.
+
+---
+
 ## 2.5.1
 
 - **Windows release `.zip` opens in Windows Explorer again.** The

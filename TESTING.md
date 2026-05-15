@@ -193,3 +193,36 @@ The 18-language `client/src/i18n.ts` table is parity-checked against English on 
 3. Run `npm run coverage` for changes that affect logic or tests.
 4. Run `make validate` for transfer/payload/storage changes when PS5 hardware is available.
 5. Let CI validate all shipped OS/arch targets and release packaging.
+
+## Fresh-Install Verification Matrix (Release Day)
+
+CI proves the binaries build. It does NOT prove they launch on a vanilla
+system that hasn't been used as a dev box. Every release artifact has at
+least one historical "ships green, fails on fresh install" failure mode:
+
+| Platform / arch       | Failure mode caught in the past                                              | Fix in tree (don't regress)                                                              |
+| --------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Windows x64 / arm64   | `VCRUNTIME140.dll not found` (no C++ Redist on fresh Win11, especially arm64) | `.cargo/config.toml` sets `+crt-static` for both MSVC targets — embeds the MSVC CRT      |
+| Windows x64 / arm64   | Windows Explorer "Extract All" → "compressed (zipped) folder is invalid"     | `release.yml` packs the .zip via `pwsh Compress-Archive` (bit-3 free), not `tar -a`      |
+| Linux x64 / arm64     | AppImage hangs / "AppImage requires FUSE" on fresh Ubuntu 24.04+              | `release.yml` ships `PS5Upload.sh` wrapper that sets `APPIMAGE_EXTRACT_AND_RUN=1`         |
+| Linux (any)           | glibc-too-new on older distros                                               | Build base is `ubuntu-24.04` (glibc 2.39) — users below 24.04 LTS are unsupported        |
+| macOS x64 / arm64     | Gatekeeper / "unidentified developer" on first run                           | Documented in README — right-click → Open. No code-signing planned.                      |
+
+Before tagging a release, run this hands-on test pass (the only fully
+reliable proof; a green CI run is necessary but not sufficient):
+
+1. **Windows x64** — fresh Win11 VM. Unzip with built-in **Extract All**.
+   Run `PS5Upload.exe`. App window must open.
+2. **Windows arm64** — same, on an arm64 VM (Surface Pro 9/X, Parallels
+   arm64, etc.).
+3. **Linux x64** — fresh Ubuntu 24.04 LTS desktop VM with no extra
+   packages. Double-click `PS5Upload.sh`. App window must open.
+4. **Linux arm64** — same, on a Raspberry Pi 5 / arm64 cloud VM.
+5. **macOS arm64** — fresh macOS Sonoma+ user account. Mount the .dmg,
+   drag to Applications, right-click → Open. App window must open.
+6. **macOS x64** — same, on an Intel Mac (real or virtualised).
+
+If any of those fails: the release is broken and needs a follow-up patch
+— see `v2.5.1` (Windows zip bit-3) and `v2.5.2` (VCRUNTIME140 /
+Linux libfuse2) for the playbook of "noticed-after-release, patched
+same day."
