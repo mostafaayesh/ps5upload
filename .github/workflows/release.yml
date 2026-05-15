@@ -408,14 +408,34 @@ jobs:
                 ls -la "$target_root" || true
                 exit 1
               fi
-              staging="$(mktemp -d)"
+              # Stage under dist/ so all paths are equally legible to
+              # both Git Bash (POSIX-y) and pwsh (native Windows) —
+              # avoids `$RUNNER_TEMP` translation surprises.
+              staging="$dist_abs/_stage"
+              mkdir -p "$staging"
               cp -v "$raw_exe" "$staging/PS5Upload.exe"
-              # `tar -a -c -f out.zip in` uses tar's "auto-format from
-              # extension" mode (bsdtar flag) to produce a zip. Ships
-              # with Windows 10+ bundled tar and works in Git Bash.
-              # Replaces 7z, which was only "soft-preinstalled" on
-              # windows-2022 and not guaranteed on windows-11-arm.
-              (cd "$staging" && tar -a -c -f "$dist_abs/PS5Upload.zip" PS5Upload.exe)
+              # Why PowerShell's Compress-Archive instead of `tar -a`:
+              # bsdtar/libarchive streams output, so it sets the local
+              # file header's general-purpose flag bit 3 ("data
+              # descriptor follows") — sizes and CRC are written AFTER
+              # the file body instead of in the header. Windows
+              # Explorer's built-in unzip rejects bit-3 zips with the
+              # opaque "the compressed (zipped) folder is invalid"
+              # error on many Windows builds, even though every other
+              # zip tool (7z, WinRAR, unzip, .NET ZipArchive) opens
+              # them fine. Compress-Archive uses .NET ZipFile, which
+              # knows the size + CRC upfront, doesn't set bit 3, and
+              # emits an archive Windows Explorer always accepts.
+              # pwsh.exe is built-in on every github-hosted Windows
+              # runner including the arm64 windows-11-arm image.
+              # Paths are passed via env (PS5UP_EXE / PS5UP_ZIP) so
+              # the pwsh command itself contains no bash-interpolated
+              # strings — eliminates the shell-injection class even
+              # though all inputs are workflow-internal.
+              rm -f "$dist_abs/PS5Upload.zip"
+              PS5UP_EXE="$staging/PS5Upload.exe" \
+              PS5UP_ZIP="$dist_abs/PS5Upload.zip" \
+                pwsh -NoProfile -Command 'Compress-Archive -LiteralPath $env:PS5UP_EXE -DestinationPath $env:PS5UP_ZIP -CompressionLevel Optimal'
               rm -rf "$staging"
               ;;
           esac
