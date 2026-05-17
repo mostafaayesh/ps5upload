@@ -3145,18 +3145,35 @@ async fn shutdown_signal() {
         .await;
     // Race the cooperative notify with platform signal handlers so
     // both manual `kill` and parent-death paths get clean drain.
+    //
+    // Signal-handler install can fail under restrictive sandboxes
+    // (Snap, Flatpak, some AppImage configs with seccomp). Prior
+    // code used `.expect()` and panicked the runtime in that case;
+    // now we fall back to "notify-only" so the engine still shuts
+    // down cooperatively when the parent process exits.
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
-        let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
-        let mut sigint = signal(SignalKind::interrupt()).expect("install SIGINT handler");
-        tokio::select! {
-            _ = notify.notified() => {}
-            _ = sigterm.recv() => {
-                eprintln!("[ps5upload-engine] SIGTERM — shutting down");
+        match (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::interrupt()),
+        ) {
+            (Ok(mut sigterm), Ok(mut sigint)) => {
+                tokio::select! {
+                    _ = notify.notified() => {}
+                    _ = sigterm.recv() => {
+                        eprintln!("[ps5upload-engine] SIGTERM — shutting down");
+                    }
+                    _ = sigint.recv() => {
+                        eprintln!("[ps5upload-engine] SIGINT — shutting down");
+                    }
+                }
             }
-            _ = sigint.recv() => {
-                eprintln!("[ps5upload-engine] SIGINT — shutting down");
+            _ => {
+                crate::log_warn!(
+                    "could not install SIGTERM/SIGINT handlers — falling back to notify-only shutdown (sandbox?)"
+                );
+                notify.notified().await;
             }
         }
     }
@@ -3346,7 +3363,12 @@ async fn main() {
     // because the PS5 couldn't reach the same listener it had to
     // download from.
     let bind = format!("0.0.0.0:{port}");
+    // Mirror to stdout (terminal users) AND the engine.log ring
+    // (post-mortem diagnosis from the desktop shell once the
+    // terminal is closed). Pre-this-fix, the startup line was
+    // println!-only and missing from `engine.log`.
     println!("[ps5upload-engine] listening on http://{bind}  (ps5={ps5_addr})");
+    crate::log_info!("listening on http://{bind}  (ps5={ps5_addr})");
     let listener = match tokio::net::TcpListener::bind(&bind).await {
         Ok(l) => l,
         Err(e) => {
