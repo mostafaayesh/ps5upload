@@ -4,6 +4,37 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.12.1
+
+Audit-fix + CI repair point release. 2.12.0's release build failed
+at link time because the bundled SDK pin (v0.38) predated the
+`getloadavg()` libc symbol our new load-average telemetry depends on
+(added in SDK v0.39). Fixing that plus seven adversarial-audit
+findings from a multi-agent pass-2 sweep:
+
+- Bumped pinned ps5-payload-sdk to v0.39 in CI + release workflows
+  so payload links cleanly against the version we develop with.
+- Hardened the SMP-meta control parser against embedded-NUL/control
+  byte injection that could false-match action prefixes.
+- Closed a race in the SMP-meta worker initializer where a concurrent
+  caller could see "watcher started" while the pthread had actually
+  failed to create.
+- Added `O_NOFOLLOW`/`O_EXCL` to the appmeta heal copy so a hostile
+  package can't symlink-redirect writes into system paths.
+- Serialized the fan threshold ioctl + pin update so concurrent
+  callers can't leave the kernel and the auto-reapply pin out of
+  sync.
+- Tightened the SMP-meta run-now trigger so triggers arriving during
+  a sweep are no longer dropped.
+- Made the SMP-meta interval setter refuse the update when the JSON
+  payload omits the interval field, instead of clamping to the
+  floor.
+- Added a static repo-host allowlist for the catalog (github.com +
+  git.earthonion.com) so a hypothetical malicious catalog PR can't
+  silently point at an arbitrary HTTPS host.
+
+---
+
 ## 2.12.0
 
 High-level fixes and packaging cleanup:
