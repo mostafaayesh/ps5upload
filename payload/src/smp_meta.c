@@ -76,9 +76,15 @@ static int title_id_looks_valid(const char *name) {
     return 1;
 }
 
+/* Use lstat + reject symlinks so a hostile/malformed package can't
+ * point /user/app/<TID>/sce_sys/icon0.png at a symlink loop or a path
+ * outside the app dir. We only ever copy plain regular files into
+ * /user/appmeta; everything else (symlink, fifo, socket, device,
+ * directory) is treated as "not present" so we don't follow it. */
 static int file_exists_nonempty(const char *path) {
     struct stat st;
-    if (stat(path, &st) != 0) return 0;
+    if (lstat(path, &st) != 0) return 0;
+    if (!S_ISREG(st.st_mode)) return 0;
     return st.st_size > 0;
 }
 
@@ -213,6 +219,12 @@ static void sweep_once(void) {
     int local_missing = 0;
     char last_missing[64] = "";
 
+    /* readdir returns NULL for both end-of-directory and error. Reset
+     * errno so we can tell them apart at the end of the loop; a real
+     * error means we report partial scan results rather than claiming
+     * the sweep completed (still_missing underreports otherwise). */
+    errno = 0;
+    int read_failed = 0;
     struct dirent *e;
     while ((e = readdir(d))) {
         if (e->d_name[0] == '.') continue;
@@ -239,7 +251,13 @@ static void sweep_once(void) {
             snprintf(last_missing, sizeof(last_missing), "%s", e->d_name);
         }
     }
+    /* `errno != 0` after a NULL return from readdir means real error
+     * (vs clean EOF). Don't update stats from a partial scan — the
+     * next tick will retry the whole thing. */
+    if (errno != 0) read_failed = 1;
     closedir(d);
+
+    if (read_failed) return;
 
     pthread_mutex_lock(&g_lock);
     g_stats.games_scanned = local_scanned;
@@ -266,13 +284,21 @@ static void *worker_thread_fn(void *arg) {
      * sweep. Sonicloader observed SIGILL in kstuff's ZeroConf thread
      * when chmod_recursive ran during the kstuff init window; we don't
      * chmod, but the safe-startup pause is cheap and matches their
-     * proven timing. A run_now trigger short-circuits the wait. */
+     * proven timing. A run_now trigger short-circuits the wait.
+     *
+     * Flag-clear ordering: clear AFTER sweep_once, not before. If we
+     * cleared first, a smp_meta_run_now() arriving while sweep_once
+     * was still running would land on a cleared flag and get dropped
+     * — the caller would have to wait up to `poll_seconds` for the
+     * next tick. Clearing after means the next iteration sees the
+     * flag and runs immediately. The cost is one redundant sweep when
+     * run_now arrives during a sweep, which is harmless (idempotent). */
     for (int i = 0; i < 60; i++) {
         if (atomic_load(&g_run_now_flag)) break;
         sleep(1);
     }
-    atomic_store(&g_run_now_flag, 0);
     sweep_once();
+    atomic_store(&g_run_now_flag, 0);
 
     while (1) {
         int interval = atomic_load(&g_poll_seconds);
@@ -285,9 +311,8 @@ static void *worker_thread_fn(void *arg) {
             if (atomic_load(&g_run_now_flag)) break;
             sleep(1);
         }
-        atomic_store(&g_run_now_flag, 0);
-
         sweep_once();
+        atomic_store(&g_run_now_flag, 0);
     }
     return NULL;
 }

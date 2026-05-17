@@ -778,50 +778,79 @@ function SmpMetaCard({
 
   const start = useCallback(async () => {
     if (!canTalk || busy) return;
+    const probe = guard.capture();
     setBusy(true);
     setError(null);
     try {
-      const ack = await smpMetaControl(transferAddr(host), "start");
+      const ack = await smpMetaControl(transferAddr(probe.host), "start");
+      if (probe.isStale()) return;
       if (!ack.ok) {
         setError(ack.err || "start_failed");
       }
       await refresh();
     } catch (e) {
+      if (probe.isStale()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      if (!probe.isStale()) setBusy(false);
     }
-  }, [canTalk, busy, host, refresh]);
+  }, [canTalk, busy, guard, refresh]);
 
   const runNow = useCallback(async () => {
     if (!canTalk || busy) return;
+    const probe = guard.capture();
     setBusy(true);
     try {
-      await smpMetaControl(transferAddr(host), "run_now");
+      const ack = await smpMetaControl(transferAddr(probe.host), "run_now");
+      if (probe.isStale()) return;
+      /* Surface payload-side failure: previously this branch was
+       * silently dropped, so a future payload error mode would have
+       * left the user watching a spinner with no banner. Mirrors the
+       * `start` action's ack handling. */
+      if (!ack.ok) {
+        setError(ack.err || "run_now_failed");
+      }
       await refresh();
     } catch (e) {
+      if (probe.isStale()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      if (!probe.isStale()) setBusy(false);
     }
-  }, [canTalk, busy, host, refresh]);
+  }, [canTalk, busy, guard, refresh]);
+
+  /* Last-applied tracker prevents redundant set_poll RPCs when the
+   * user clicks the slider track at the current thumb position. The
+   * payload clamps + is idempotent, but pegging busy=true on every
+   * click disables the rest of the panel for one round-trip and
+   * spams trace logs. */
+  const lastAppliedPoll = useRef<number | null>(null);
 
   const applyPoll = useCallback(
     async (seconds: number) => {
       if (!canTalk || busy) return;
       const clamped = Math.max(5, Math.min(600, Math.round(seconds)));
+      if (lastAppliedPoll.current === clamped) return;
+      const probe = guard.capture();
       setBusy(true);
       try {
-        const ack = await smpMetaControl(transferAddr(host), "set_poll", clamped);
-        setPollDraft(ack.poll_seconds || clamped);
+        const ack = await smpMetaControl(transferAddr(probe.host), "set_poll", clamped);
+        if (probe.isStale()) return;
+        if (!ack.ok) {
+          setError(ack.err || "set_poll_failed");
+        }
+        const applied = ack.poll_seconds || clamped;
+        lastAppliedPoll.current = applied;
+        setPollDraft(applied);
         await refresh();
       } catch (e) {
+        if (probe.isStale()) return;
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        setBusy(false);
+        if (!probe.isStale()) setBusy(false);
       }
     },
-    [canTalk, busy, host, refresh],
+    [canTalk, busy, guard, refresh],
   );
 
   const running = stats?.running === true;
@@ -918,8 +947,13 @@ function SmpMetaCard({
               step={5}
               value={pollDraft}
               onChange={(e) => setPollDraft(Number(e.target.value))}
+              /* Three commit triggers cover mouse, touch, and
+               * keyboard (←/→/Page/Home/End all fire keyup). Without
+               * onKeyUp, a keyboard-only user would see the slider
+               * thumb move but the PS5 would keep the old interval. */
               onMouseUp={() => void applyPoll(pollDraft)}
               onTouchEnd={() => void applyPoll(pollDraft)}
+              onKeyUp={() => void applyPoll(pollDraft)}
               disabled={!canTalk || busy}
               className="flex-1"
             />
