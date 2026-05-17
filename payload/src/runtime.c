@@ -8033,27 +8033,47 @@ static int handle_smp_meta_control(runtime_state_t *state, int client_fd,
     long interval   = 0;
 
     if (request_body && body_len > 0 && body_len < 4096) {
-        /* Length-bounded substring scan against tiny needles. PS5's
-         * libc doesn't expose memmem, and we want to stay inside
-         * body_len bytes (the JSON may not be NUL-terminated by the
-         * frame reader). Body is JSON, so the keywords can only
-         * appear inside the action string value. */
-        #define HAS_NEEDLE(needle, nlen) ({                              \
-            int _found = 0;                                              \
-            if ((size_t)(body_len) >= (size_t)(nlen)) {                  \
-                for (size_t _i = 0;                                      \
-                     _i + (size_t)(nlen) <= (size_t)(body_len); _i++) {  \
-                    if (memcmp(request_body + _i, (needle), (nlen)) == 0) { \
-                        _found = 1; break;                               \
-                    }                                                    \
-                }                                                        \
-            }                                                            \
-            _found;                                                      \
-        })
-        if (HAS_NEEDLE("\"start\"",    7))  do_start    = 1;
-        if (HAS_NEEDLE("\"run_now\"",  9))  do_run_now  = 1;
-        if (HAS_NEEDLE("\"set_poll\"", 10)) do_set_poll = 1;
-        #undef HAS_NEEDLE
+        /* Locate the `"action"` key, then read the next quoted string
+         * value. Naive substring scan would mis-fire on bodies like
+         * `{"action":"set_poll","note":"\"start\""}` — three actions
+         * would all match. Anchoring on the `"action":` key + reading
+         * exactly the next quoted token gives us strict JSON-aware
+         * dispatch.
+         *
+         * Implementation: scan for `"action"` followed by optional
+         * whitespace + `:` + optional whitespace + opening quote, then
+         * read up to the closing quote into a small stack buffer. The
+         * payload may not be NUL-terminated, so all reads stay inside
+         * body_len. */
+        static const char ACTION_KEY[] = "\"action\"";
+        const size_t key_len = sizeof(ACTION_KEY) - 1;
+        size_t i = 0;
+        while (i + key_len <= (size_t)body_len) {
+            if (memcmp(request_body + i, ACTION_KEY, key_len) != 0) {
+                i++;
+                continue;
+            }
+            size_t j = i + key_len;
+            while (j < (size_t)body_len &&
+                   (request_body[j] == ' ' || request_body[j] == '\t')) j++;
+            if (j >= (size_t)body_len || request_body[j] != ':') break;
+            j++;
+            while (j < (size_t)body_len &&
+                   (request_body[j] == ' ' || request_body[j] == '\t')) j++;
+            if (j >= (size_t)body_len || request_body[j] != '"') break;
+            j++;
+            char action_buf[16];
+            size_t alen = 0;
+            while (j < (size_t)body_len && request_body[j] != '"' &&
+                   alen + 1 < sizeof(action_buf)) {
+                action_buf[alen++] = request_body[j++];
+            }
+            action_buf[alen] = '\0';
+            if      (!strcmp(action_buf, "start"))    do_start    = 1;
+            else if (!strcmp(action_buf, "run_now"))  do_run_now  = 1;
+            else if (!strcmp(action_buf, "set_poll")) do_set_poll = 1;
+            break;
+        }
         if (do_set_poll) {
             (void)json_read_int_field(request_body, (size_t)body_len, "interval", &interval);
         }
