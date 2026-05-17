@@ -9975,7 +9975,13 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
             }
             /* -p: walk components, mkdir each ignoring EEXIST. */
             char tmp[1024];
-            snprintf(tmp, sizeof(tmp), "%s", argv[i]);
+            int tn = snprintf(tmp, sizeof(tmp), "%s", argv[i]);
+            if (tn < 0 || (size_t)tn >= sizeof(tmp)) {
+                len = shell_appendf(&out, &cap, len,
+                                     "mkdir: %s: path too long\n", argv[i]);
+                any_err = 1;
+                continue;
+            }
             for (char *p = tmp + (tmp[0] == '/' ? 1 : 0); *p; p++) {
                 if (*p == '/') {
                     *p = '\0';
@@ -10395,7 +10401,12 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
         }
         const char *mode_s = argv[mode_at];
         long mode = strtol(mode_s, NULL, 8);
-        if (mode <= 0 || mode > 07777) {
+        /* `chmod 000` is legitimate (clear all bits) so allow mode==0;
+         * only reject negative or out-of-range. strtol returns 0 on
+         * pure-junk input, so additionally require the first char
+         * was a digit to distinguish 0 from "garbage". */
+        if (mode < 0 || mode > 07777 ||
+            (mode == 0 && (mode_s[0] < '0' || mode_s[0] > '7'))) {
             *out_text = strdup_safe("chmod: invalid octal mode\n");
             *out_exit = 1;
             return 0;
@@ -10466,12 +10477,19 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
         int any_err = 0;
         for (int i = 1; i <= n_src; i++) {
             char target[1024];
+            int tn;
             if (dst_is_dir) {
                 const char *base = strrchr(argv[i], '/');
                 base = base ? base + 1 : argv[i];
-                snprintf(target, sizeof(target), "%s/%s", dst, base);
+                tn = snprintf(target, sizeof(target), "%s/%s", dst, base);
             } else {
-                snprintf(target, sizeof(target), "%s", dst);
+                tn = snprintf(target, sizeof(target), "%s", dst);
+            }
+            if (tn < 0 || (size_t)tn >= sizeof(target)) {
+                len = shell_appendf(&out, &cap, len,
+                                     "mv: %s: destination path too long\n", argv[i]);
+                any_err = 1;
+                continue;
             }
             if (rename(argv[i], target) == 0) continue;
             if (errno != EXDEV) {
@@ -10584,12 +10602,56 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
                 continue;
             }
             char target[1024];
+            int tn;
             if (dst_is_dir) {
                 const char *base = strrchr(src, '/');
                 base = base ? base + 1 : src;
-                snprintf(target, sizeof(target), "%s/%s", dst, base);
+                tn = snprintf(target, sizeof(target), "%s/%s", dst, base);
             } else {
-                snprintf(target, sizeof(target), "%s", dst);
+                tn = snprintf(target, sizeof(target), "%s", dst);
+            }
+            if (tn < 0 || (size_t)tn >= sizeof(target)) {
+                len = shell_appendf(&out, &cap, len,
+                                     "cp: %s: destination path too long\n", src);
+                any_err = 1;
+                continue;
+            }
+            /* For -r: refuse if TARGET is under SRC. Without this,
+             * `cp -r /data /data/copy` would recurse into the newly-
+             * created /data/copy and copy it again, etc, until path
+             * truncation aborts or the disk fills. Compare via
+             * device+inode of every existing ancestor of TARGET
+             * against SRC's inode. Target itself doesn't exist yet,
+             * so start the walk from the parent. */
+            if (recursive && S_ISDIR(sst.st_mode)) {
+                struct stat src_st = sst;
+                char anc[1024];
+                snprintf(anc, sizeof(anc), "%s", target);
+                /* Strip the target's leaf to start at its parent. */
+                char *slash0 = strrchr(anc, '/');
+                if (slash0 == anc) anc[1] = '\0';
+                else if (slash0) *slash0 = '\0';
+                else snprintf(anc, sizeof(anc), ".");
+                int cycle = 0;
+                while (1) {
+                    struct stat ast;
+                    if (stat(anc, &ast) == 0 &&
+                        ast.st_dev == src_st.st_dev &&
+                        ast.st_ino == src_st.st_ino) {
+                        cycle = 1;
+                        break;
+                    }
+                    char *slash = strrchr(anc, '/');
+                    if (!slash || slash == anc) break;
+                    *slash = '\0';
+                }
+                if (cycle) {
+                    len = shell_appendf(&out, &cap, len,
+                                         "cp: %s -> %s: destination is inside source\n",
+                                         src, target);
+                    any_err = 1;
+                    continue;
+                }
             }
             if (!recursive || S_ISREG(sst.st_mode)) {
                 /* Single-file copy. */
@@ -10665,10 +10727,17 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
                 const char *rel = ent->fts_path + src_prefix_len;
                 while (*rel == '/') rel++;
                 char dpath[1024];
+                int dn;
                 if (*rel)
-                    snprintf(dpath, sizeof(dpath), "%s/%s", target, rel);
+                    dn = snprintf(dpath, sizeof(dpath), "%s/%s", target, rel);
                 else
-                    snprintf(dpath, sizeof(dpath), "%s", target);
+                    dn = snprintf(dpath, sizeof(dpath), "%s", target);
+                if (dn < 0 || (size_t)dn >= sizeof(dpath)) {
+                    len = shell_appendf(&out, &cap, len,
+                                         "cp: %s: path too long\n", ent->fts_path);
+                    any_err = 1;
+                    continue;
+                }
                 if (ent->fts_info == FTS_D) {
                     if (mkdir(dpath, ent->fts_statp->st_mode & 0777) != 0
                         && errno != EEXIST) {
@@ -10752,15 +10821,47 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
         int any_err = 0;
         for (int i = first; i < argc; i++) {
             const char *p = argv[i];
-            /* Trip-wire on system paths. /system is read-only via
-             * mount flags but recursive rm on it would still try and
-             * spam errors; refusing here surfaces an actionable
-             * message instead. */
-            if (strncmp(p, "/system/", 8) == 0 ||
-                strcmp(p, "/system") == 0 ||
-                strncmp(p, "/preinst/", 9) == 0 ||
-                strcmp(p, "/preinst") == 0 ||
-                strcmp(p, "/") == 0) {
+            /* Trip-wire on system paths. /system + /system_ex +
+             * /preinst + /preinst_ex are all Sony-mounted ro and
+             * recursive rm would just spam errors; refusing here
+             * surfaces an actionable message.
+             *
+             * Normalize p first so `//system/foo` or `/./system/foo`
+             * can't slip past the prefix check. Naive normalize:
+             * collapse leading `//+` and `/./` into `/`. */
+            char norm[1024];
+            {
+                size_t ni = 0;
+                size_t pi = 0;
+                while (p[pi] && ni + 1 < sizeof(norm)) {
+                    if (p[pi] == '/') {
+                        norm[ni++] = '/';
+                        while (p[pi] == '/' ||
+                               (p[pi] == '/' && p[pi+1] == '.' &&
+                                (p[pi+2] == '/' || p[pi+2] == '\0'))) {
+                            if (p[pi] == '/' && p[pi+1] == '.' &&
+                                (p[pi+2] == '/' || p[pi+2] == '\0')) pi += 2;
+                            else pi++;
+                        }
+                    } else {
+                        norm[ni++] = p[pi++];
+                    }
+                }
+                norm[ni] = '\0';
+            }
+            static const char *banned[] = {
+                "/", "/system", "/system_ex", "/preinst", "/preinst_ex",
+            };
+            int refused = 0;
+            for (size_t b = 0; b < sizeof(banned) / sizeof(banned[0]); b++) {
+                size_t bl = strlen(banned[b]);
+                if (strcmp(norm, banned[b]) == 0) { refused = 1; break; }
+                if (strncmp(norm, banned[b], bl) == 0 && norm[bl] == '/') {
+                    refused = 1;
+                    break;
+                }
+            }
+            if (refused) {
                 len = shell_appendf(&out, &cap, len,
                                      "rm: %s: refusing to touch system path\n", p);
                 any_err = 1;
@@ -11337,17 +11438,29 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
             *out_exit = 1;
             return 0;
         }
+        uint32_t r32 = (uint32_t)r;
         for (uint32_t i = 0; i < n; i++) {
             uint32_t e_off = 20 + i * 16;
-            if (e_off + 16 > (uint32_t)r) break;
+            if (e_off + 16 > r32) break;
             uint16_t k_off = (uint16_t)(sfo[e_off] | (sfo[e_off+1] << 8));
             uint8_t fmt    = sfo[e_off + 3];
             uint32_t used  = LE32(e_off + 4);
             uint32_t d_off = LE32(e_off + 12);
+            /* Bounds checks — attacker-controlled offsets from the
+             * file, so do all arithmetic as overflow-safe
+             * subtractions: `a + b > r` becomes `b > r - a` after
+             * verifying a <= r. CRIT audit caught this on 2.13.0. */
+            if (k_off > r32 || k_table > r32 - k_off) break;
+            if (d_table > r32) break;
+            if (d_off > r32 - d_table) break;
+            if (used > r32 - d_table - d_off) break;
             const char *key = (const char *)(sfo + k_table + k_off);
             const unsigned char *data = sfo + d_table + d_off;
-            if (k_table + k_off >= (uint32_t)r) break;
-            if (d_table + d_off + used > (uint32_t)r) break;
+            /* `key` is read as a NUL-terminated string by `%s` —
+             * verify a NUL exists before end-of-buffer. memchr
+             * walks at most r-(k_table+k_off) bytes and bails. */
+            uint32_t key_max = r32 - k_table - k_off;
+            if (!memchr(key, '\0', key_max)) break;
             len = shell_appendf(&out, &cap, len, "%-24s = ", key);
             if (fmt == 0x04 && used == 4) {
                 /* int32 */
