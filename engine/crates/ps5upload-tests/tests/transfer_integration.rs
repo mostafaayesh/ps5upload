@@ -848,6 +848,43 @@ fn transfer_file_refuses_ghost_commit_on_bogus_last_acked() {
     );
 }
 
+/// Same ghost-commit guard as `transfer_file`, but for the directory
+/// path — which previously LACKED the bound check (the guard lived only
+/// on the single-file paths). A bogus `last_acked_shard > total_shards`
+/// must make the dir transfer refuse to commit, not skip every shard and
+/// finalize a send that transmitted nothing. Covers the shared
+/// `guard_last_acked` helper on a multi-file path.
+#[test]
+fn transfer_dir_refuses_ghost_commit_on_bogus_last_acked() {
+    use ps5upload_core::transfer::{transfer_dir_resumable, TX_FLAG_RESUME};
+    let tmp = tempdir();
+    // A few multi-shard files so the real plan has a small, concrete
+    // total_shards that the planted bogus cursor clearly exceeds.
+    for i in 0..6 {
+        std::fs::write(tmp.path().join(format!("f{i}.bin")), vec![0u8; 4096]).unwrap();
+    }
+    let srv = MockServer::start();
+    let tx_id = random_tx_id();
+    // shards_received = 9999 is impossibly high for this plan, so the
+    // mock reports last_acked_shard=9999 and the guard must fire.
+    srv.plant_interrupted_tx(tx_id, "/data/ghostdir", 1, 9999);
+    let cfg = TransferConfig {
+        shard_size: 1024,
+        ..TransferConfig::new(&srv.addr)
+    };
+
+    let r = transfer_dir_resumable(&cfg, tx_id, "/data/ghostdir", tmp.path(), 0, TX_FLAG_RESUME);
+    assert!(
+        r.is_err(),
+        "dir transfer must refuse bogus last_acked_shard"
+    );
+    let err = r.unwrap_err().to_string();
+    assert!(
+        err.contains("last_acked_shard") && err.contains("total_shards"),
+        "error should explain the discrepancy: {err}"
+    );
+}
+
 /// `is_retryable_transfer_error` correctly classifies io::ErrorKind
 /// variants. Purely a predicate unit test — no mock server needed.
 #[test]

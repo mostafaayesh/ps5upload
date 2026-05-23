@@ -1409,12 +1409,22 @@ function ZipArchiveCard({ info }: { info: ZipInspect }) {
           )}
           <div className="mt-0.5 text-sm">
             <span className="font-medium">{formatBytes(info.compressed_size)}</span>{" "}
-            {tr("upload_zip_zipped", "zipped")} →{" "}
-            <span className="font-medium">
-              {formatBytes(info.total_uncompressed)}
-            </span>{" "}
-            {tr("upload_zip_extracted", "extracted")} ·{" "}
-            {info.file_count.toLocaleString()}{" "}
+            {tr("upload_zip_zipped", "zipped")}
+            {/* The extracted size is only shown when known. inspect_zip
+                reports total_uncompressed=0 for archives whose entries use
+                data descriptors (common with bsdtar/streaming zippers),
+                where the seek-free size read isn't available — show
+                count-only instead of a self-contradictory "→ 0 B". */}
+            {info.total_uncompressed > 0 && (
+              <>
+                {" → "}
+                <span className="font-medium">
+                  {formatBytes(info.total_uncompressed)}
+                </span>{" "}
+                {tr("upload_zip_extracted", "extracted")}
+              </>
+            )}{" "}
+            · {info.file_count.toLocaleString()}{" "}
             {tr("upload_folder_stats_files", "files")}
           </div>
           {savedPct > 0 && (
