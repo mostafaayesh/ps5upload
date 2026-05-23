@@ -291,6 +291,27 @@ fn parse_last_acked_shard(body: &[u8], is_resume: bool) -> u64 {
     }
 }
 
+/// Reject a payload-reported resume cursor that's past the end of the
+/// current plan. A `last_acked_shard > total_shards` makes every
+/// `seq <= last_acked_shard` skip fire, so the send loop transmits ZERO
+/// shards and the caller proceeds straight to CommitTx — a "ghost
+/// commit" that finalizes a transfer this attempt never sent. This
+/// happens when a reused `tx_id` still references the payload's journal
+/// from a different/larger prior upload. ALL transfer paths (single
+/// file, dir, file-list, zip) share the same resume contract, so they
+/// must share this guard — keeping it in one place stops the multi-file
+/// paths from drifting out of sync with the single-file ones (they did:
+/// the guard was originally only on the single-file paths).
+fn guard_last_acked(last_acked_shard: u64, total_shards: u64) -> Result<()> {
+    if total_shards > 0 && last_acked_shard > total_shards {
+        bail!(
+            "payload reported last_acked_shard={last_acked_shard} > total_shards={total_shards}; \
+             refusing to commit a transfer that hasn't been transmitted"
+        );
+    }
+    Ok(())
+}
+
 /// Send one shard on an existing connection, retrying on `shard_digest_mismatch`.
 fn send_shard_on(
     c: &mut Connection,
@@ -714,16 +735,9 @@ fn transfer_file_with_flags(
     // unreachable; for resume attempts (flags=TX_FLAG_RESUME) it's how
     // we know where to pick up.
     let last_acked_shard = parse_last_acked_shard(&begin_ack, flags & TX_FLAG_RESUME != 0);
-    // Defensive: see comment on the same check in the path variant
-    // (`transfer_file_path_with_flags`). A `last_acked_shard >
-    // total_shards` value would otherwise produce a ghost commit
-    // here too.
-    if total_shards > 0 && last_acked_shard > total_shards {
-        bail!(
-            "payload reported last_acked_shard={last_acked_shard} > total_shards={total_shards}; \
-             refusing to commit a transfer that hasn't been transmitted"
-        );
-    }
+    // Defensive: shared guard (see guard_last_acked). A bogus
+    // last_acked_shard > total_shards would otherwise ghost-commit here.
+    guard_last_acked(last_acked_shard, total_shards)?;
 
     // `shards_sent` counts only what this call actually transmitted — on a
     // resume, shards 1..=last_acked_shard are skipped because they're
@@ -857,12 +871,7 @@ fn transfer_file_path_with_flags(
     // collude with. (Specifically allow `==` since a fully-acked
     // prior attempt that lost only the COMMIT_TX round-trip is a
     // legitimate "all shards in journal, just need to commit" case.)
-    if total_shards > 0 && last_acked_shard > total_shards {
-        bail!(
-            "payload reported last_acked_shard={last_acked_shard} > total_shards={total_shards}; \
-             refusing to commit a transfer that hasn't been transmitted"
-        );
-    }
+    guard_last_acked(last_acked_shard, total_shards)?;
 
     let mut shards_sent = 0u64;
     {
@@ -1307,6 +1316,9 @@ pub fn transfer_dir_with_flags(
         FrameType::BeginTxAck,
     )?;
     let last_acked_shard = parse_last_acked_shard(&begin_ack, flags & TX_FLAG_RESUME != 0);
+    // Same ghost-commit guard as the single-file paths (the multi-file
+    // paths previously lacked it). See guard_last_acked.
+    guard_last_acked(last_acked_shard, total_shards)?;
 
     // ── Send pass ── materialise each shard body just before it goes out.
     // Skip shards that were already journalled by a prior (interrupted)
@@ -1505,6 +1517,8 @@ pub fn transfer_file_list_with_flags(
         FrameType::BeginTxAck,
     )?;
     let last_acked_shard = parse_last_acked_shard(&begin_ack, flags & TX_FLAG_RESUME != 0);
+    // Same ghost-commit guard as the single-file paths. See guard_last_acked.
+    guard_last_acked(last_acked_shard, total_shards)?;
 
     // `shards_sent` reflects this call's transmission; skipped shards
     // (from a resumed prior attempt) are excluded.
@@ -1827,6 +1841,42 @@ impl ZipMaterialiser {
         }
     }
 
+    /// Turn a `by_index` failure into an actionable message. The common
+    /// real case is an entry compressed with a method we don't build
+    /// support for (Deflate64 / BZip2 / LZMA / Zstd / AES). The `zip`
+    /// crate surfaces a terse `UnsupportedArchive`, which on the engine's
+    /// HTTP 400 the user saw as the baffling "read zip entry 0"
+    /// (Constantine-HD: "deflate64 and lzma … always error"). Rewrite it
+    /// to name the offending entry + method and how to fix it. Non-
+    /// compression failures (I/O, corruption) pass through with the
+    /// original `open zip entry N` context.
+    fn map_open_error(&mut self, index: usize, e: zip::result::ZipError) -> anyhow::Error {
+        if !matches!(e, zip::result::ZipError::UnsupportedArchive(_)) {
+            return anyhow::Error::new(e).context(format!("open zip entry {index}"));
+        }
+        let name = self
+            .archive
+            .name_for_index(index)
+            .unwrap_or("<unknown>")
+            .to_string();
+        // by_index_raw skips decoder construction, so it succeeds where
+        // by_index failed — letting us name the actual method. One seek,
+        // only on this already-failing path.
+        let method = self
+            .archive
+            .by_index_raw(index)
+            .ok()
+            .map(|zf| format!("{:?}", zf.compression()))
+            .unwrap_or_else(|| "an unsupported method".to_string());
+        anyhow::anyhow!(
+            "zip entry \"{name}\" uses compression method {method}, which ps5upload \
+             can't decompress. Only STORE and standard DEFLATE zips are supported — \
+             re-create the archive with standard Deflate (e.g. `zip -r`, 7-Zip's \
+             \"Deflate\" method, or Windows \"Send to → Compressed (zipped) folder\"). \
+             Deflate64, LZMA, BZip2, Zstd and AES-encrypted zips won't work."
+        )
+    }
+
     /// Ensure `index` is the cached entry, inflating it whole if not. The
     /// inflated length is checked against the central-directory size we
     /// planned with — a mismatch means a corrupt/lying zip and fails loudly
@@ -1837,41 +1887,55 @@ impl ZipMaterialiser {
         }
         self.evict();
         use std::io::Read;
-        let mut zf = self
-            .archive
-            .by_index(index)
-            .with_context(|| format!("open zip entry {index}"))?;
-        if expected < self.ram_threshold {
-            let mut data = Vec::with_capacity(expected as usize);
-            zf.read_to_end(&mut data)
-                .with_context(|| format!("inflate zip entry {index} to memory"))?;
-            if data.len() as u64 != expected {
-                bail!(
-                    "zip entry {index} inflated to {} bytes, central directory said {expected}",
-                    data.len()
-                );
+        // The by_index Result borrows self.archive AND ZipFile has a Drop
+        // impl, so the matched temporary keeps the borrow live across the
+        // whole match — meaning no arm can call self.map_open_error (a
+        // second &mut self borrow). So the Err arm only stashes the OWNED
+        // error; we build the message after the match statement, once the
+        // temporary (and its borrow) is gone. The Ok arm does the whole
+        // inflate in-place — self.cache / tmp_dir / id are disjoint fields
+        // from self.archive, so they're usable while it's borrowed.
+        let mut open_err: Option<zip::result::ZipError> = None;
+        match self.archive.by_index(index) {
+            Ok(mut zf) => {
+                if expected < self.ram_threshold {
+                    let mut data = Vec::with_capacity(expected as usize);
+                    zf.read_to_end(&mut data)
+                        .with_context(|| format!("inflate zip entry {index} to memory"))?;
+                    if data.len() as u64 != expected {
+                        bail!(
+                            "zip entry {index} inflated to {} bytes, central directory said {expected}",
+                            data.len()
+                        );
+                    }
+                    self.cache = Some(ZipEntryCache::Mem { index, data });
+                } else {
+                    let path = self.tmp_dir.join(format!(
+                        "ps5upload-zipcache-{}-{}-{index}.tmp",
+                        std::process::id(),
+                        self.id
+                    ));
+                    let mut wf = std::fs::File::create(&path)
+                        .with_context(|| format!("create zip cache file {}", path.display()))?;
+                    let written = std::io::copy(&mut zf, &mut wf).with_context(|| {
+                        format!("inflate zip entry {index} to {}", path.display())
+                    })?;
+                    drop(zf);
+                    wf.sync_all().ok();
+                    drop(wf);
+                    if written != expected {
+                        let _ = std::fs::remove_file(&path);
+                        bail!("zip entry {index} inflated to {written} bytes, central directory said {expected}");
+                    }
+                    let file = std::fs::File::open(&path)
+                        .with_context(|| format!("reopen zip cache file {}", path.display()))?;
+                    self.cache = Some(ZipEntryCache::Tmp { index, file, path });
+                }
             }
-            self.cache = Some(ZipEntryCache::Mem { index, data });
-        } else {
-            let path = self.tmp_dir.join(format!(
-                "ps5upload-zipcache-{}-{}-{index}.tmp",
-                std::process::id(),
-                self.id
-            ));
-            let mut wf = std::fs::File::create(&path)
-                .with_context(|| format!("create zip cache file {}", path.display()))?;
-            let written = std::io::copy(&mut zf, &mut wf)
-                .with_context(|| format!("inflate zip entry {index} to {}", path.display()))?;
-            drop(zf);
-            wf.sync_all().ok();
-            drop(wf);
-            if written != expected {
-                let _ = std::fs::remove_file(&path);
-                bail!("zip entry {index} inflated to {written} bytes, central directory said {expected}");
-            }
-            let file = std::fs::File::open(&path)
-                .with_context(|| format!("reopen zip cache file {}", path.display()))?;
-            self.cache = Some(ZipEntryCache::Tmp { index, file, path });
+            Err(e) => open_err = Some(e),
+        }
+        if let Some(e) = open_err {
+            return Err(self.map_open_error(index, e));
         }
         Ok(())
     }
@@ -1919,20 +1983,30 @@ impl ZipMaterialiser {
     /// cache. Used for packed records, which are below `pack_file_max`.
     fn read_whole_small(&mut self, index: usize, expected: u64) -> Result<Vec<u8>> {
         use std::io::Read;
-        let mut zf = self
-            .archive
-            .by_index(index)
-            .with_context(|| format!("open packed zip entry {index}"))?;
-        let mut data = Vec::with_capacity(expected as usize);
-        zf.read_to_end(&mut data)
-            .with_context(|| format!("inflate packed zip entry {index}"))?;
-        if data.len() as u64 != expected {
-            bail!(
-                "packed zip entry {index} inflated to {} bytes, central directory said {expected}",
-                data.len()
-            );
+        // Same borrow dance as ensure_entry: the Err arm only stashes the
+        // owned error; map_open_error runs after the match, once the
+        // by_index temporary's archive borrow is gone.
+        let mut out: Option<Vec<u8>> = None;
+        let mut open_err: Option<zip::result::ZipError> = None;
+        match self.archive.by_index(index) {
+            Ok(mut zf) => {
+                let mut data = Vec::with_capacity(expected as usize);
+                zf.read_to_end(&mut data)
+                    .with_context(|| format!("inflate packed zip entry {index}"))?;
+                if data.len() as u64 != expected {
+                    bail!(
+                        "packed zip entry {index} inflated to {} bytes, central directory said {expected}",
+                        data.len()
+                    );
+                }
+                out = Some(data);
+            }
+            Err(e) => open_err = Some(e),
         }
-        Ok(data)
+        if let Some(e) = open_err {
+            return Err(self.map_open_error(index, e));
+        }
+        Ok(out.expect("Ok arm populates out when there was no open error"))
     }
 
     /// Materialise one shard's wire body — the zip analogue of
@@ -2016,32 +2090,65 @@ pub fn inspect_zip(zip_path: &Path) -> Result<ZipInspect> {
     let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file))
         .with_context(|| format!("read zip central directory {}", zip_path.display()))?;
 
+    // Metadata-only pass — NO per-entry seeks. The previous version
+    // called by_index(i) for EVERY entry; each call seeks to and reads
+    // that entry's local header (zip's find_data_start). On a multi-GB
+    // game dump over an HDD array that's tens of thousands of random
+    // seeks: it pinned the disk at 100% and outran the client's request
+    // timeout, and because inspect runs in spawn_blocking the orphaned
+    // task kept seeking "until the program closed" (Constantine-HD
+    // report). decompressed_size() + file_names() read only the
+    // in-memory central directory that ZipArchive::new already parsed.
+    //
+    // It also means inspect no longer hard-fails on a deflate64/lzma
+    // archive — by_index used to build a decoder and return
+    // UnsupportedArchive, which surfaced as the baffling HTTP 400 "read
+    // zip entry 0". The clear "unsupported compression" message now
+    // comes from the transfer path (ZipMaterialiser::map_open_error),
+    // where decompression actually happens and the user is committed.
+    //
+    // total_uncompressed via decompressed_size() reads each entry's
+    // central-directory size from memory (no seeks; dirs are 0). Caveat:
+    // zip 2.4.2's decompressed_size() returns None if ANY entry sets the
+    // data-descriptor bit (general-purpose flag 3) — common with
+    // bsdtar/libarchive/streaming zippers (see the Windows-zip-bit3
+    // lesson) — even though the central directory still holds the real
+    // size. We map None to 0; the Upload card then suppresses the
+    // "extracted" figure and shows count-only rather than a
+    // contradictory "0 B". We accept that over reintroducing the
+    // per-entry local-header seeks (by_index_raw) this rewrite removed to
+    // kill the 100%-disk inspect thrash. The actual transfer total +
+    // progress denominator come from zip_plan_preview, which is correct
+    // regardless. (decompressed_size() can also include a rare zip-slip
+    // entry sanitize would drop — negligible for a preview number.)
+    let total_uncompressed = archive
+        .decompressed_size()
+        .and_then(|v| u64::try_from(v).ok())
+        .unwrap_or(0);
+
     let mut file_count = 0u64;
-    let mut total_uncompressed = 0u64;
-    // Find the shallowest "<root>/sce_sys/param.json" (fewest path segments)
-    // so a wrapped dump (`MyGame/sce_sys/…`) and a root dump
-    // (`sce_sys/…`) both resolve to the real game root.
-    let mut param_hit: Option<(usize, usize, String)> = None; // (depth, entry_index, game_root)
-    for i in 0..archive.len() {
-        let (name, size, is_dir) = {
-            let e = archive
-                .by_index(i)
-                .with_context(|| format!("read zip entry {i}"))?;
-            (e.name().to_string(), e.size(), e.is_dir())
-        };
-        if is_dir {
+    // Find the shallowest "<root>/sce_sys/param.json" (fewest path
+    // segments) so a wrapped dump (`MyGame/sce_sys/…`) and a root dump
+    // (`sce_sys/…`) both resolve to the real game root. Keep the entry's
+    // ORIGINAL name so we can look its index back up for the single
+    // content read below.
+    let mut param_hit: Option<(usize, String, String)> = None; // (depth, original_name, game_root)
+    for name in archive.file_names() {
+        // Directory entries (trailing '/') don't count as files —
+        // matches the old `is_dir()` skip. sanitize_zip_entry keeps
+        // "foo/" as "foo", so we must filter dirs by name first.
+        if name.ends_with('/') {
             continue;
         }
-        let Some(rel) = sanitize_zip_entry(&name) else {
+        let Some(rel) = sanitize_zip_entry(name) else {
             continue;
         };
         file_count += 1;
-        total_uncompressed += size;
         if let Some(root) = rel.strip_suffix("sce_sys/param.json") {
             let game_root = root.trim_end_matches('/').to_string();
             let depth = rel.split('/').count();
             if param_hit.as_ref().is_none_or(|(d, _, _)| depth < *d) {
-                param_hit = Some((depth, i, game_root));
+                param_hit = Some((depth, name.to_string(), game_root));
             }
         }
     }
@@ -2057,31 +2164,34 @@ pub fn inspect_zip(zip_path: &Path) -> Result<ZipInspect> {
         game_root: None,
     };
 
-    if let Some((_, idx, game_root)) = param_hit {
-        use std::io::Read;
-        // Cap the inflate: a real param.json is a few KiB, but inspect_zip
-        // runs on user-supplied archives just to render the Upload preview,
-        // so a crafted entry named sce_sys/param.json that decompresses to
-        // gigabytes (zip bomb) must not OOM the engine before any upload
-        // even starts. `take` bounds the read; a param.json that doesn't
-        // fit in 4 MiB simply fails to parse and we fall through to the
-        // size/count-only preview.
-        const MAX_PARAM_JSON: u64 = 4 * 1024 * 1024;
-        let mut bytes = Vec::new();
-        let zf = archive
-            .by_index(idx)
-            .context("open embedded sce_sys/param.json")?;
-        zf.take(MAX_PARAM_JSON)
-            .read_to_end(&mut bytes)
-            .context("read embedded sce_sys/param.json")?;
-        // A malformed param.json shouldn't fail the whole inspect — the
-        // size/count preview is still useful, so swallow parse errors.
-        if let Ok(meta) = crate::game_meta::parse_param_json_bytes(&bytes) {
-            inspect.title = meta.title;
-            inspect.title_id = meta.title_id;
-            inspect.content_id = meta.content_id;
-            inspect.application_category_type = meta.application_category_type;
-            inspect.game_root = Some(game_root);
+    if let Some((_, original_name, game_root)) = param_hit {
+        if let Some(idx) = archive.index_for_name(&original_name) {
+            use std::io::Read;
+            // Cap the inflate: a real param.json is a few KiB, but
+            // inspect_zip runs on user-supplied archives just to render
+            // the Upload preview, so a crafted entry named
+            // sce_sys/param.json that decompresses to gigabytes (zip
+            // bomb) must not OOM the engine before any upload even
+            // starts. `take` bounds the read. This is the ONLY by_index
+            // (one seek + small inflate) left in inspect.
+            //
+            // Everything here is non-fatal: a param.json that's itself
+            // in an unsupported method, won't fit in 4 MiB, or doesn't
+            // parse just falls through to the size/count-only preview —
+            // the transfer path surfaces any real compression error.
+            const MAX_PARAM_JSON: u64 = 4 * 1024 * 1024;
+            if let Ok(zf) = archive.by_index(idx) {
+                let mut bytes = Vec::new();
+                if zf.take(MAX_PARAM_JSON).read_to_end(&mut bytes).is_ok() {
+                    if let Ok(meta) = crate::game_meta::parse_param_json_bytes(&bytes) {
+                        inspect.title = meta.title;
+                        inspect.title_id = meta.title_id;
+                        inspect.content_id = meta.content_id;
+                        inspect.application_category_type = meta.application_category_type;
+                        inspect.game_root = Some(game_root);
+                    }
+                }
+            }
         }
     }
 
@@ -2101,8 +2211,14 @@ pub fn zip_plan_preview(zip_path: &Path, excludes: &[String]) -> Result<(u64, Ve
     let mut files: Vec<(String, u64)> = Vec::new();
     for i in 0..archive.len() {
         let (name, size, is_dir) = {
+            // by_index_raw, not by_index: planning only needs central-
+            // directory metadata (name/size/is_dir), and the raw variant
+            // skips building a decoder, so an unsupported-compression
+            // entry doesn't fail planning here — the ZipMaterialiser
+            // raises the clear "unsupported compression" error at send
+            // time instead (one place, one message).
             let e = archive
-                .by_index(i)
+                .by_index_raw(i)
                 .with_context(|| format!("read zip entry {i}"))?;
             (e.name().to_string(), e.size(), e.is_dir())
         };
@@ -2180,8 +2296,15 @@ pub fn transfer_zip_with_opts(
     let mut plan_files: Vec<ZipPlanFile> = Vec::new();
     for i in 0..archive.len() {
         let (name, size, is_dir) = {
+            // by_index_raw, not by_index: planning only needs central-
+            // directory metadata, and the raw variant skips building a
+            // decoder — so it doesn't seek per entry the way by_index does
+            // (the 100%-disk inspect thrash, here on the transfer's own
+            // planning pass) and doesn't hard-fail on an unsupported-
+            // compression entry. The clear "unsupported compression"
+            // error is raised at send time by ZipMaterialiser, one place.
             let e = archive
-                .by_index(i)
+                .by_index_raw(i)
                 .with_context(|| format!("read zip entry {i}"))?;
             (e.name().to_string(), e.size(), e.is_dir())
         };
@@ -2341,6 +2464,8 @@ pub fn transfer_zip_with_opts(
         FrameType::BeginTxAck,
     )?;
     let last_acked_shard = parse_last_acked_shard(&begin_ack, flags & TX_FLAG_RESUME != 0);
+    // Same ghost-commit guard as the single-file paths. See guard_last_acked.
+    guard_last_acked(last_acked_shard, total_shards)?;
 
     // ── Send pass ── inflate one entry at a time into a seekable cache and
     //    serve each shard's range. Skipped (already-acked) shards on resume

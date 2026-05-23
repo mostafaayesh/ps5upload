@@ -1,6 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useInstallQueue } from "./installQueue";
+// Mocks for the start() pre-flight suite below. The load()/hydrate()
+// suite doesn't touch these modules, so mocking them is harmless there.
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/app", () => ({
+  getVersion: vi.fn(async () => "9.9.9"),
+}));
+vi.mock("../api/ps5", () => ({
+  bundledPayloadPath: vi.fn(async () => "/bundled/ps5upload.elf"),
+  payloadCheck: vi.fn(async () => ({
+    reachable: true,
+    payloadVersion: "9.9.9",
+  })),
+  sendPayload: vi.fn(async () => {}),
+}));
+vi.mock("../api/engine", () => ({ engineApi: { ping: vi.fn() } }));
+
+import { invoke } from "@tauri-apps/api/core";
+import { engineApi } from "../api/engine";
+import { useInstallQueue, type InstallQueueItem } from "./installQueue";
+import { useConnectionStore } from "./connection";
 
 // installQueue uses bare `localStorage.{getItem,setItem}` (not the
 // `window.localStorage` shape the mountDest tests stub), so we have
@@ -244,5 +263,148 @@ describe("installQueue load() back-compat", () => {
     const items = useInstallQueue.getState().items;
     expect(items.length).toBe(1);
     expect(items[0].id).toBe("ok");
+  });
+});
+
+const mockedInvoke = vi.mocked(invoke);
+const mockedPing = vi.mocked(engineApi.ping);
+
+/** A minimal pending install item. Field shape mirrors InstallQueueItem
+ *  in installQueue.ts — changes there surface here as compile errors.
+ *  Defaults to the stream/DPI 2.0 path (no staging). */
+function fakeItem(overrides: Partial<InstallQueueItem> = {}): InstallQueueItem {
+  return {
+    id: "item-1",
+    pkgPath: "/games/x.pkg",
+    isSplit: false,
+    displayName: "x.pkg",
+    contentId: "",
+    totalBytes: 0,
+    packageType: "",
+    addr: "192.168.1.50:9114",
+    status: "pending",
+    phase: "idle",
+    bytesDownloaded: 0,
+    errCode: 0,
+    errMessage: null,
+    sessionId: null,
+    taskId: null,
+    addedAt: 0,
+    startedAt: null,
+    finishedAt: null,
+    warnings: [],
+    installMethod: "stream",
+    stagingPath: null,
+    stagingBytes: 0,
+    diag: {
+      registerPath: "",
+      intdebugAvail: false,
+      kernelRw: false,
+      shelluiErr: null,
+      appinstErr: null,
+    },
+    ...overrides,
+  };
+}
+
+const startedInstall = () =>
+  mockedInvoke.mock.calls.some((c) => c[0] === "pkg_install_start");
+
+describe("useInstallQueue.start pre-flight", () => {
+  beforeEach(() => {
+    installLocalStorageStub();
+    mockedInvoke.mockReset().mockResolvedValue(undefined);
+    mockedPing.mockReset();
+    useInstallQueue.setState({ items: [], isRunning: false, runId: 0 });
+    useConnectionStore.setState({
+      engineStatus: "unknown",
+      payloadStatus: "unknown",
+      payloadStatusHost: null,
+    });
+  });
+  afterEach(() => {
+    useInstallQueue.setState({ items: [], isRunning: false, runId: 0 });
+    vi.unstubAllGlobals();
+  });
+
+  const seed = (item: InstallQueueItem) =>
+    useInstallQueue.setState({ items: [item], isRunning: false, runId: 0 });
+
+  it("blocks with an engine-down message when an 'unknown' engine fails the active ping", async () => {
+    // engineStatus "unknown" (background poll hasn't run) is exactly the
+    // just-launched case; the pre-flight must actively ping rather than
+    // pass through. ping=false → block, and pkg_install_start never fires.
+    mockedPing.mockResolvedValue(false);
+    seed(fakeItem());
+
+    await useInstallQueue.getState().start();
+
+    const item = useInstallQueue.getState().items[0];
+    expect(item.status).toBe("failed");
+    expect(item.errMessage).toContain("Desktop engine isn't running");
+    expect(mockedPing).toHaveBeenCalledTimes(1);
+    expect(useInstallQueue.getState().isRunning).toBe(false);
+    expect(startedInstall()).toBe(false);
+  });
+
+  it("trusts engineStatus 'up' (no active ping) and blocks on a payload down for the target host", async () => {
+    useConnectionStore.setState({
+      engineStatus: "up",
+      payloadStatus: "down",
+      payloadStatusHost: "192.168.1.50",
+    });
+    seed(fakeItem({ addr: "192.168.1.50:9114" }));
+
+    await useInstallQueue.getState().start();
+
+    const item = useInstallQueue.getState().items[0];
+    expect(item.status).toBe("failed");
+    expect(item.errMessage).toContain("PS5 helper");
+    expect(mockedPing).not.toHaveBeenCalled();
+    expect(startedInstall()).toBe(false);
+  });
+
+  it("normalizes host:port when matching payloadStatusHost to the target", async () => {
+    // payloadStatusHost is the raw probed host (may carry a port);
+    // target is bare-IP. Both must normalize so a port doesn't make the
+    // check silently skip.
+    useConnectionStore.setState({
+      engineStatus: "up",
+      payloadStatus: "down",
+      payloadStatusHost: "192.168.1.50:9114",
+    });
+    seed(fakeItem({ addr: "192.168.1.50:9114" }));
+
+    await useInstallQueue.getState().start();
+
+    expect(useInstallQueue.getState().items[0].status).toBe("failed");
+    expect(useInstallQueue.getState().items[0].errMessage).toContain(
+      "PS5 helper",
+    );
+  });
+
+  it("does NOT block on a payload down for a DIFFERENT host (no false positive)", async () => {
+    useConnectionStore.setState({
+      engineStatus: "up",
+      payloadStatus: "down",
+      payloadStatusHost: "192.168.1.99",
+    });
+    seed(fakeItem({ addr: "192.168.1.50:9114" }));
+
+    // engineStatus "up" → the pre-flight runs synchronously up to the
+    // first ensurePayloadCurrent await, so by here it has NOT blocked.
+    const p = useInstallQueue.getState().start();
+    expect(useInstallQueue.getState().items[0].status).not.toBe("failed");
+
+    // Stop so the worker bails at its next isLive() check (after
+    // ensurePayloadCurrent) instead of driving a real install.
+    useInstallQueue.getState().stop();
+    await p;
+
+    expect(mockedPing).not.toHaveBeenCalled();
+    expect(startedInstall()).toBe(false);
+    expect(useInstallQueue.getState().items[0].errMessage ?? "").not.toContain(
+      "PS5 helper",
+    );
   });
 });

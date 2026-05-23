@@ -9,6 +9,8 @@ import {
   useInstallSettingsStore,
   type InstallMethod,
 } from "./installSettings";
+import { useConnectionStore } from "./connection";
+import { engineApi } from "../api/engine";
 
 /**
  * Install Package queue. Sequential, like uploadQueue — one BGFT
@@ -611,6 +613,70 @@ export const useInstallQueue = create<InstallQueueState>((set, get) => ({
 
     const isLive = () => get().runId === myRun;
 
+    // ── Pre-flight: turn "I clicked Start and nothing happened" into a
+    // clear, actionable error. The two common causes are a desktop
+    // engine that never came up (e.g. AV/SmartScreen quarantined the
+    // bundled sidecar, or :19113 was taken) and a PS5 helper that isn't
+    // connected — exactly the "stream (DPI 2.0)" report (etaHEN+DPI on,
+    // but the install never appears on PC or console). Without this the
+    // per-item invokes each fail with a terse network error that's easy
+    // to miss. engineStatus is host-independent (the local sidecar), so
+    // it's the reliable signal; payloadStatus reflects the currently
+    // connected host (the common single-PS5 case).
+    {
+      const head = get().items.find((it) => it.status === "pending");
+      if (head) {
+        const conn = useConnectionStore.getState();
+        const targetHost = bareIp(head.addr);
+        // engineStatus is host-independent (the local sidecar). It can
+        // still be "unknown" right after launch, before AppShell's
+        // background poll has run — which is EXACTLY when a quarantined
+        // engine bites and the install silently no-ops. So when it isn't
+        // already "up", actively ping rather than trust a possibly-
+        // unwritten store value (otherwise this pre-flight is a no-op in
+        // the very scenario it exists to catch).
+        const engineUp =
+          conn.engineStatus === "up" ? true : await engineApi.ping();
+        // The ping is this run's first await; a Stop/Start during it
+        // could supersede us. If so, leave isRunning to the newer run.
+        if (!isLive()) return;
+        if (!engineUp) {
+          markFailed(
+            get,
+            set,
+            head.id,
+            0,
+            "Desktop engine isn't running, so the install can't start. Restart PS5Upload; if it keeps happening, check that antivirus or a firewall isn't blocking the bundled engine on 127.0.0.1:19113.",
+          );
+          set({ isRunning: false });
+          return;
+        }
+        // payloadStatus reflects whichever host was last probed; honor a
+        // "down" ONLY when payloadStatusHost matches this install's
+        // target. Normalize both sides — payloadStatusHost is the raw
+        // probed host string, targetHost is a bare IP — so a host typed
+        // with a port/whitespace doesn't make the comparison silently
+        // skip. A mismatch means we can't trust the value, so we let the
+        // per-item invoke surface any real connectivity error instead of
+        // false-blocking.
+        if (
+          conn.payloadStatus === "down" &&
+          conn.payloadStatusHost != null &&
+          bareIp(conn.payloadStatusHost) === targetHost
+        ) {
+          markFailed(
+            get,
+            set,
+            head.id,
+            0,
+            "The PS5 helper (payload) isn't connected, so the install can't start. Open Connection → Send helper, confirm it's running on the PS5, then start the install again.",
+          );
+          set({ isRunning: false });
+          return;
+        }
+      }
+    }
+
     // Auto-push the bundled payload to whichever PS5 the FIRST
     // pending item targets. If multiple items target different PS5s
     // (rare), each item's loop iteration re-checks below — but in
@@ -847,6 +913,19 @@ export const useInstallQueue = create<InstallQueueState>((set, get) => ({
         shellui_err?: number | null;
         appinst_err?: number | null;
       };
+      // Per-item cancel re-check. cancel(id) marks an item "cancelled"
+      // WITHOUT bumping runId (it shouldn't tear down the whole queue),
+      // so isLive() stays true through the staging/settle windows above
+      // — which only check isLive(). Without this, cancelling a row mid-
+      // staging would still register a BGFT task on the PS5. Skip to the
+      // next item if this one was cancelled before we send the install.
+      {
+        const liveItem = get().items.find((it) => it.id === next.id);
+        if (!liveItem || liveItem.status === "cancelled") {
+          continue;
+        }
+      }
+
       let startResp: StartResp = {};
       // 2.2.54-fix-round-7: retry policy refined. Direct testing
       // proved that 0x80B21106 on a same-content_id install means
@@ -1121,7 +1200,12 @@ export const useInstallQueue = create<InstallQueueState>((set, get) => ({
       if (!isLive()) return;
     }
 
-    set({ isRunning: false });
+    // Only clear the running flag if we're still the live run. A stale
+    // worker that lost a stop()+start() race must not stomp the newer
+    // run's isRunning=true — that would let a duplicate worker start
+    // (the `if (get().isRunning) return` guard at the top would pass)
+    // and two workers would compete for the same pending item.
+    if (isLive()) set({ isRunning: false });
   },
 }));
 
