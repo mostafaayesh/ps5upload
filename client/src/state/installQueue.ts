@@ -153,8 +153,15 @@ interface InstallQueueState {
    *  *something* while ensurePayloadCurrent runs. ensurePayloadCurrent
    *  can take ~30 s on the first install of a session (payload push +
    *  port-up wait) and was previously silent. Cleared once the worker
-   *  enters its per-item loop. */
-  preflightStatus: string | null;
+   *  enters its per-item loop.
+   *
+   *  `message` is the user-visible text; `ownerRunId` tags the run
+   *  that set this banner so the worker's `finally` clause can clear
+   *  it only if it's still ours (a start→stop→start sequence
+   *  targeting the same host would otherwise see the OLD finally
+   *  clear the NEW worker's identical-text banner — bug caught in
+   *  Round 4 of the v2.16.1 audit). */
+  preflightStatus: { message: string; ownerRunId: number } | null;
   /** True once `hydrate()` has loaded persisted items from localStorage.
    *  Guards against a second hydrate call (e.g. when InstallPackage
    *  re-mounts after a tab switch) overwriting live runtime state —
@@ -705,21 +712,15 @@ export const useInstallQueue = create<InstallQueueState>((set, get) => ({
         // does payloadCheck → sendPayload → port-up poll). Without
         // this it feels like the click did nothing.
         //
-        // Embed myRun in the message so two consecutive starts
-        // targeting the SAME host produce different strings — the
-        // finally's content-compare clear then correctly leaves a
-        // newer banner alone even when the host is identical.
-        // myRun is invisible to the user (the suffix is a zero-width
-        // marker comment in HTML render).
+        // Tag the banner with myRun so the finally clause can clear it
+        // only when WE own it. start→stop→start to the SAME host would
+        // otherwise have the OLD finally clear the NEW worker's
+        // identical-text banner. The ownerRunId compare disambiguates
+        // without relying on the user-visible string.
         const preflightMsg = `Preparing PS5 at ${host} — checking / pushing payload…`;
-        // Tag the live state with this run's id so the finally can
-        // verify ownership without false-positives on identical
-        // user-facing text. We store both the message AND the runId
-        // by appending an invisible suffix; the UI strip is a noop
-        // because React renders the visible portion. (Simpler than
-        // a parallel state field — keeps the surface area small.)
-        const tagged = `${preflightMsg}​${myRun}`;
-        set({ preflightStatus: tagged });
+        set({
+          preflightStatus: { message: preflightMsg, ownerRunId: myRun },
+        });
         try {
           await ensurePayloadCurrent(host);
         } catch (e) {
@@ -727,18 +728,17 @@ export const useInstallQueue = create<InstallQueueState>((set, get) => ({
           // a throw here is unexpected. Log + continue with install.
           console.warn("ensurePayloadCurrent threw:", e);
         } finally {
-          // Clear only if the live banner still carries OUR runId tag.
-          // Two scenarios this protects against:
+          // Clear only if the live banner is still tagged with OUR
+          // runId. Two scenarios this protects against:
           //   - start→stop: our finally runs after isLive() turned
           //     false, but no newer worker has set a different banner
-          //     yet — current still carries our runId → clear it
+          //     yet — current.ownerRunId still equals myRun → clear it
           //     (fixes "stuck banner forever after Stop").
           //   - start→stop→start: by the time our finally runs, the
-          //     new worker has set its own preflightStatus with a
-          //     DIFFERENT runId tag (even if user-visible message
-          //     is identical) → leave it alone.
+          //     new worker has already set its own preflightStatus
+          //     with a DIFFERENT ownerRunId → leave it alone.
           const current = get().preflightStatus;
-          if (current === tagged) {
+          if (current && current.ownerRunId === myRun) {
             set({ preflightStatus: null });
           }
         }

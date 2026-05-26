@@ -399,13 +399,7 @@ export default function InstallPackageScreen() {
       {preflightStatus && (
         <div className="mb-4 flex items-start gap-2 rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-[12px]">
           <Loader2 size={13} className="mt-0.5 shrink-0 animate-spin text-blue-500" />
-          {/* Strip the zero-width-space runId tag the queue worker
-            * appends for ownership tracking — see preflightStatus
-            * note in installQueue.ts. The tag is everything from the
-            * ZWSP (​) onwards. */}
-          <div className="text-[var(--color-text)]">
-            {preflightStatus.split("​")[0]}
-          </div>
+          <div className="text-[var(--color-text)]">{preflightStatus.message}</div>
         </div>
       )}
 
