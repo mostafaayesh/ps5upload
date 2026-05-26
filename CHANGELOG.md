@@ -4,7 +4,11 @@ What's new in ps5upload, written for humans.
 
 ---
 
-## 2.16.1
+## 2.17.0
+
+The v2.16.1 release pipeline didn't make it out — an ESLint failure on the
+preflight banner string blocked the release run. 2.17.0 ships everything
+that was meant for 2.16.1, plus the fix.
 
 - **Game folders uploaded with ps5upload now launch first try.** Previously
   some folders would land on the PS5 but refuse to launch with `CE-107750-0`,
@@ -39,6 +43,11 @@ What's new in ps5upload, written for humans.
 - **Stopping the queue mid-install no longer orphans the row.** Rows that
   were "running" when you click Stop now correctly go back to "pending" so
   the next Start picks them up.
+- **Install preflight banner internals.** Refactored to carry
+  `{ message, ownerRunId }` instead of embedding the run-id via a zero-width
+  space in the banner string. Same user-visible behaviour; fixes the
+  no-irregular-whitespace ESLint failure that blocked the v2.16.1 release
+  pipeline.
 
 ---
 
