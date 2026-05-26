@@ -27,7 +27,7 @@ What's new in ps5upload, written for humans.
   actually works (a v2.16.0 regression made every streaming install 500;
   fixed). System pkgs (NPXS-prefix) get a clear amber badge in the queue
   before you try them. Cancelling a multi-GB install asks for confirmation
-  first. Failed installs now show actionable messages for the common Sony
+  first. Failed installs show actionable messages for the common Sony
   error codes ("clear PS5 notifications", "out of space", etc.) instead of
   raw hex. The install panel also shows which path (in-process,
   ShellUI-RPC, or legacy BGFT) accepted your request, and the URL the PS5
