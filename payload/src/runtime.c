@@ -8810,18 +8810,31 @@ static int handle_system_control(runtime_state_t *state, int client_fd,
     int rc = 0;
     int err_code = 0;
     const char *err_str = NULL;
+    /* All four ACK bodies below previously had hand-counted lengths
+     * that were off-by-one on 3 of 4 paths — reboot/shutdown/tick
+     * dropped the closing `}`, which the client's serde_json parser
+     * rejected with "EOF while parsing an object at line 1 column N".
+     * The reboot/shutdown calls still went through (the API was
+     * invoked after the truncated send), but the client surfaced a
+     * spurious error to the user. Standby happened to be counted
+     * correctly. Using strlen() on the literal keeps every path
+     * honest and immunizes against future copies of this pattern. */
     switch (action) {
-    case SC_ACTION_REBOOT:
+    case SC_ACTION_REBOOT: {
         /* Send ACK first, then call API. */
+        const char *ack = "{\"ok\":true,\"action\":\"reboot\"}";
         rc = send_frame(client_fd, FTX2_FRAME_SYSTEM_CONTROL_ACK, 0,
-                        trace_id, "{\"ok\":true,\"action\":\"reboot\"}", 28);
+                        trace_id, ack, strlen(ack));
         sceSystemServiceRequestReboot();
         return rc;
-    case SC_ACTION_SHUTDOWN:
+    }
+    case SC_ACTION_SHUTDOWN: {
+        const char *ack = "{\"ok\":true,\"action\":\"shutdown\"}";
         rc = send_frame(client_fd, FTX2_FRAME_SYSTEM_CONTROL_ACK, 0,
-                        trace_id, "{\"ok\":true,\"action\":\"shutdown\"}", 30);
+                        trace_id, ack, strlen(ack));
         sceSystemServiceRequestPowerOff();
         return rc;
+    }
     case SC_ACTION_STANDBY: {
         /* sceSystemStateMgrEnterStandby is dlsym'd to handle FW where
          * the symbol moved or doesn't exist. */
@@ -8832,8 +8845,9 @@ static int handle_system_control(runtime_state_t *state, int client_fd,
                               0, trace_id, err_str, strlen(err_str));
         }
         int (*enter_standby)(void) = (int (*)(void))h;
+        const char *ack = "{\"ok\":true,\"action\":\"standby\"}";
         rc = send_frame(client_fd, FTX2_FRAME_SYSTEM_CONTROL_ACK, 0,
-                        trace_id, "{\"ok\":true,\"action\":\"standby\"}", 30);
+                        trace_id, ack, strlen(ack));
         enter_standby();
         return rc;
     }
@@ -8841,9 +8855,9 @@ static int handle_system_control(runtime_state_t *state, int client_fd,
         /* Tick is non-destructive; we can ACK after. */
         err_code = sceSystemServicePowerTick();
         if (err_code == 0) {
+            const char *ack = "{\"ok\":true,\"action\":\"tick\"}";
             return send_frame(client_fd, FTX2_FRAME_SYSTEM_CONTROL_ACK,
-                              0, trace_id,
-                              "{\"ok\":true,\"action\":\"tick\"}", 26);
+                              0, trace_id, ack, strlen(ack));
         }
         {
             char buf[128];
