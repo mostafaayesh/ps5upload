@@ -80,14 +80,46 @@ pub fn system_control(addr: &str, action: PowerAction) -> Result<SystemControlAc
             if ft != FrameType::SystemControlAck {
                 bail!("expected SYSTEM_CONTROL_ACK, got {ft:?}");
             }
-            let parsed: SystemControlAck = serde_json::from_slice(&resp)?;
-            if !parsed.ok {
-                bail!(
-                    "SYSTEM_CONTROL failed: {}",
-                    parsed.err.as_deref().unwrap_or("payload returned ok=false")
-                );
+            match serde_json::from_slice::<SystemControlAck>(&resp) {
+                Ok(parsed) => {
+                    if !parsed.ok {
+                        bail!(
+                            "SYSTEM_CONTROL failed: {}",
+                            parsed.err.as_deref().unwrap_or("payload returned ok=false")
+                        );
+                    }
+                    Ok(parsed)
+                }
+                Err(parse_err) => {
+                    // Same destructive-action escape hatch we use for
+                    // connection drops below, applied to JSON parse
+                    // failures: 2.17.1's bundled payload had hand-
+                    // counted ACK body lengths that were off-by-one on
+                    // reboot / shutdown / tick (e.g. the reboot literal
+                    // was 29 chars sent as 28, dropping the closing
+                    // `}`). The frame layer accepts that just fine,
+                    // serde_json rejects it with "EOF while parsing an
+                    // object at line 1 column N". Newer payloads fix
+                    // the off-by-one upstream; this branch retroactively
+                    // covers clients still talking to an older payload
+                    // already loaded on a PS5. Tick is non-destructive,
+                    // so a corrupt tick ACK still bubbles up the error
+                    // (no consequence to retry).
+                    match action {
+                        PowerAction::Reboot
+                        | PowerAction::Shutdown
+                        | PowerAction::Standby => Ok(SystemControlAck {
+                            ok: true,
+                            action: Some(format!("{action:?}").to_lowercase()),
+                            err: Some(format!(
+                                "malformed_ack (expected for {action:?} on old payloads): {parse_err}"
+                            )),
+                            code: None,
+                        }),
+                        PowerAction::Tick => Err(parse_err.into()),
+                    }
+                }
             }
-            Ok(parsed)
         }
         Err(e) => {
             // Destructive actions intentionally sever the connection.
@@ -218,5 +250,46 @@ mod tests {
         let t = parse_power_telemetry(body);
         assert_eq!(t.operating_seconds, None);
         assert_eq!(t.boot_cycles, None);
+    }
+
+    // The next two tests document the payload-side off-by-one bug
+    // that motivated the 2.17.2 fix: 2.17.1's payload hand-counted
+    // its SYSTEM_CONTROL_ACK body lengths and dropped the closing
+    // `}` on reboot / shutdown / tick. Frame layer happily delivers
+    // the truncated bytes; serde_json then rejects. We pin both
+    // sides (what's broken on old payloads, what new payloads must
+    // produce) so a regression on either side surfaces as a test
+    // failure rather than as a spurious error popup at users.
+    #[test]
+    fn truncated_reboot_ack_fails_to_parse() {
+        // What 2.17.1's payload actually sent: length 28, missing the
+        // closing brace. Matches the user-reported error literally
+        // ("EOF while parsing an object at line 1 column 28").
+        let truncated = br#"{"ok":true,"action":"reboot""#;
+        assert_eq!(truncated.len(), 28);
+        let parsed: Result<SystemControlAck, _> = serde_json::from_slice(truncated);
+        assert!(
+            parsed.is_err(),
+            "truncated body must error so the destructive-action tolerance branch kicks in",
+        );
+        let err = parsed.unwrap_err().to_string();
+        assert!(
+            err.contains("EOF while parsing"),
+            "want EOF-style serde error, got: {err}",
+        );
+    }
+
+    #[test]
+    fn well_formed_reboot_ack_round_trips() {
+        // What the post-fix payload (strlen-based send) emits. Pins
+        // the contract: the new send length must produce a JSON the
+        // client can parse.
+        let well_formed = br#"{"ok":true,"action":"reboot"}"#;
+        assert_eq!(well_formed.len(), 29);
+        let parsed: SystemControlAck =
+            serde_json::from_slice(well_formed).expect("well-formed reboot ACK must parse");
+        assert!(parsed.ok);
+        assert_eq!(parsed.action.as_deref(), Some("reboot"));
+        assert_eq!(parsed.err, None);
     }
 }

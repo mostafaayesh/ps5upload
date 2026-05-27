@@ -4,6 +4,16 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.17.2
+
+- **Rebooting your PS5 from the Hardware tab no longer shows a fake
+  error.** The reboot itself always worked, but the app would
+  display `power: EOF while parsing an object at line 1 column 28`
+  right after, because the payload's "ok, rebooting now" reply was
+  missing one byte. Fixed on both ends.
+
+---
+
 ## 2.17.1
 
 - **Big multi-file uploads no longer look frozen at 100%.** When all
