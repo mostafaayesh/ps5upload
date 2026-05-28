@@ -1085,6 +1085,11 @@ ffpkg_sce_sys_missing: "missing",
 queue_raw_error: "raw error",
 upload_detected_label: "Detected:",
 upload_inspecting: "Inspecting…",
+upload_scanning_title: "Scanning game folder…",
+upload_scanning_hint:
+  "Counting files and building the upload plan. Large folders (100k+ files) take 30 seconds or so. Upload buttons will enable when this finishes.",
+upload_disabled_scanning:
+  "Scanning game folder — wait for the scan to finish, then this button enables.",
 upload_choose_diff_source: "Choose a different source",
 upload_cancel: "Cancel",
 upload_add_to_queue: "Add to queue",

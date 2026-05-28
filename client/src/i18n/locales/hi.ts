@@ -1230,6 +1230,9 @@ install_register_path_appinst: "(इन — प्रोसेस AppInstUtil �
   activity_phase_finalizing_with_counter: "Finalizing on PS5 — {done} / {total} files",
   upload_status_finalizing_counter: "Finalized {done} / {total} files. ",
   queue_phase_finalizing_with_counter: "Finalizing on PS5 — {done} / {total}",
+  upload_scanning_title: "Scanning game folder…",
+  upload_scanning_hint: "Counting files and building the upload plan. Large folders (100k+ files) take 30 seconds or so. Upload buttons will enable when this finishes.",
+  upload_disabled_scanning: "Scanning game folder — wait for the scan to finish, then this button enables.",
 };
 
 export default hi;

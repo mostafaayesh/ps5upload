@@ -581,6 +581,37 @@ function Step2Options(props: {
             <div className="mt-1 truncate font-mono text-xs text-[var(--color-muted)]">
               {source.path}
             </div>
+            {detecting && (
+              // Prominent scanning banner. The small inline spinner up
+              // top is easy to miss for users staring at the disabled
+              // Upload / Add-to-Queue buttons further down the page —
+              // a 200k-file game folder walks for ~30 sec on an
+              // external HDD with no visible feedback explaining why
+              // those buttons aren't clickable. The banner lives
+              // inside the source card so it's the second thing the
+              // user reads after the path, and a hint line tells them
+              // it's normal and what to expect.
+              <div className="mt-2 flex items-start gap-2 rounded-md border border-[var(--color-accent)]/40 bg-[var(--color-accent)]/5 p-2 text-xs">
+                <Loader2
+                  size={14}
+                  className="mt-0.5 shrink-0 animate-spin text-[var(--color-accent)]"
+                />
+                <div>
+                  <div className="font-medium text-[var(--color-text)]">
+                    {tr(
+                      "upload_scanning_title",
+                      "Scanning game folder…",
+                    )}
+                  </div>
+                  <div className="text-[var(--color-muted)]">
+                    {tr(
+                      "upload_scanning_hint",
+                      "Counting files and building the upload plan. Large folders (100k+ files) take 30 seconds or so. Upload buttons will enable when this finishes.",
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             {detectError && (
               <div className="mt-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-3)] p-2 text-xs text-[var(--color-bad)]">
                 {detectError}
@@ -699,10 +730,18 @@ function Step2Options(props: {
           onClick={() => onAddToQueue("overwrite")}
           disabled={detecting || preflightBusy || !!detectError}
           className="rounded-md border border-[var(--color-border)] px-4 py-2 text-sm hover:bg-[var(--color-surface-3)] disabled:opacity-50"
-          title={tr(
-            "upload_add_to_queue_tooltip",
-            "Add this upload to the queue without starting it",
-          )}
+          title={
+            detecting
+              ? tr(
+                  "upload_disabled_scanning",
+                  undefined,
+                  "Scanning game folder — wait for the scan to finish, then this button enables.",
+                )
+              : tr(
+                  "upload_add_to_queue_tooltip",
+                  "Add this upload to the queue without starting it",
+                )
+          }
         >
           {tr("upload_add_to_queue", "Add to queue")}
         </button>
@@ -711,7 +750,13 @@ function Step2Options(props: {
           onClick={onUpload}
           disabled={uploadDisabled}
           title={
-            queueRunning
+            detecting
+              ? tr(
+                  "upload_disabled_scanning",
+                  undefined,
+                  "Scanning game folder — wait for the scan to finish, then this button enables.",
+                )
+              : queueRunning
               ? tr(
                   "upload_disabled_queue_running",
                   undefined,

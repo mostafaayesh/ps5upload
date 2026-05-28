@@ -4,6 +4,17 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.18.1
+
+- **Picking a large game folder now shows what the app is doing.**
+  When you pick a folder with tens of thousands of files, the
+  Upload + "Add to queue" buttons used to grey out for ~30 seconds
+  with no visible feedback. The source card now shows a clear
+  "Scanning game folder…" banner with a hint explaining the wait,
+  and hovering the disabled buttons tells you why.
+
+---
+
 ## 2.18.0
 
 - **The "Finalizing on PS5" wait now shows a live counter.** When a
