@@ -195,3 +195,16 @@ client/src-tauri/gen/
 PS5Upload-android.apk
 PS5Upload-android.apk.idsig
 *.idsig
+
+# NEVER commit signing material. The Android release keystore + passwords
+# live in GitHub Actions secrets (ANDROID_KEYSTORE_BASE64 etc.) and an
+# off-repo backup (password manager). Committing a keystore to this PUBLIC
+# repo would expose the app's signing identity — anyone could push a
+# malicious "update" your users' devices would trust. This is a guard so a
+# keystore can't be added by accident.
+*.jks
+*.keystore
+*.p12
+*.pepk
+*.pfx
+key.properties
