@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { pickPath } from "../../lib/pickPath";
 import {
   Send,
   Loader2,
@@ -217,9 +217,8 @@ export default function SendPanel() {
     // promise — the user clicks Choose and gets no feedback at all.
     let picked: string | string[] | null;
     try {
-      picked = await openDialog({
-        multiple: false,
-        directory: false,
+      picked = await pickPath({
+        mode: "file",
         filters: [
           { name: "Payload", extensions: ["elf", "bin", "js", "lua", "jar"] },
           { name: "All files", extensions: ["*"] },

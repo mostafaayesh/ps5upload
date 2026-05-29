@@ -32,7 +32,8 @@ import { startTransferDownload } from "../../api/ps5";
 import { formatBytes } from "../../lib/format";
 import { mgmtAddr } from "../../lib/addr";
 import { useStaleHostGuard } from "../../lib/staleHostGuard";
-import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { pickPath } from "../../lib/pickPath";
 import { pushNotification } from "../../state/notifications";
 
 /**
@@ -208,8 +209,8 @@ export default function SavesScreen() {
       });
       if (!ok) return;
 
-      const localZip = await openDialog({
-        multiple: false,
+      const localZip = await pickPath({
+        mode: "file",
         filters: [{ name: "ZIP archive", extensions: ["zip"] }],
         title: tr(
           "saves_restore_picker",

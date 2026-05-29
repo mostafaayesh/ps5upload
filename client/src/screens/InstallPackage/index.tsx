@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { isAndroid } from "../../lib/platform";
+import { pickPath } from "../../lib/pickPath";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isTauriEnv, safeUnlisten } from "../../lib/tauriEnv";
 import {
@@ -283,10 +285,17 @@ export default function InstallPackageScreen() {
     }
     setPicking(true);
     try {
-      const sel = await openDialog({
-        multiple: true,
-        filters: [{ name: "PS5 Package", extensions: ["pkg"] }],
-      });
+      // Android has no real-path multi-file picker; pick one .pkg at a
+      // time via the in-app browser. Desktop keeps native multi-select.
+      const sel = isAndroid()
+        ? await pickPath({
+            mode: "file",
+            filters: [{ name: "PS5 Package", extensions: ["pkg"] }],
+          })
+        : await openDialog({
+            multiple: true,
+            filters: [{ name: "PS5 Package", extensions: ["pkg"] }],
+          });
       const paths = Array.isArray(sel) ? sel : sel ? [sel] : [];
       for (const p of paths) {
         await addPkgPath(p as string);

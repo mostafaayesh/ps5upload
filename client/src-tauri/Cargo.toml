@@ -1,6 +1,6 @@
 [package]
 name = "ps5upload-desktop"
-version = "2.19.3"
+version = "2.20.0"
 description = "The all-in-one PS5 companion app."
 edition = "2021"
 rust-version = "1.77"
@@ -102,6 +102,13 @@ libc = "0.2"
 # cargo-known cfg, so gate on the concrete target OSes.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 ps5upload-engine = { path = "../../engine/crates/ps5upload-engine" }
+
+# Android-only: call the platform APIs needed for all-files storage access
+# (Environment.isExternalStorageManager + the settings intent) from Rust.
+# tauri/ndk set up ndk_context so we can reach the JavaVM + Activity.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
 
 [features]
 # Default: build Tauri-native (no custom features yet)

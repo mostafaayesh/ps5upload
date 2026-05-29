@@ -20,7 +20,7 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { pickPath } from "../../lib/pickPath";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 
 import { useConnectionStore, PS5_PAYLOAD_PORT } from "../../state/connection";
@@ -1318,9 +1318,8 @@ function LibraryRow({
    *  drive the in-row progress bar; bails on the first failure
    *  and surfaces the engine's error verbatim. */
   const runDownload = async () => {
-    const picked = await openDialog({
-      multiple: false,
-      directory: true,
+    const picked = await pickPath({
+      mode: "folder",
       title: tr(
         "library_download_dialog_title",
         { name: entry.name },
@@ -1740,9 +1739,8 @@ function LibraryRow({
   const runBackupGame = async () => {
     if (entry.kind !== "game") return;
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const dest = await open({
-        directory: true,
+      const dest = await pickPath({
+        mode: "folder",
         title: tr(
           "library_backup_picker",
           undefined,

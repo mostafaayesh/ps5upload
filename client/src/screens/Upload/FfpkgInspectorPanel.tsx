@@ -17,7 +17,7 @@ import {
   type FfpkgInspection,
   type FfpkgExtractResult,
 } from "../../api/ps5";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { pickPath } from "../../lib/pickPath";
 import { Button } from "../../components";
 import { useTr } from "../../state/lang";
 import { pushNotification } from "../../state/notifications";
@@ -64,8 +64,8 @@ export default function FfpkgInspectorPanel({ path }: { path: string }) {
 
   async function runExtract(innerPath: string, displayName: string) {
     if (extractBusy) return;
-    const dest = await openDialog({
-      directory: true,
+    const dest = await pickPath({
+      mode: "folder",
       title: tr(
         "ffpkg_extract_picker",
         { name: displayName },

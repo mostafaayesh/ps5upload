@@ -775,7 +775,8 @@ fn extract_payload_elf_from_zip(
             "zip ELF entry exceeds {PAYLOAD_DOWNLOAD_MAX_BYTES} byte cap"
         ));
     }
-    out.sync_all().map_err(|e| format!("fsync extracted elf: {e}"))?;
+    out.sync_all()
+        .map_err(|e| format!("fsync extracted elf: {e}"))?;
     Ok(())
 }
 

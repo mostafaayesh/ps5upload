@@ -23,6 +23,7 @@ import { ensureOsNotificationPermission } from "../lib/osNotify";
 import { powerTick } from "../api/ps5";
 import { CommandPalette } from "../components/CommandPalette";
 import { ShortcutsOverlay } from "../components/ShortcutsOverlay";
+import { LocalPathPicker } from "../components/LocalPathPicker";
 import { useWindowStatePersistence } from "../lib/windowState";
 import { mgmtAddr } from "../lib/addr";
 import { installPlayTimeAccumulator } from "../state/playTime";
@@ -313,6 +314,9 @@ export default function AppShell() {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)] text-[var(--color-text)]">
+      {/* Global in-app file/folder picker (Android real-path browser).
+          Mounted once; screens drive it via pickLocalPath(). */}
+      <LocalPathPicker />
       {/* Mobile top bar — only below the md breakpoint, where the fixed
           240px sidebar would otherwise eat most of a phone screen. The
           hamburger opens the sidebar as a slide-in drawer. */}

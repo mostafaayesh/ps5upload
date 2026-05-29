@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { pickPath } from "../../lib/pickPath";
 import {
   ArrowDown,
   ArrowUp,
@@ -393,9 +393,8 @@ function PlaylistCard({
   };
 
   const handleAddStep = async () => {
-    const picked = await openDialog({
-      multiple: false,
-      directory: false,
+    const picked = await pickPath({
+      mode: "file",
       filters: [
         { name: "Payload", extensions: ["elf", "bin", "js", "lua", "jar"] },
         { name: "All files", extensions: ["*"] },

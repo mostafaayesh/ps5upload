@@ -18,7 +18,7 @@ import {
   Download,
   X,
 } from "lucide-react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { pickPath } from "../../lib/pickPath";
 import { PageHeader, Button } from "../../components";
 // Direct import to avoid the barrel's circular-dep warning at build.
 import { useConfirm, useAlert, usePrompt } from "../../components/ConfirmDialog";
@@ -1204,9 +1204,8 @@ export default function FileSystemScreen() {
    *  flight at the screen level: only one download at a time. */
   const runDownload = async (entry: DirEntry) => {
     if (useFsDownloadOpStore.getState().active) return;
-    const picked = await openDialog({
-      multiple: false,
-      directory: true,
+    const picked = await pickPath({
+      mode: "folder",
       title: tr(
         "fs_download_dialog_title",
         { name: entry.name },

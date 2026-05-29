@@ -4,7 +4,16 @@ What's new in ps5upload, written for humans.
 
 ---
 
-## 2.19.3
+## 2.20.0
+
+- **Android: pick game folders and files from your phone.** "Choose
+  folder" and "Choose file" now work on Android — browse your phone's
+  storage in an in-app file browser and upload a game folder or a `.zip`
+  straight to the PS5, with no copying. PS5 Upload asks once for
+  permission to read your files. The same picker fixes file/folder
+  selection across the whole app on Android: Library downloads, Install
+  Package, Save-data restore, Screenshots, Payloads, and File System.
+  (Desktop is unchanged — it keeps using the native file dialogs.)
 
 - **ShadowMount+ (and other zip-packaged payloads) now install.** The
   "Set up your PS5" one-click chain and the payload catalogue failed on

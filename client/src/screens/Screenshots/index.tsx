@@ -18,7 +18,7 @@ import { mgmtAddr } from "../../lib/addr";
 import { useStaleHostGuard } from "../../lib/staleHostGuard";
 import { PageHeader, Button, EmptyState, ErrorCard } from "../../components";
 import { useTr } from "../../state/lang";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { pickPath } from "../../lib/pickPath";
 import { formatBytes } from "../../lib/format";
 
 /**
@@ -64,8 +64,8 @@ export default function ScreenshotsScreen() {
 
   async function downloadSelected() {
     if (!host?.trim() || selected.size === 0) return;
-    const dest = await openDialog({
-      directory: true,
+    const dest = await pickPath({
+      mode: "folder",
       title: tr(
         "screenshots_bulk_dest",
         { n: selected.size },
@@ -139,8 +139,8 @@ export default function ScreenshotsScreen() {
 
   async function downloadOne(item: ScreenshotEntry) {
     if (!host?.trim()) return;
-    const dest = await openDialog({
-      directory: true,
+    const dest = await pickPath({
+      mode: "folder",
       title: tr(
         "screenshots_dest_pick",
         undefined,

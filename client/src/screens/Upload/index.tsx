@@ -15,6 +15,8 @@ import {
 import clsx from "clsx";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { isAndroid } from "../../lib/platform";
+import { pickLocalPath } from "../../state/localPicker";
 import { isTauriEnv, safeUnlisten } from "../../lib/tauriEnv";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -169,12 +171,20 @@ export default function UploadScreen() {
   }, [pickFile, pickFolder]);
 
   const handleChooseFile = async () => {
-    const selected = await openDialog({ directory: false, multiple: false });
+    // Android: the native dialog returns content:// URIs the engine
+    // can't read, so browse the real filesystem in-app instead.
+    const selected = isAndroid()
+      ? await pickLocalPath({ mode: "file" })
+      : await openDialog({ directory: false, multiple: false });
     if (typeof selected === "string") await pickFile(selected);
   };
 
   const handleChooseFolder = async () => {
-    const selected = await openDialog({ directory: true, multiple: false });
+    // Android: directory:true is a no-op in plugin-dialog; use the
+    // in-app real-path browser so folder upload works.
+    const selected = isAndroid()
+      ? await pickLocalPath({ mode: "folder" })
+      : await openDialog({ directory: true, multiple: false });
     if (typeof selected === "string") await pickFolder(selected);
   };
 

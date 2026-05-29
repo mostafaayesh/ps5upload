@@ -319,6 +319,14 @@ pub fn run() {
             // title-info site, bypassing renderer CSP/CORS. Hostname
             // allowlist enforced in commands/title_meta.rs.
             commands::title_meta_fetch,
+            // ── Local filesystem browse + Android all-files access ──
+            // Backs the in-app file/folder picker used on Android (where
+            // native dialogs return content:// URIs the engine can't
+            // read). Harmless helpers on desktop.
+            commands::local_list_dir,
+            commands::local_storage_roots,
+            commands::storage_access_granted,
+            commands::request_storage_access,
         ])
         .build(tauri::generate_context!())
         .expect("tauri runtime failed to build");

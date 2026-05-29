@@ -35,8 +35,7 @@ const BIND: &str = "127.0.0.1:19113";
 /// (it retries), matching how the desktop readiness probe is advisory.
 pub async fn start(_app: &AppHandle) -> Result<&'static str> {
     tokio::spawn(async {
-        if let Err(e) =
-            ps5upload_engine::serve_in_process(BIND, DEFAULT_PS5_ADDR.to_string()).await
+        if let Err(e) = ps5upload_engine::serve_in_process(BIND, DEFAULT_PS5_ADDR.to_string()).await
         {
             // Log and let the renderer surface "engine unreachable" via
             // its normal probe — don't panic the app over it.

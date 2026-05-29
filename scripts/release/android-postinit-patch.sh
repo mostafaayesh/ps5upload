@@ -93,14 +93,38 @@ wanted = {
 inject = "".join(
     f' {k}="{v}"' for k, v in wanted.items() if k not in src
 )
-if not inject:
-    print("manifest already patched — skipping")
-else:
+if inject:
     new = re.sub(r"(<application\b)", r"\1" + inject, src, count=1)
     if new == src:
         sys.exit("::error::could not find <application> tag to patch")
-    open(path, "w", encoding="utf-8").write(new)
+    src = new
     print("patched <application> with:" + inject)
+else:
+    print("<application> already patched — skipping")
+
+# All-files storage access so the in-app file/folder picker can read
+# arbitrary game folders / .zips under /storage (the engine walks real FS
+# paths; SAF content:// URIs are unusable). MANAGE_EXTERNAL_STORAGE is the
+# API 30+ permission; the legacy READ/WRITE_EXTERNAL_STORAGE (maxSdk 29)
+# cover older devices. Inserted before </application>'s closing, just
+# after the opening <application ...> line, idempotently.
+perms = [
+    '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />',
+    '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',
+    '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />',
+]
+missing = [p for p in perms if 'android.permission.' + p.split('android.permission.')[1].split('"')[0] not in src]
+if missing:
+    block = "\n    " + "\n    ".join(missing)
+    new = re.sub(r"(<manifest\b[^>]*>)", r"\1" + block, src, count=1)
+    if new == src:
+        sys.exit("::error::could not find <manifest> tag to add permissions")
+    src = new
+    print("added storage permissions:", ", ".join(p.split('"')[1] for p in missing))
+else:
+    print("storage permissions already present — skipping")
+
+open(path, "w", encoding="utf-8").write(src)
 PY
 
 echo "android post-init patches applied"

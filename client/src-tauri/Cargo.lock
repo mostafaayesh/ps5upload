@@ -3044,15 +3044,17 @@ dependencies = [
 
 [[package]]
 name = "ps5upload-desktop"
-version = "2.19.3"
+version = "2.20.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "blake3",
  "flate2",
  "futures-util",
+ "jni",
  "libc",
  "mdns-sd",
+ "ndk-context",
  "open",
  "ps5upload-core",
  "ps5upload-engine",
