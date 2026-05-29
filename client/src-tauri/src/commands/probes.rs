@@ -261,7 +261,15 @@ pub async fn payload_send(ip: String, path: String, port: Option<u16>) -> serde_
 /// magic (`\x1f\x8b`) isn't ELF magic so the bundler skips it. At
 /// runtime we decompress once into the app's local-data dir and reuse
 /// the extracted `.elf` on subsequent sends.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const EMBEDDED_PAYLOAD_GZ: &[u8] = include_bytes!(env!("PS5UPLOAD_PAYLOAD_GZ_BYTES"));
+// Mobile (Phase 0): the payload isn't bundled into the app yet (build.rs
+// skips the embed on Android/iOS). An empty slice keeps the bundled-send
+// code paths compiling; sending the *bundled* payload degrades to a
+// clear failure until mobile payload bundling lands. Picking a payload
+// from device storage still works via the normal file-send path.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+const EMBEDDED_PAYLOAD_GZ: &[u8] = &[];
 
 /// Serialises concurrent calls to `find_bundled_payload`. Tauri serves
 /// commands on an async runtime, so two parallel mounts of the

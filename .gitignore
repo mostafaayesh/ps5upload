@@ -187,3 +187,6 @@ payload/ps5upload.elf.gz
 /notes-local/
 NOTES.local.md
 TODO.local.md
+
+# Tauri mobile generated projects (regenerate with: tauri android init / ios init)
+client/src-tauri/gen/

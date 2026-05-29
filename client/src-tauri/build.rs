@@ -23,6 +23,16 @@ use std::path::{Path, PathBuf};
 fn main() {
     tauri_build::build();
 
+    // Mobile (Android/iOS): the engine is linked as a library and runs
+    // in-process (see engine.rs `#[cfg(mobile)]` start), so there is no
+    // sidecar binary to embed and no payload bundled into the app. Skip
+    // all the include_bytes! path wiring below — the env vars it emits
+    // are only consumed by the desktop `#[cfg(desktop)]` engine module.
+    let target_os_early = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os_early == "android" || target_os_early == "ios" {
+        return;
+    }
+
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
     // manifest_dir is client/src-tauri; go up twice to the repo root.

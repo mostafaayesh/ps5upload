@@ -69,6 +69,17 @@ pub async fn usb_list_removable() -> Vec<UsbDrive> {
         .unwrap_or_default()
 }
 
+// Mobile (Android/iOS) fallback: there is no removable-drive mount
+// enumeration to do here (the USB autoloader is a desktop workflow that
+// writes an ELF onto a stick plugged into the computer). Returning an
+// empty list keeps `usb_list_removable` resolving cleanly — the UI shows
+// "no drives" — until/if a SAF-based flow is added. See the Android port
+// feasibility doc (docs/android-port-feasibility.md, USB-autoloader row).
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn enumerate_drives() -> Vec<UsbDrive> {
+    Vec::new()
+}
+
 #[cfg(target_os = "macos")]
 fn enumerate_drives() -> Vec<UsbDrive> {
     let mut out = Vec::new();

@@ -92,6 +92,13 @@ mdns-sd = { version = "0.13", default-features = false, features = ["async"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Mobile (Android/iOS): link the engine as a library and run it
+# in-process (engine_mobile.rs). Desktop spawns it as a sidecar binary
+# instead, so this dependency is mobile-only. `cfg(mobile)` isn't a
+# cargo-known cfg, so gate on the concrete target OSes.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+ps5upload-engine = { path = "../../engine/crates/ps5upload-engine" }
+
 [features]
 # Default: build Tauri-native (no custom features yet)
 default = []

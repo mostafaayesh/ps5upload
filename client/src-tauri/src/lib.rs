@@ -19,9 +19,21 @@
 //! nothing in the command contract needs to change for that.
 
 mod commands;
+// The engine runs as a spawned sidecar binary on desktop, but in-process
+// (linked library) on mobile, where Tauri has no sidecar model. Same
+// `start`/`stop`/`url` surface either way; see engine.rs / engine_mobile.rs.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod engine;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[path = "engine_mobile.rs"]
 mod engine;
 
-/// Build and run the Tauri application. `main.rs` just calls this.
+/// Build and run the Tauri application. The desktop `main.rs` calls this
+/// directly; on mobile the `tauri::mobile_entry_point` macro generates
+/// the JNI/Obj-C entry symbol the Android/iOS harness invokes (without
+/// it the built `.so` fails Tauri's "missing required runtime symbols"
+/// validation).
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Linux WebKitGTK white-screen rescue. On some GPU/compositor stacks
     // (Bazzite, SteamOS, NVIDIA, parts of Mesa) WebKitGTK's accelerated
@@ -47,26 +59,32 @@ pub fn run() {
         }
     }
 
-    let app = tauri::Builder::default()
-        // Single-instance MUST be the first plugin so its `init` runs
-        // before any other setup (window creation, engine spawn). When
-        // a second launch hits, the runtime calls our callback in the
-        // ORIGINAL process with the second instance's argv, then exits
-        // the duplicate. This prevents the double-orphan-reap race
-        // where launch #2's `engine::start()` would otherwise kill
-        // launch #1's engine and leave its UI talking to a dead port.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            // Focus the existing main window so the user sees something
-            // happen rather than a silent no-op when they re-launch.
-            // `get_webview_window("main")` matches the window label
-            // declared in tauri.conf.json.
-            use tauri::Manager;
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
+    let builder = tauri::Builder::default();
+    // Single-instance MUST run before any other setup (window creation,
+    // engine spawn). When a second launch hits, the runtime calls our
+    // callback in the ORIGINAL process with the second instance's argv,
+    // then exits the duplicate. This prevents the double-orphan-reap
+    // race where launch #2's `engine::start()` would otherwise kill
+    // launch #1's engine and leave its UI talking to a dead port.
+    //
+    // Desktop-only: a mobile app already has a single instance by
+    // construction, and the plugin's `init` API isn't available on
+    // Android/iOS. Rebinding `builder` behind a cfg keeps the fluent
+    // chain below untouched.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        // Focus the existing main window so the user sees something
+        // happen rather than a silent no-op when they re-launch.
+        // `get_webview_window("main")` matches the window label
+        // declared in tauri.conf.json.
+        use tauri::Manager;
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
