@@ -422,12 +422,12 @@ jobs:
         working-directory: client
         run: npx tauri icon src-tauri/icons/sources/macos_squircle_1024.png
 
-      # Release APKs set usesCleartextTraffic=false, which blocks the
-      # renderer's loopback fetch to the in-process engine (engine shows
-      # "red"). Add a loopback-only network-security-config so 127.0.0.1
-      # is reachable while all other traffic stays cleartext-forbidden.
-      - name: Allow loopback cleartext for the in-process engine
-        run: bash scripts/release/android-fix-cleartext.sh
+      # Post-init manifest patches: (1) loopback-only cleartext so the
+      # renderer can reach the in-process engine in release builds
+      # (otherwise the engine shows "red"), and (2) backup rules so user
+      # settings survive a reinstall.
+      - name: Patch manifest (loopback cleartext + backup rules)
+        run: bash scripts/release/android-postinit-patch.sh
 
       - name: Build release APK (arm64 + armv7)
         working-directory: client

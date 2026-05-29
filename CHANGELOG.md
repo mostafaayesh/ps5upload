@@ -4,6 +4,21 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.19.2
+
+- **Android: your settings now survive app updates.** Earlier Android
+  builds were each signed with a throwaway key, so installing a newer
+  version meant uninstalling the old one first — which wiped all your
+  PS5 Upload settings. Releases are now signed with a single stable key,
+  so new versions install **in place** and your settings carry over,
+  just like on the computer. (One-time step: uninstall the current build
+  and install this one; every update after that keeps your settings.)
+- **Settings included in device backup.** Your settings are now part of
+  Android's backup/restore, so they can also come back after a full
+  reinstall or a move to a new phone.
+
+---
+
 ## 2.19.1
 
 - **Android: fixed the engine showing red.** On the 2.19.0 Android build
