@@ -16,6 +16,7 @@ import { useTr } from "../state/lang";
 export default function StatusBar() {
   const tr = useTr();
   const engineStatus = useConnectionStore((s) => s.engineStatus);
+  const engineError = useConnectionStore((s) => s.engineError);
   const payloadStatus = useConnectionStore((s) => s.payloadStatus);
   const payloadVersion = useConnectionStore((s) => s.payloadVersion);
   const ps5Kernel = useConnectionStore((s) => s.ps5Kernel);
@@ -33,7 +34,13 @@ export default function StatusBar() {
 
   return (
     <div className="flex items-center gap-5 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 pt-1.5 pb-[calc(env(safe-area-inset-bottom)_+_0.375rem)] pl-[calc(env(safe-area-inset-left)_+_1rem)] pr-[calc(env(safe-area-inset-right)_+_1rem)] text-xs text-[var(--color-muted)]">
-      <div className="flex items-center gap-2" title={tr("status_engine_tooltip", undefined, "ps5upload-engine sidecar on localhost:19113")}>
+      <div
+        className="flex items-center gap-2"
+        title={
+          engineError ??
+          tr("status_engine_tooltip", undefined, "ps5upload-engine sidecar on localhost:19113")
+        }
+      >
         {dot(engineStatus)} {tr("status_engine", undefined, "engine")}
       </div>
       <div className="flex items-center gap-2" title={tr("status_payload_tooltip", undefined, "PS5Upload helper on :9113")}>

@@ -86,6 +86,9 @@ Game pkgs (UP / EP / JP / HP / CUSA / PPSA / PCSA / etc.) work fine.
 - **Linux** — x64 and arm64, shipped as `.zip` containing
   `PS5Upload.AppImage`. Distro-agnostic (works on Ubuntu, Debian,
   Fedora, Arch, etc.) — `chmod +x` and double-click.
+- **Android** — `.apk` (sideload). Same interface, mobile-friendly;
+  manages your PS5 over Wi-Fi. See the **Android** section below for
+  setup, permissions, and uploading from your phone.
 
 **Q: Which PS5 firmware works?**
 ps5upload is built against PS5 Payload SDK v0.38, which resolves
@@ -108,6 +111,58 @@ coverage is roughly 4.x–12.x today.
 All models: original CFI-1xxx, Digital, Slim (CFI-2xxx), and Pro
 (CFI-7xxx). Transfer, mount, volume listing, and hardware info work
 on every one.
+
+---
+
+## Android
+
+**Q: How do I install the Android app?**
+Download `PS5Upload-<ver>-android.apk` from the Releases page and open
+it on your phone. Android will ask you to allow installing from your
+browser / file manager the first time — that's normal for a sideloaded
+app. Updates install in place and keep your settings (builds are signed
+with a stable key from v2.20.0 on). If an older build refuses to
+update, uninstall it once, then install v2.20.0 or newer.
+
+**Q: I picked a game folder, a `.zip`, or a `.pkg`, but it fails — "could
+not read", "No such file or directory", "not an ELF", or it just won't
+send / install.**
+Android needs **All files access** before the app can read your files.
+This is the single most common Android issue.
+- On **v2.20.0+** the app asks for it: when you tap **Choose folder**,
+  **Choose file**, or **Add .pkg**, an in-app file browser opens. The
+  first time, tap **Open settings**, turn on **"Allow access to manage
+  all files"** for PS5Upload, come back, and tap **Retry**. Then browse
+  your storage and pick the file/folder.
+- On **older builds (≤ v2.19.x)** the app used Android's system file
+  picker, which only returns a `content://` link the engine can't open —
+  that's exactly why loading failed. **Update to v2.20.0+.**
+- You can grant it any time: **Android Settings → Apps → PS5Upload →
+  Permissions → All files access → Allow** (the app also nudges you on
+  first launch).
+
+**Q: How do I upload a big game (a folder or a `.zip`) from my phone?**
+Open **Upload → Choose folder** (or **Choose file** for a `.zip` dump),
+pick it in the in-app browser, choose the destination, and **Start**.
+With All-files access the engine reads the file in place — nothing is
+copied — so a multi-GB / tens-of-thousands-of-files game streams
+straight to the PS5 over Wi-Fi.
+
+**Q: "ShadowMount+ — downloaded asset is not an ELF (first bytes
+[50, 4b, 03, 04])."**
+Fixed in **v2.19.3+**. ShadowMount+ now ships its payload inside a
+`.zip`; the app extracts the real `.elf` automatically. Update, then
+**Send to PS5** (with the payload chain loaded — see the next answer).
+`50 4b 03 04` is just the "PK" signature of a zip file.
+
+**Q: The `helper` dot at the bottom of the app is red.**
+That dot is the **PS5-side `ps5upload` payload**, not the app itself.
+Red means it isn't running on the console yet, so Install Package,
+mounts, and file-system actions can't complete. Load the recommended
+chain first — **Set up your PS5**, or the **Payloads** tab (kstuff →
+ShadowMount+ → ps5upload). Once the payload is running, `helper` turns
+green. The other dot, `engine`, is the app's own service and is green
+whenever the app is open.
 
 ---
 

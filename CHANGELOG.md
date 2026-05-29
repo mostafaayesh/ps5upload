@@ -4,6 +4,21 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.20.1
+
+- **Android setup is clearer.** The app now proactively explains the
+  required All files access permission, rechecks it after returning from
+  Android settings, and documents the common Android upload/install issues
+  in the FAQ.
+- **Engine startup diagnostics are easier to find.** If the local engine
+  fails to start, PS5 Upload now records the reason in the app log and
+  status tooltip instead of only showing a red engine dot.
+- **Release and docs cleanup.** Updated stale release workflow references,
+  marked the Android feasibility doc as historical, and tightened ignored
+  Android build artifacts.
+
+---
+
 ## 2.20.0
 
 - **Android: pick game folders and files from your phone.** "Choose

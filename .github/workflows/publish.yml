@@ -44,11 +44,9 @@ on:
 permissions:
   contents: write
 
-# Distinct group so a publish.yml run and a release.yml run on the
-# same tag don't cancel each other. They produce identical artifacts;
-# letting both finish is wasteful but harmless, and we want publish.yml
-# to be a reliable manual override even while release.yml is still
-# trying to recover.
+# Distinct group for publish runs so manual dispatches and tag pushes
+# for the same version cancel superseded publish attempts without
+# touching the normal ci workflow.
 concurrency:
   group: publish-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: true

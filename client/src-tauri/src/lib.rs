@@ -101,7 +101,14 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 match engine::start(&handle).await {
                     Ok(url) => eprintln!("[tauri] engine ready at {url}"),
-                    Err(e) => eprintln!("[tauri] engine failed to start: {e}"),
+                    Err(e) => {
+                        let message = format!("engine failed to start: {e}");
+                        {
+                            use tauri::Emitter;
+                            let _ = handle.emit("ps5upload-engine-startup-error", &message);
+                        }
+                        eprintln!("[tauri] {message}");
+                    }
                 }
             });
             Ok(())

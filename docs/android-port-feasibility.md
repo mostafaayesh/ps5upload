@@ -1,6 +1,8 @@
 # ps5upload on Android — Feasibility & Design Spike
 
-> Status: **design spike** (no code committed yet). Produced 2026-05-28.
+> Status: **historical design spike**. Produced 2026-05-28; Android
+> implementation work has since landed for v2.20.0, so details below may be
+> stale. Treat this as decision context, not current implementation truth.
 > Decision context: this reverses the 2026-04-18 "no mobile client" call.
 > Goal agreed with maintainer: **full feature parity with the desktop client**
 > (including uploads), **reusing the existing React UI** via **Tauri v2 Android**.

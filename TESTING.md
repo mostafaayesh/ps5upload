@@ -203,8 +203,8 @@ least one historical "ships green, fails on fresh install" failure mode:
 | Platform / arch       | Failure mode caught in the past                                              | Fix in tree (don't regress)                                                              |
 | --------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Windows x64 / arm64   | `VCRUNTIME140.dll not found` (no C++ Redist on fresh Win11, especially arm64) | `.cargo/config.toml` sets `+crt-static` for both MSVC targets — embeds the MSVC CRT      |
-| Windows x64 / arm64   | Windows Explorer "Extract All" → "compressed (zipped) folder is invalid"     | `release.yml` packs the .zip via `pwsh Compress-Archive` (bit-3 free), not `tar -a`      |
-| Linux x64 / arm64     | AppImage hangs / "AppImage requires FUSE" on fresh Ubuntu 24.04+              | `release.yml` ships `PS5Upload.sh` wrapper that sets `APPIMAGE_EXTRACT_AND_RUN=1`         |
+| Windows x64 / arm64   | Windows Explorer "Extract All" → "compressed (zipped) folder is invalid"     | `publish.yml` packs the .zip via `pwsh Compress-Archive` (bit-3 free), not `tar -a`      |
+| Linux x64 / arm64     | AppImage hangs / "AppImage requires FUSE" on fresh Ubuntu 24.04+              | `publish.yml` ships `PS5Upload.sh` wrapper that sets `APPIMAGE_EXTRACT_AND_RUN=1`         |
 | Linux (any)           | glibc-too-new on older distros                                               | Build base is `ubuntu-24.04` (glibc 2.39) — users below 24.04 LTS are unsupported        |
 | macOS x64 / arm64     | Gatekeeper / "unidentified developer" on first run                           | Documented in README — right-click → Open. No code-signing planned.                      |
 

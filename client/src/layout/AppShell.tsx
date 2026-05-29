@@ -1,9 +1,10 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import { Menu } from "lucide-react";
+import { Lock, Menu, RefreshCw, X } from "lucide-react";
 import Sidebar from "./Sidebar";
 import StatusBar from "./StatusBar";
 import ActivityBar from "./ActivityBar";
+import { Button } from "../components/Button";
 import { useConnectionStore } from "../state/connection";
 import { useUpdateStore } from "../state/update";
 import { engineApi } from "../api/engine";
@@ -28,6 +29,8 @@ import { useWindowStatePersistence } from "../lib/windowState";
 import { mgmtAddr } from "../lib/addr";
 import { installPlayTimeAccumulator } from "../state/playTime";
 import { useTr } from "../state/lang";
+import { isAndroid } from "../lib/platform";
+import { localFs } from "../api/localFs";
 
 /** Background status polling for the engine + payload dots in the
  *  status bar. Runs for the lifetime of the app so the indicators
@@ -47,7 +50,12 @@ function useStatusPolling() {
     let cancelled = false;
     const tick = async () => {
       const up = await engineApi.ping();
-      if (!cancelled) setStatus({ engineStatus: up ? "up" : "down" });
+      if (!cancelled) {
+        setStatus({
+          engineStatus: up ? "up" : "down",
+          ...(up ? { engineError: null } : {}),
+        });
+      }
     };
     tick();
     const h = setInterval(tick, 5000);
@@ -213,6 +221,8 @@ function usePkgAutoRoute() {
  */
 const LAST_ROUTE_KEY = "ps5upload.last_route";
 const SKIP_RESTORE_ROUTES = new Set(["/first-run", "/whats-new", "/"]);
+const ANDROID_STORAGE_PROMPT_DISMISSED_KEY =
+  "ps5upload.android_storage_prompt.dismissed.v1";
 
 function useRoutePersistence() {
   const navigate = useNavigate();
@@ -250,6 +260,119 @@ function useRoutePersistence() {
     }, 500);
     return () => window.clearTimeout(id);
   }, [location.pathname]);
+}
+
+function AndroidStorageAccessBanner() {
+  const tr = useTr();
+  const [visible, setVisible] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  const markDismissed = () => {
+    try {
+      window.localStorage.setItem(ANDROID_STORAGE_PROMPT_DISMISSED_KEY, "1");
+    } catch {
+      // localStorage can be blocked; still dismiss for this session.
+    }
+    setVisible(false);
+  };
+
+  const checkAccess = async () => {
+    if (!isAndroid()) return;
+    setChecking(true);
+    try {
+      const granted = await localFs.accessGranted();
+      setVisible(!granted);
+    } catch {
+      setVisible(false);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAndroid()) return;
+    try {
+      if (
+        window.localStorage.getItem(ANDROID_STORAGE_PROMPT_DISMISSED_KEY) ===
+        "1"
+      ) {
+        return;
+      }
+    } catch {
+      // localStorage can be blocked; still run the permission check.
+    }
+    void checkAccess();
+  }, []);
+
+  useEffect(() => {
+    if (!visible || !isAndroid()) return;
+    const onFocus = () => void checkAccess();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <div className="border-b border-[var(--color-border)] bg-[var(--color-warn-soft)] px-3 py-2 text-[var(--color-text)]">
+      <div className="mx-auto flex max-w-6xl items-center gap-3">
+        <Lock size={18} className="shrink-0 text-[var(--color-warn)]" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">
+            {tr(
+              "android_storage_prompt_title",
+              undefined,
+              "Allow file access for Android uploads",
+            )}
+          </p>
+          <p className="text-xs text-[var(--color-muted)]">
+            {tr(
+              "android_storage_prompt_body",
+              undefined,
+              "Grant All files access so PS5Upload can upload game folders, .zip dumps, and .pkg files from your phone.",
+            )}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() =>
+              void localFs
+                .requestAccess()
+                .catch(() => {})
+                .finally(() => {
+                  window.setTimeout(() => void checkAccess(), 750);
+                })
+            }
+          >
+            {tr("picker_open_settings", undefined, "Open settings")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={checking}
+            leftIcon={<RefreshCw size={14} />}
+            onClick={() => void checkAccess()}
+          >
+            {tr("picker_retry", undefined, "Retry")}
+          </Button>
+          <button
+            type="button"
+            aria-label={tr("dismiss", undefined, "Dismiss")}
+            className="rounded p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
+            onClick={markDismissed}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AppShell() {
@@ -337,6 +460,7 @@ export default function AppShell() {
         />
         <span className="text-sm font-semibold">PS5Upload</span>
       </div>
+      <AndroidStorageAccessBanner />
 
       <div className="flex min-h-0 flex-1">
         {/* Desktop: inline sidebar. Hidden on phones — the drawer below

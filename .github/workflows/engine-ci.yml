@@ -92,7 +92,7 @@ jobs:
   # Engine/core target portability. This is intentionally separate from
   # the full release matrix: PRs get a fast compile-only signal that the
   # host-side engine code still type-checks for the OS/arch combinations
-  # we ship, while release.yml remains the authoritative bundle builder.
+  # we ship, while publish.yml remains the authoritative bundle builder.
   # ─────────────────────────────────────────────────────────────────────
   rust-engine-targets:
     name: rust engine target (${{ matrix.target }})
@@ -106,7 +106,7 @@ jobs:
           # ubuntu-24.04 fails because blake3's NEON SIMD path needs
           # aarch64-linux-gnu-gcc (not preinstalled, and bringing it in
           # would mean threading TARGET_CC env vars through every step).
-          # Matches release.yml's arm64 build leg.
+          # Matches publish.yml's arm64 build leg.
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
           - os: macos-14
@@ -337,7 +337,7 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────
   # Payload ELF — compile against the ps5-payload-sdk so we catch any
-  # breakage to the C code. Doesn't upload artifacts; release.yml does
+  # breakage to the C code. Doesn't upload artifacts; publish.yml does
   # that on tagged runs. Keeps PR feedback loop tight.
   # ─────────────────────────────────────────────────────────────────────
   payload:
@@ -351,7 +351,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang lld unzip
 
-      # Pin SDK tag — keep in sync with release.yml. v0.39 ships
+      # Pin SDK tag — keep in sync with publish.yml. v0.39 ships
       # getloadavg() (which hw_info.c::hw_power_get_text now calls)
       # and the new 11.xx/12.xx kernel offsets. Bumping from v0.38
       # would otherwise fail with `undefined symbol: getloadavg` at

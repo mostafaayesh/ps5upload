@@ -15,6 +15,7 @@ import {
 } from "./state/userConfig";
 import { installConsoleCapture, log } from "./state/logs";
 import { installEngineLogBridge } from "./state/engineLogBridge";
+import { installEngineStartupEvents } from "./state/engineStartupEvents";
 
 // Capture console.error / warn + unhandled promise rejections into
 // the in-app log store before any other module runs — that way the
@@ -22,6 +23,7 @@ import { installEngineLogBridge } from "./state/engineLogBridge";
 // bugs in our own initialization code.
 installConsoleCapture();
 log.info("app", "ps5upload client booting");
+installEngineStartupEvents();
 
 // Mirror engine sidecar log lines into the Log tab. Without this, the
 // engine's diagnostic output (reconcile progress, transfer retries,

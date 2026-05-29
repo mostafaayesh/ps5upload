@@ -74,6 +74,8 @@ export interface ConnectionState {
   host: string;
   /** Our host-side engine sidecar (localhost:19113). */
   engineStatus: ProbeStatus;
+  /** Last startup/probe diagnostic for the host-side engine. */
+  engineError: string | null;
   /** Our PS5-side payload runtime — transfer, mount, FS ops, hardware info. */
   payloadStatus: ProbeStatus;
   /** The host the most recent payload probe ran against. Allows
@@ -125,6 +127,7 @@ export interface ConnectionState {
         | "payloadStatus"
         | "payloadStatusHost"
         | "engineStatus"
+        | "engineError"
         | "payloadVersion"
         | "ps5Kernel"
         | "ucredElevated"
@@ -139,6 +142,7 @@ export interface ConnectionState {
 export const useConnectionStore = create<ConnectionState>((set) => ({
   host: loadStoredHost(),
   engineStatus: "unknown",
+  engineError: null,
   payloadStatus: "unknown",
   payloadStatusHost: null,
   payloadVersion: null,

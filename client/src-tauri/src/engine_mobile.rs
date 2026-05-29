@@ -12,7 +12,7 @@
 //! crate uses. The desktop `engine.rs` is left untouched.
 
 use anyhow::Result;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 /// Fixed loopback URL the renderer talks to — identical to desktop, so
 /// the entire `api/` layer is unchanged. Only one app process exists on
@@ -33,13 +33,16 @@ const BIND: &str = "127.0.0.1:19113";
 /// loopback URL; the server finishes binding within a few milliseconds.
 /// The renderer's engine-status tick tolerates the brief startup race
 /// (it retries), matching how the desktop readiness probe is advisory.
-pub async fn start(_app: &AppHandle) -> Result<&'static str> {
-    tokio::spawn(async {
+pub async fn start(app: &AppHandle) -> Result<&'static str> {
+    let app = app.clone();
+    tokio::spawn(async move {
         if let Err(e) = ps5upload_engine::serve_in_process(BIND, DEFAULT_PS5_ADDR.to_string()).await
         {
+            let message = format!("Android engine failed to start on {BIND}: {e}");
+            let _ = app.emit("ps5upload-engine-startup-error", &message);
             // Log and let the renderer surface "engine unreachable" via
             // its normal probe — don't panic the app over it.
-            eprintln!("[engine] in-process serve failed: {e}");
+            eprintln!("[engine] in-process serve failed: {message}");
         }
     });
     Ok(DEFAULT_ENGINE_URL)
