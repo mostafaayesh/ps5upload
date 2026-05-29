@@ -4,6 +4,29 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.19.0
+
+The notifications-everywhere release — plus the first Android build.
+
+- **System notifications.** PS5 Upload can now post to your computer's
+  notification center (macOS, Windows, Linux — and the Android shade)
+  when a transfer finishes or fails while the app is in the background,
+  so you don't have to keep it in front of you. Toggle it under
+  **Settings → Notifications**.
+- **The PS5 tells you too.** Uploads now flash a "started" and a
+  "complete" message on the console screen itself.
+- **No more sleep-interrupted transfers.** Your computer is kept awake
+  automatically for the duration of any upload, download, or install.
+  The Settings switch is reworded to make clear it keeps the machine
+  awake while PS5 Upload is open.
+- **Android (preview).** The first experimental Android build — the same
+  interface, with mobile-friendly navigation, safe-area handling, and our
+  app icon. It connects to and manages your PS5 over Wi-Fi today; download
+  the `.apk` from the release assets to try it. Treat it as early access.
+- Reliability fixes across notifications and the release pipeline.
+
+---
+
 ## 2.18.7
 
 - **Choose where a `.zip` unpacks.** When you pick a `.zip`, the Upload

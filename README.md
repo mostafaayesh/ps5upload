@@ -47,6 +47,11 @@
   ops (chmod, delete, move, copy, mkdir) with a real directory
   tree. Bulk delete of a 200k-file folder shows live progress
   with a working Stop button.
+- **Stay-in-the-loop notifications** — in-app alerts mirror to your
+  computer's notification center (macOS / Windows / Linux, plus the
+  Android shade) when a transfer finishes or fails in the background,
+  and the PS5 itself shows a toast when an upload starts and completes.
+  Your machine is kept awake automatically while a transfer runs.
 - **Hardware view** — model, serial, uptime, storage, RAM, and the PS5
   date/time, refreshed live; plus a fan-threshold control that rings
   through to `/dev/icc_fan` for quieter operation. Live CPU/SoC
@@ -108,6 +113,7 @@ Pre-built downloads land on the
 | Linux — Debian / Ubuntu (x64 / ARM64) | `PS5Upload-<ver>-linux-{x64,arm64}.deb` | `sudo apt install ./PS5Upload-<ver>-linux-<arch>.deb` — installs a normal app with a menu entry; pulls in the WebKitGTK deps automatically. |
 | Linux — Fedora / RHEL / Bazzite (x64 / ARM64) | `PS5Upload-<ver>-linux-{x64,arm64}.rpm` | `sudo dnf install ./PS5Upload-<ver>-linux-<arch>.rpm` (Bazzite/Silverblue: `rpm-ostree install`) — menu entry + auto deps. |
 | Linux — any distro (x64 / ARM64) | `PS5Upload-<ver>-linux-{x64,arm64}.zip` | Universal fallback (no install). Unzip, then `chmod +x PS5Upload.sh PS5Upload.AppImage` and run **`./PS5Upload.sh`** (the wrapper — handles the FUSE-less and WebKit white-screen cases for you). Running `./PS5Upload.AppImage` directly also works if your system has libfuse2 and a happy WebKitGTK. |
+| Android (preview) | `PS5Upload-<ver>-android.apk` | **Early access.** Enable "install unknown apps" for your browser/file manager, then open the `.apk`. Same interface, mobile-friendly; connects to and manages your PS5 over Wi-Fi. |
 
 ### First-launch warnings (and why they're there)
 
