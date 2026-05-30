@@ -1,0 +1,14 @@
+[package]
+name = "ps5upload-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+ftx2-proto = { path = "../ftx2-proto" }
+ps5upload-core = { path = "../ps5upload-core" }
+serde.workspace = true
+serde_json.workspace = true
+# Build .zip fixtures for the zip-transfer integration tests.
+zip = { version = "2", default-features = false, features = ["deflate"] }
