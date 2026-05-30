@@ -65,20 +65,16 @@
   9021 elfldr, `.js` → 50000 WebKit-stage, `.lua` → 9026, `.jar` →
   9025 BD-JB / BDJ; custom loaders may listen anywhere). Recent-sends
   history with click-to-replay and per-row success/fail badges.
-- **Install fakepkgs** — pick a `.pkg`, click Install. Default is
-  **Stream install (DPI 2.0)**: desktop serves the bytes over HTTP +
-  BGFT pulls + installs in one pass (no 2× disk space, native pause/
-  resume). The legacy "upload then install" pipeline is one click
-  away on the failure card for LANs where the PS5 can't reach the
-  desktop's HTTP port. When the legacy path runs: bytes staged on
-  PS5-local disk → install fires under
-  ShellUI's authid via ptrace RPC → register / launch from the
-  Library row. Verified end-to-end on FW 9.60. Game pkgs (CUSA /
-  PPSA / PCSA / EP / UP) install cleanly; system pkgs (NPXS-prefix —
-  Store updates, Settings) get registered fire-and-forget with
-  on-PS5 verification (Sony's API isn't designed for system patches,
-  use the on-PS5 Settings → Debug Settings → Game → Package
-  Installer for those).
+- **Install fakepkgs (package library)** — add a `.pkg` and it uploads
+  to your PS5 once and stays there. **Install Package** lists every
+  uploaded package with cover art and size; **Install**, **Reinstall**,
+  or **Delete** any of them in a click — no re-uploading to install
+  again. Installs run through the **DPI daemon** (`sceAppInstUtilAppInstallPkg`
+  from a clean loader process), the most reliable path on current
+  firmware. Verified end-to-end on FW 9.60. Game pkgs (CUSA / PPSA /
+  PCSA / EP / UP) install cleanly; for system pkgs (NPXS-prefix — Store
+  updates, Settings) use the on-PS5 Settings → Debug Settings → Game →
+  Package Installer.
 - **Register + launch** — Library row's Play button always registers
   first (idempotent if already registered), retries with DRM-type
   patch on rejection, then launches. Unmount unregisters every
@@ -113,7 +109,7 @@ Pre-built downloads land on the
 | Linux — Debian / Ubuntu (x64 / ARM64) | `PS5Upload-<ver>-linux-{x64,arm64}.deb` | `sudo apt install ./PS5Upload-<ver>-linux-<arch>.deb` — installs a normal app with a menu entry; pulls in the WebKitGTK deps automatically. |
 | Linux — Fedora / RHEL / Bazzite (x64 / ARM64) | `PS5Upload-<ver>-linux-{x64,arm64}.rpm` | `sudo dnf install ./PS5Upload-<ver>-linux-<arch>.rpm` (Bazzite/Silverblue: `rpm-ostree install`) — menu entry + auto deps. |
 | Linux — any distro (x64 / ARM64) | `PS5Upload-<ver>-linux-{x64,arm64}.zip` | Universal fallback (no install). Unzip, then `chmod +x PS5Upload.sh PS5Upload.AppImage` and run **`./PS5Upload.sh`** (the wrapper — handles the FUSE-less and WebKit white-screen cases for you). Running `./PS5Upload.AppImage` directly also works if your system has libfuse2 and a happy WebKitGTK. |
-| Android (preview) | `PS5Upload-<ver>-android.apk` | **Early access.** Enable "install unknown apps" for your browser/file manager, then open the `.apk`. Same interface, mobile-friendly; connects to and manages your PS5 over Wi-Fi. |
+| Android | `PS5Upload-<ver>-android.apk` | Enable "install unknown apps" for your browser/file manager, then open the `.apk`. Same interface, mobile-friendly; connects to and manages your PS5 over Wi-Fi. |
 
 ### First-launch warnings (and why they're there)
 
@@ -506,6 +502,15 @@ This software builds on the following open-source projects:
 **Payload (PS5):**
 * [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk) — Open-source SDK for PS5 payload development
 * [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) — Fast cryptographic hashing (per-shard verification)
+
+## Thanks
+
+ps5upload stands on the shoulders of the **PS5 homebrew scene**. Huge
+thanks to everyone who makes this ecosystem possible — the exploit and
+kernel researchers, the ELF/payload loader authors, the PS5 Payload SDK
+maintainers, the homebrew tool developers whose work this lives alongside,
+and everyone in the community who tests, reports bugs, and shares
+knowledge. None of this exists without your collective effort. 🙏
 
 ## License
 

@@ -1,6 +1,6 @@
 [package]
 name = "ps5upload-desktop"
-version = "2.20.2"
+version = "2.21.0"
 description = "The all-in-one PS5 companion app."
 edition = "2021"
 rust-version = "1.77"
@@ -79,7 +79,7 @@ base64 = "0.22"
 # Default features pull in bzip2/zstd C libs we don't need — opt in to
 # `deflate` only. Used from commands/save_archive.rs to zip a downloaded
 # save folder into <title_id>.zip and validate/extract restore zips.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 # mDNS service discovery for the Connection screen's "Find PS5s on the
 # network" button. Pure-Rust implementation — no system avahi/bonjour
@@ -87,7 +87,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # Windows x64/arm64, Linux x64/arm64) stays single-toolchain. Used only
 # from `commands/discover.rs`; a discovery is a single 3-second LAN
 # browse, not a long-running daemon.
-mdns-sd = { version = "0.13", default-features = false, features = ["async"] }
+mdns-sd = { version = "0.20", default-features = false, features = ["async"] }
 
 # libc for `statvfs` in the USB autoloader's drive enumeration
 # (commands/usb_autoloader.rs). Already pulled in transitively via
