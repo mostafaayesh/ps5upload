@@ -71,6 +71,13 @@ export class RootErrorBoundary extends Component<Props, State> {
       stack: err.stack ?? "",
       componentStack: info.componentStack ?? "",
     });
+    // Auto-capture a crash report for a hard render crash. force=true: these
+    // are rare and always worth a report (bypass the debounce). Fire-and-
+    // forget; the reporter never throws. Dynamic import keeps it off the
+    // hot path and avoids a cycle through the logs/notifications stores.
+    void import("../lib/crashReporter").then((m) =>
+      m.captureCrashReport(`frontend-error: ${err.message}`, { force: true }),
+    );
     this.setState({ componentStack: info.componentStack ?? "" });
   }
 

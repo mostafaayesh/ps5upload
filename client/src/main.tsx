@@ -25,6 +25,12 @@ installConsoleCapture();
 log.info("app", "ps5upload client booting");
 installEngineStartupEvents();
 
+// Auto-collect a detailed diagnostic report to ~/.ps5upload/crash-reports/
+// whenever the app surfaces an error (error-level notification) or the React
+// tree crashes. Wired right after console capture so the very first errors
+// are covered. Best-effort + debounced; see lib/crashReporter.ts.
+import("./lib/crashReporter").then((m) => m.initCrashReporter());
+
 // Mirror engine sidecar log lines into the Log tab. Without this, the
 // engine's diagnostic output (reconcile progress, transfer retries,
 // command errors) only reaches the dev terminal during `tauri dev` —

@@ -16,6 +16,7 @@
 pub mod app_info;
 pub mod app_lifecycle;
 pub mod companions;
+pub mod crash_reports;
 pub mod diagnostics;
 pub mod discover;
 pub mod folder_inspect;

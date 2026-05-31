@@ -246,6 +246,13 @@ pub fn run() {
             // commands/save_text_file.rs.
             commands::save_text_file,
             commands::read_text_file,
+            // ── Automatic crash/error report collection ─────────────
+            // See commands/crash_reports.rs + src/lib/crashReporter.ts.
+            commands::crash_reports::crash_report_save,
+            commands::crash_reports::crash_reports_stats,
+            commands::crash_reports::crash_reports_dir_resolved,
+            commands::crash_reports::crash_reports_zip,
+            commands::crash_reports::crash_reports_clear,
             // ── Filesystem search index (payload-side) ──────────────
             commands::fs_index_start,
             commands::fs_index_status,

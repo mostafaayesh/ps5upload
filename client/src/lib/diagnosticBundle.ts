@@ -28,6 +28,20 @@ export interface DiagnosticBundle {
   app_version: string;
   user_agent: string;
   redacted: boolean;
+  /** What triggered this report. `null` for a manual export; a short
+   *  description (e.g. "error: Upload failed", "frontend-error: …") for an
+   *  auto-captured crash report. */
+  trigger: string | null;
+  /** Host environment — surfaces the "crappy computer / low memory" cases
+   *  (deviceMemory, JS heap) that matter for OOM/perf triage. */
+  platform: {
+    os: string | null;
+    language: string | null;
+    cpu_cores: number | null;
+    device_memory_gb: number | null;
+    js_heap_used_mb: number | null;
+    js_heap_limit_mb: number | null;
+  };
   connection: {
     host: string | null;
     engine_status: string;
@@ -87,6 +101,11 @@ export function redactHost(host: string | null | undefined, redact: boolean): st
 export function buildDiagnosticBundle(opts: {
   appVersion: string;
   redact: boolean;
+  /** Set for auto-captured crash reports; omit for manual exports. */
+  trigger?: string | null;
+  /** How many recent log lines to include. Crash reports pass a larger
+   *  value than the manual export so a maintainer sees more context. */
+  logLimit?: number;
 }): DiagnosticBundle {
   const conn = useConnectionStore.getState();
   const roster = useRosterStore.getState().profiles;
@@ -96,12 +115,27 @@ export function buildDiagnosticBundle(opts: {
   const notifications = useNotificationsStore.getState().entries;
   const logs = useLogsStore.getState().entries;
 
+  const nav: any = typeof navigator !== "undefined" ? navigator : {};
+  const mem: any =
+    typeof performance !== "undefined" ? (performance as any).memory : undefined;
+  const toMb = (b: number | undefined) =>
+    typeof b === "number" ? Math.round(b / 1048576) : null;
+
   return {
-    schema: 1,
+    schema: 2,
     generated_at: new Date().toISOString(),
     app_version: opts.appVersion,
     user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "n/a",
     redacted: opts.redact,
+    trigger: opts.trigger ?? null,
+    platform: {
+      os: nav.platform ?? null,
+      language: nav.language ?? null,
+      cpu_cores: nav.hardwareConcurrency ?? null,
+      device_memory_gb: nav.deviceMemory ?? null,
+      js_heap_used_mb: toMb(mem?.usedJSHeapSize),
+      js_heap_limit_mb: toMb(mem?.jsHeapSizeLimit),
+    },
     connection: {
       host: redactHost(conn.host, opts.redact),
       engine_status: conn.engineStatus,
@@ -138,7 +172,7 @@ export function buildDiagnosticBundle(opts: {
       body: n.body,
       ts: n.ts,
     })),
-    recent_logs: logs.slice(-100).map((l) => ({
+    recent_logs: logs.slice(-(opts.logLimit ?? 100)).map((l) => ({
       level: l.level,
       source: l.source,
       message: l.message,

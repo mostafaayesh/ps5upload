@@ -15,6 +15,7 @@ import {
   MoonStar,
   Gauge,
   Bell,
+  ExternalLink,
 } from "lucide-react";
 import { useThemeStore, type Theme } from "../../state/theme";
 
@@ -288,6 +289,8 @@ export default function SettingsScreen() {
 
         <Section title={tr("settings_section_diagnostic", undefined, "Diagnostics")} full>
           <BugReportButton />
+          <div className="my-4 border-t border-[var(--color-border)]" />
+          <CrashReportsButton />
         </Section>
 
         <Section title={tr("settings_section_backup", undefined, "Backup / restore")} full>
@@ -905,6 +908,172 @@ function BugReportButton() {
               {tr("bug_report_playtime", undefined, "playtime entries")}
             </li>
           </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Discord support channel where users post packaged crash reports. */
+const DISCORD_REPORT_URL =
+  "https://discord.com/channels/1464735724434624524/1465533832953462794";
+
+/**
+ * Crash/error reports are collected automatically to
+ * `~/.ps5upload/crash-reports/` (see lib/crashReporter.ts). This card shows
+ * how many are kept, packages them into a single `.zip`, and points the user
+ * at the Discord channel to post it.
+ */
+function CrashReportsButton() {
+  const tr = useTr();
+  const [stats, setStats] = useState<{
+    count: number;
+    bytes: number;
+    dir: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [zipPath, setZipPath] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refresh() {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      setStats(
+        await invoke<{ count: number; bytes: number; dir: string }>(
+          "crash_reports_stats",
+        ),
+      );
+    } catch {
+      // non-Tauri context or command not registered yet — leave null.
+    }
+  }
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function packageZip() {
+    setBusy(true);
+    setError(null);
+    setZipPath(null);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const dest = await save({
+        defaultPath: `ps5upload-crash-reports-${Date.now()}.zip`,
+        filters: [{ name: "Zip", extensions: ["zip"] }],
+      });
+      if (!dest || typeof dest !== "string") {
+        setBusy(false);
+        return;
+      }
+      await invoke<number>("crash_reports_zip", { dest });
+      setZipPath(dest);
+      void refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openExternal(url: string) {
+    try {
+      const { open } = await import("@tauri-apps/plugin-shell");
+      await open(url);
+    } catch {
+      // ignore — opening the browser is best-effort.
+    }
+  }
+
+  async function clearAll() {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("crash_reports_clear");
+      void refresh();
+    } catch {
+      // ignore
+    }
+  }
+
+  const count = stats?.count ?? 0;
+  return (
+    <div className="text-sm">
+      <div className="font-medium">
+        {tr("crash_reports_title", undefined, "Crash & error reports")}
+      </div>
+      <div className="mt-0.5 text-xs text-[var(--color-muted)]">
+        {tr(
+          "crash_reports_hint",
+          undefined,
+          "When something crashes or errors, a detailed report is saved automatically next to your settings. Package them into a .zip and post it on our Discord so we can debug.",
+        )}
+      </div>
+      <div className="mt-1 text-xs text-[var(--color-muted)] tabular-nums">
+        {tr(
+          "crash_reports_count",
+          { count: String(count) },
+          `${count} report(s) collected automatically`,
+        )}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={packageZip}
+          disabled={busy || count === 0}
+          className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs text-[var(--color-accent-contrast)] disabled:opacity-50"
+        >
+          {busy ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <Download size={11} />
+          )}
+          {tr("crash_reports_package", undefined, "Package reports (.zip)")}
+        </button>
+        <button
+          type="button"
+          onClick={() => stats?.dir && void openExternal(stats.dir)}
+          disabled={!stats?.dir}
+          className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs disabled:opacity-50"
+        >
+          {tr("crash_reports_open_folder", undefined, "Open folder")}
+        </button>
+        {count > 0 && (
+          <button
+            type="button"
+            onClick={clearAll}
+            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs"
+          >
+            {tr("crash_reports_clear", undefined, "Clear")}
+          </button>
+        )}
+      </div>
+      {zipPath && (
+        <div className="mt-2 rounded-md border border-[var(--color-good)] bg-[var(--color-surface)] p-2 text-[11px]">
+          <div className="flex items-center gap-1 text-[var(--color-good)]">
+            <CheckCircle2 size={11} />
+            {tr("crash_reports_saved", { path: zipPath }, `Saved to ${zipPath}`)}
+          </div>
+          <div className="mt-1 text-[var(--color-text)]">
+            {tr(
+              "crash_reports_post",
+              undefined,
+              "Please post this .zip in our Discord support channel:",
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => void openExternal(DISCORD_REPORT_URL)}
+            className="mt-1 inline-flex items-center gap-1 text-[var(--color-accent)] underline"
+          >
+            <ExternalLink size={11} />
+            {tr("crash_reports_open_discord", undefined, "Open Discord channel")}
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="mt-2 flex items-start gap-1 text-[11px] text-[var(--color-bad)]">
+          <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+          {error}
         </div>
       )}
     </div>

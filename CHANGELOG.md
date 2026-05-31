@@ -4,6 +4,20 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.23.2
+
+- **New: automatic crash & error reports.** When something crashes or errors,
+  the app now quietly saves a detailed diagnostic report (app version, system
+  info incl. memory, recent logs, connection state, what failed) next to your
+  settings, in `~/.ps5upload/crash-reports/`. Nothing is sent anywhere — it
+  just collects on your machine.
+- **New: one-click "Package reports (.zip)"** in Settings → Diagnostics.
+  Bundles every collected report into a single `.zip` and offers a button to
+  open our Discord support channel so you can post it. Makes reporting a bug
+  as simple as: reproduce it → Settings → Package → drag the zip into Discord.
+
+---
+
 ## 2.23.1
 
 - **Fix: large folder uploads no longer crash the on-PS5 helper.** Uploading
