@@ -4,6 +4,26 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.23.1
+
+- **Fix: large folder uploads no longer crash the on-PS5 helper.** Uploading
+  a big game (e.g. "It Takes Two", ~5,700 files in ~860 folders) could turn
+  the helper red and fail with `shards_incomplete`, `fs_delete_failed`, or
+  "engine request failed". The cause was the folder diff/reconcile firing
+  many directory scans at once, each a separate connection to the console —
+  a burst big enough to overwhelm the helper. The app now runs **one scan at
+  a time**: the upload waits its turn and the live "Diff vs PS5" preview
+  steps aside while a scan is running. The helper's connection backlog was
+  also widened as a safety margin (takes effect after you re-send the
+  payload).
+- **Fix: "Save logs" / Download in the Logs tab works again** — it failed
+  with "Command plugin:fs|write_text_file not allowed by ACL". It now uses a
+  normal save dialog.
+- **New: an `etaHEN/games` destination preset** on the Upload screen, for
+  jailbreaks that launch from there. (You can also type any custom subpath.)
+
+---
+
 ## 2.23.0
 
 - **Fix: uploads no longer fail when a file or folder name contains a

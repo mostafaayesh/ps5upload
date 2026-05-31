@@ -91,7 +91,7 @@ export default function AppLogsPanel() {
     }
   };
 
-  const downloadAll = () => {
+  const downloadAll = async () => {
     const text = visible
       .map(
         (e) =>
@@ -100,13 +100,29 @@ export default function AppLogsPanel() {
           }`,
       )
       .join("\n");
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ps5upload-logs-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Save via the native dialog + backend `save_text_file` command rather
+    // than a Blob/anchor `download`. In the Tauri webview an anchor download
+    // is routed to `plugin:fs|write_text_file`, which the capability ACL
+    // blocks ("Command plugin:fs|write_text_file not allowed by ACL") — the
+    // exact error users hit trying to save logs. The backend command writes
+    // from trusted Rust and isn't fs-scope-gated. Mirrors Stats/Settings.
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const { writeTextFileToPath } = await import("../../lib/saveTextFile");
+      const dest = await save({
+        defaultPath: `ps5upload-logs-${new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")}.txt`,
+        filters: [{ name: "Text", extensions: ["txt"] }],
+      });
+      if (!dest) return; // user cancelled
+      await writeTextFileToPath(dest, text);
+    } catch (e) {
+      // Surface to the in-app log so a save failure isn't silent.
+      console.error(
+        `Saving logs failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   };
 
   return (

@@ -904,10 +904,29 @@ pub struct ReconcileFile {
 /// here yet", so the diff proceeds to mark everything under that parent
 /// as to-send. Matches the contract `list_dir_recursive` had for a
 /// missing root.
+/// Process-global serializer for the multi-call remote directory walk below.
+/// A folder upload fires a reconcile, and the Upload screen fires a debounced
+/// dir-diff-preview; without this gate several 800+-call walks can run at
+/// once, each opening a *fresh* mgmt-port (9114) connection per directory
+/// (mgmt is one-frame-per-connection). That connection storm overran the
+/// payload's small accept backlog + 8-thread mgmt cap and wedged/crashed the
+/// helper (reported on "it takes two", ~863 dirs → red helper, failed upload,
+/// shards_incomplete, fs_delete_failed). Serializing the walks keeps the
+/// console seeing at most one mgmt connection at a time from this path.
+static REMOTE_WALK_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Safety valve: above this many unique parent directories, skip the
+/// per-parent reconcile walk entirely (treat the destination as empty, so
+/// every file is (re)sent). Even serialized, a walk this large is minutes of
+/// sequential round-trips; uploading without the size-dedup is the safer,
+/// still-correct choice. Normal games are far below this.
+const MAX_RECONCILE_PARENT_DIRS: usize = 12_000;
+
 fn list_remote_scoped(
     addr: &str,
     dest_root: &str,
     local: &LocalInventory,
+    block_for_gate: bool,
 ) -> Result<RemoteInventory> {
     use std::collections::BTreeSet;
     let mut parent_rels: BTreeSet<String> = BTreeSet::new();
@@ -923,6 +942,38 @@ fn list_remote_scoped(
         parent_rels.len(),
         dest_root,
     );
+
+    // Safety valve for pathologically large trees: skip reconcile and let
+    // the caller (re)send everything rather than spend minutes walking.
+    if parent_rels.len() > MAX_RECONCILE_PARENT_DIRS {
+        crate::core_log!(
+            "list_remote_scoped: {} parent dir(s) exceeds cap {} — skipping reconcile; all files will be (re)sent",
+            parent_rels.len(),
+            MAX_RECONCILE_PARENT_DIRS,
+        );
+        return Ok(RemoteInventory::new());
+    }
+
+    // Serialize remote walks process-wide so concurrent reconcile +
+    // diff-preview requests can't storm the mgmt port (see REMOTE_WALK_GATE).
+    // The actual upload (block_for_gate=true) waits its turn; a best-effort
+    // preview (false) bails out fast if a walk is already running.
+    let _walk_gate = if block_for_gate {
+        REMOTE_WALK_GATE.lock().unwrap_or_else(|e| e.into_inner())
+    } else {
+        match REMOTE_WALK_GATE.try_lock() {
+            Ok(g) => g,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                crate::core_log!(
+                    "list_remote_scoped: another remote scan is already running — skipping this preview to protect the mgmt port",
+                );
+                return Err(anyhow::anyhow!(
+                    "reconcile_busy: another remote scan is already in progress"
+                ));
+            }
+        }
+    };
 
     // Probe dest_root up-front. Serves two purposes:
     //   1. Fast ENOENT path: if the destination doesn't exist at all,
@@ -1082,6 +1133,9 @@ pub fn reconcile(
     dest_root: &str,
     mode: ReconcileMode,
     excludes: &[String],
+    // true  → this is the real upload; wait for the remote-walk gate.
+    // false → best-effort preview; skip with `reconcile_busy` if a walk runs.
+    block_for_gate: bool,
 ) -> Result<ReconcilePlan> {
     let t_local = std::time::Instant::now();
     crate::core_log!("reconcile: walking local {} …", src.display(),);
@@ -1092,7 +1146,7 @@ pub fn reconcile(
         t_local.elapsed().as_millis(),
     );
     let t_remote = std::time::Instant::now();
-    let remote = list_remote_scoped(addr, dest_root, &local)?;
+    let remote = list_remote_scoped(addr, dest_root, &local, block_for_gate)?;
     crate::core_log!(
         "reconcile: remote inventory built ({} ms, mode={:?}) — starting diff",
         t_remote.elapsed().as_millis(),
@@ -1199,6 +1253,68 @@ fn blake3_file(path: &std::path::Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression test for the reconcile connection-storm crash: the
+    /// process-global REMOTE_WALK_GATE must serialize remote directory
+    /// walks so concurrent reconcile + diff-preview requests can never open
+    /// overlapping mgmt-port connections (which crashed the helper on large
+    /// games like "it takes two", ~863 dirs). Exercises the real static used
+    /// in production. Single test (not split) because the gate is global —
+    /// parallel test cases would contend on it and flake.
+    #[test]
+    fn remote_walk_gate_serializes_walks() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        // (1) A best-effort preview (try_lock) must bail while a walk holds
+        //     the gate, rather than starting a second concurrent walk.
+        {
+            let _held = REMOTE_WALK_GATE.lock().unwrap_or_else(|e| e.into_inner());
+            assert!(
+                REMOTE_WALK_GATE.try_lock().is_err(),
+                "preview try_lock must fail while a walk holds the gate"
+            );
+        }
+        // Gate is released once the guard drops.
+        assert!(
+            REMOTE_WALK_GATE.try_lock().is_ok(),
+            "gate must be free after the walk completes"
+        );
+
+        // (2) Many concurrent walkers must never overlap — observed
+        //     concurrency stays at exactly 1.
+        let max_seen = Arc::new(AtomicUsize::new(0));
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for _ in 0..12 {
+            let max_seen = Arc::clone(&max_seen);
+            let in_flight = Arc::clone(&in_flight);
+            handles.push(std::thread::spawn(move || {
+                let _g = REMOTE_WALK_GATE.lock().unwrap_or_else(|e| e.into_inner());
+                let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                max_seen.fetch_max(now, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(3));
+                in_flight.fetch_sub(1, Ordering::SeqCst);
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(
+            max_seen.load(Ordering::SeqCst),
+            1,
+            "remote walks must be serialized to one at a time"
+        );
+    }
+
+    /// The pathological-tree safety valve constant must stay sane: large
+    /// enough that real games (hundreds of dirs) still reconcile, small
+    /// enough to bound a worst-case sequential walk.
+    #[test]
+    fn reconcile_dir_cap_is_sane() {
+        assert!(MAX_RECONCILE_PARENT_DIRS >= 2_000);
+        assert!(MAX_RECONCILE_PARENT_DIRS <= 100_000);
+    }
 
     #[test]
     fn parse_sample_listing() {

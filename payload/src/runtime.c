@@ -15558,7 +15558,14 @@ static int create_listener(int port, int probe_max_rcvbuf, int *out_asked,
         close(fd);
         return -1;
     }
-    if (listen(fd, 8) != 0) {
+    /* Generous accept backlog (was 8). Both the transfer (9113) and mgmt
+     * (9114) listeners share this helper. A burst of concurrent connects —
+     * e.g. a host firing several directory walks at once — could overflow a
+     * backlog of 8, and the kernel then RSTs the excess so the host sees
+     * "connect ... refused". The host side now serializes its remote walks,
+     * but a larger backlog is cheap insurance against any transient burst
+     * (FreeBSD clamps this to the kernel's somaxconn). */
+    if (listen(fd, 128) != 0) {
         perror("[payload2] listen");
         close(fd);
         return -1;

@@ -2234,6 +2234,9 @@ const DESTINATION_PRESETS: { label: string; subpath: string; hint: string }[] = 
   // — most PS5 game scanners read from <volume>/homebrew, so files
   // landed here are auto-discoverable.
   { label: "homebrew", subpath: "homebrew", hint: "Homebrew apps & games (recommended)" },
+  // etaHEN's app loader scans <volume>/etaHEN/games — common for users who
+  // jailbreak via etaHEN/Backpork and launch from there. Requested by users.
+  { label: "etaHEN/games", subpath: "etaHEN/games", hint: "etaHEN game folder (etaHEN app loader scans here)" },
   { label: "exfat", subpath: "exfat", hint: "Disk images" },
   { label: "ps5upload", subpath: "ps5upload", hint: "Tool-specific generic folder" },
 ];

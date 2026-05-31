@@ -3617,10 +3617,36 @@ async fn transfer_dir_diff_preview_handler(
             dest = dest_root,
             mgmt = mgmt,
         );
-        reconcile(&mgmt, &src_path, &dest_root, ReconcileMode::Fast, &excludes)
+        // false: best-effort preview — bail out fast (reconcile_busy) if a
+        // real upload's remote walk is already running, rather than piling on
+        // a second mgmt-port walk and risking a connection storm.
+        reconcile(
+            &mgmt,
+            &src_path,
+            &dest_root,
+            ReconcileMode::Fast,
+            &excludes,
+            false,
+        )
     })
     .await;
     match res {
+        Ok(Err(ref e)) if e.to_string().contains("reconcile_busy") => {
+            // A scan is already in progress; tell the renderer to keep
+            // showing nothing (best-effort preview, not an error).
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "busy": true,
+                    "to_send_count": 0,
+                    "to_send_bytes": 0,
+                    "already_present_count": 0,
+                    "already_present_bytes": 0,
+                    "sample_to_send": [],
+                })),
+            )
+                .into_response()
+        }
         Ok(Ok(plan)) => {
             // Sample first 32 to_send relpaths so the renderer can
             // show "what would change" without a 50K-file response.
@@ -3763,6 +3789,9 @@ async fn transfer_dir_reconcile_handler(
             &req.dest_root,
             mode,
             &req.excludes,
+            // true: this is the real upload — wait for the remote-walk gate
+            // so we never run concurrently with a diff-preview walk.
+            true,
         ) {
             Ok(p) => {
                 crate::log_info!(
