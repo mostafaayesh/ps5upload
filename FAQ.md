@@ -914,6 +914,21 @@ console warning ends up there with timestamps and expandable
 detail. Click **Copy** or **Download** to grab a plain-text dump
 for a bug report.
 
+**Q: An upload fails with "Upload failed — BeginTx rejected (Error):
+manifest_invalid".**
+The PS5 refused the list of files before any data was sent. Two
+common causes:
+1. **A file or folder name contains an unusual character — most often
+   a `}`.** Older payloads mis-read it and rejected the whole upload.
+   The 2.23.0 payload reads these names correctly, so **reload the
+   payload** (Connection → Send payload) and retry.
+2. **A single destination path is too long** (the PS5 caps paths at
+   512 bytes). From 2.23.0 the app catches this before the upload and
+   names the offending file so you can shorten or rename it.
+If you can't reload the payload right now, rename the offending file
+or folder (drop the `}`, or shorten a deeply-nested path) and try
+again.
+
 **Q: Deleting a huge game folder used to fail with a "502 Bad
 Gateway" error.**
 Fixed in 2.2.22. The recursive walk on a small-file-heavy folder

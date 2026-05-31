@@ -9,8 +9,24 @@
 // screen (Upload, Volumes, Library, Hardware, Logs) call it with the
 // same ruleset — a new firmware-specific failure mode only has to be
 // added once.
+//
+// The user-facing copy is localised: each branch returns `te("err_…")`,
+// which looks the key up in the active locale (falling back to English,
+// then to the key). The English source of truth for every `err_*` key
+// lives in `i18n/locales/en.ts`; the other 17 locales mirror it.
 
+import { t } from "../i18n";
+import { useLangStore } from "../state/lang";
 import { isNpxsContentId } from "./npxs";
+
+/** Localised lookup for the humanised error copy below. This module is a
+ *  plain function (not a React component), so it reads the active language
+ *  from the store at call time and delegates to the shared `t()`. A missing
+ *  translation degrades to the English string (then the key) rather than a
+ *  blank, because `t()` walks active-locale → English → key. */
+function te(key: string, vars?: Record<string, string | number>): string {
+  return t(useLangStore.getState().lang, key, vars);
+}
 
 /** Rewrite a raw engine/payload error string into a single line of
  *  user-facing copy. Unknown strings are returned as-is.
@@ -68,10 +84,10 @@ export function humanizePs5Error(
   // "fs_unmount_failed" with no actionable hint. Surface what's
   // actually wrong and what the user should do.
   if (/fs_unmount_busy/i.test(raw)) {
-    return "Can't unmount: the game inside this image is currently running on the PS5. Exit it (PS Home → close the game) and try again.";
+    return te("err_unmount_busy");
   }
   if (/fs_unmount_permission/i.test(raw)) {
-    return "Can't unmount: kernel refused with EACCES/EPERM. The payload may have lost root credentials — reload it from Connection → Send payload.";
+    return te("err_unmount_permission");
   }
 
   // ─── NPXS system-pkg + mgmt disconnect mid-install ─────────────────
@@ -89,7 +105,7 @@ export function humanizePs5Error(
       raw,
     )
   ) {
-    return "PS5 mgmt service stopped responding mid-install. This is the known NPXS-system-pkg failure mode: Sony accepts the register but `sceAppInstUtilInstallByPackage` isn't designed for system patches (Store updates, Settings, etc.). The PS5 typically recovers on its own in a minute or two, or after a reboot — but ps5upload can't install this pkg. Use Settings → Debug Settings → Game → Package Installer on the PS5 itself for system pkgs.";
+    return te("err_npxs_mgmt_disconnect");
   }
 
   // ─── Mid-transfer network drop ─────────────────────────────────────
@@ -97,15 +113,30 @@ export function humanizePs5Error(
   // BEGIN_TX/COMMIT_TX ACK. Engine retries once or twice; if we get
   // here the retry budget was exhausted.
   if (/read frame header|unexpected ?eof|connection reset|broken pipe/i.test(raw)) {
-    return "Your PS5 stopped responding. It may have crashed or entered rest mode. Reload the payload (Connection → Send payload) and try again.";
+    return te("err_network_drop");
   }
 
   // ─── PS5 unreachable at connect time ───────────────────────────────
   if (/connect to .+:9114/i.test(raw)) {
-    return "Can't reach your PS5's management service. Make sure the payload is loaded (Connection → Send payload).";
+    return te("err_connect_mgmt");
   }
   if (/connect to .+:9113/i.test(raw)) {
-    return "Can't reach your PS5 for file transfer. Make sure the payload is loaded (Connection → Send payload).";
+    return te("err_connect_transfer");
+  }
+
+  // ─── Multi-file manifest rejected at BEGIN_TX ──────────────────────
+  // The payload surfaces `manifest_invalid` ("BeginTx rejected (Error):
+  // manifest_invalid") when its manifest parser refuses the file list.
+  // Two real-world causes: (1) a file/folder name contains a character
+  // the parser mishandled — most notably '}', which older payloads
+  // mistook for a JSON object terminator — or (2) a single destination
+  // path is too long (the payload caps paths at 512 bytes). The engine
+  // now pre-flights the length case with a clear, file-named error
+  // ("destination path is too long…"), so a bare manifest_invalid that
+  // reaches here is most likely the character case against a payload
+  // from before the brace-safe parser fix.
+  if (/manifest_invalid/i.test(raw)) {
+    return te("err_manifest_invalid");
   }
 
   // ─── Filesystem errors surfaced from the payload ───────────────────
@@ -123,10 +154,10 @@ export function humanizePs5Error(
     !/fs_mount_/i.test(raw) &&
     /EACCES|permission[ _]?denied|\bfs_\w*_permission/i.test(raw)
   ) {
-    return "The PS5 refused to write to this destination. Try a different storage volume or destination folder.";
+    return te("err_dest_write_refused");
   }
   if (/ENOSPC|no space left|disk.*full/i.test(raw)) {
-    return "Your PS5 storage is full at that destination. Pick a different volume or free up space.";
+    return te("err_dest_full");
   }
 
   // ─── Firmware / Sony-API availability ──────────────────────────────
@@ -138,15 +169,15 @@ export function humanizePs5Error(
     // `getmntinfo(MNT_NOWAIT)` returned -1 / empty. Usually transient
     // (another process momentarily locked the mount table). Retrying
     // almost always succeeds. Not firmware-specific.
-    return "PS5 didn't return the volume list this time — try again in a second. If it keeps failing, reload the payload from Connection → Send payload.";
+    return te("err_volumes_unavailable");
   }
   if (/sqlite_unavailable/i.test(raw)) {
     // `libSceSqlite.sprx` couldn't be dlopened (missing or moved in
     // this firmware). Library-filter features degrade but don't fail.
-    return "Title-registration lookups aren't available on this PS5 firmware. The rest of the library view still works.";
+    return te("err_sqlite_unavailable");
   }
   if (/launch_service_unavailable|service_unavailable/i.test(raw)) {
-    return "This action needs a Sony service that isn't exported on your firmware. Everything else still works.";
+    return te("err_service_unavailable");
   }
 
   // ─── Sony launcher error codes (after 2.2.32 auto-retry) ──────────
@@ -158,22 +189,22 @@ export function humanizePs5Error(
   if (lncMatch) {
     const code = lncMatch[1].toUpperCase();
     if (code === "8094000F") {
-      return "PS5 has no profile selected. Pick a user profile on the PS5 home screen, then try Launch again.";
+      return te("err_launch_no_profile");
     }
     if (code === "8094000C" || code === "8094000D") {
-      return "PS5 says the title isn't registered. Click Register first, or unregister + re-register if it was already added.";
+      return te("err_launch_not_registered");
     }
     if (code === "80940020" || code === "80940021") {
-      return "PS5 launcher is busy with another title. Close any running game on the PS5 and try Launch again.";
+      return te("err_launch_busy");
     }
     if (code === "8094001F") {
-      return "PS5 says this title's data is corrupted. The eboot.bin or sce_sys folder may be incomplete — re-upload the game.";
+      return te("err_launch_corrupt");
     }
-    return `PS5 launcher returned 0x${code}. The title may have been removed, or the install isn't complete — try Re-register from the Library tab.`;
+    return te("err_launch_unknown", { code });
   }
 
   if (/launch_title_id_invalid/i.test(raw)) {
-    return "Title ID doesn't look valid. Make sure the game's PARAM.SFO has a title_id like CUSA12345 or PPSA01234.";
+    return te("err_launch_title_id_invalid");
   }
 
   // ─── Mount error mapping ────────────────────────────────────────
@@ -181,22 +212,22 @@ export function humanizePs5Error(
   // most cases (re-upload, pick a different image, wait for the
   // upload to settle).
   if (/fs_mount_image_not_a_file/i.test(raw)) {
-    return "PS5 can't find that file at the destination. The upload may not have completed — wait a moment and retry.";
+    return te("err_mount_not_a_file");
   }
   if (/fs_mount_unsupported_format/i.test(raw)) {
-    return "PS5 doesn't recognize this file as a mountable disk image. Only .ffpkg (UFS), .exfat, and .ffpfs are supported.";
+    return te("err_mount_unsupported_format");
   }
   if (/fs_mount_source_unstable/i.test(raw)) {
-    return "PS5 sees the file is still being written. Wait 5 seconds for the upload to finish, then click Mount again.";
+    return te("err_mount_source_unstable");
   }
   if (/fs_mount_path_not_allowed/i.test(raw)) {
-    return "PS5 doesn't allow mounts at that path. Use /data, /user, /mnt/ext*, /mnt/usb*, or /mnt/ps5upload.";
+    return te("err_mount_path_not_allowed");
   }
   if (/fs_mount_attach_failed/i.test(raw)) {
-    return "PS5 couldn't attach the image to a block device (LVD or md). Image may be corrupt — try re-uploading or rebuild it.";
+    return te("err_mount_attach_failed");
   }
   if (/fs_mount_dev_node_missing/i.test(raw)) {
-    return "PS5 attached the image but the device node didn't appear. Reboot the PS5 and re-load the payload, then try again.";
+    return te("err_mount_dev_node_missing");
   }
   // The PS5 kernel's nmount enforces its own mount-point policy on
   // top of our path allowlist. The most common kernel-policy failure
@@ -213,14 +244,16 @@ export function humanizePs5Error(
     /fs_mount_nmount_failed/i.test(raw) &&
     /Operation not permitted|EPERM|operation_not_permitted/i.test(raw)
   ) {
-    return "PS5 kernel refused this mount point (Operation not permitted). The .exfat file's location doesn't matter here — try mounting under /data/homebrew/<name> or /mnt/ps5upload/<name>. Some USB/ext sub-paths are blocked by kernel policy on certain firmware.";
+    return te("err_mount_nmount_eperm");
   }
   if (/fs_mount_nmount_failed/i.test(raw)) {
     // Non-EPERM nmount failure — surface the kernel's own errmsg
     // verbatim (the payload formats it as "fs_mount_nmount_failed:
     // <kernel-errmsg-or-strerror>"); strip our prefix for clarity.
     const tail = raw.match(/fs_mount_nmount_failed:\s*(.+?)(?:\)|$)/i);
-    return `PS5 kernel rejected the mount: ${tail ? tail[1] : "unknown reason"}. Try a different mount point (e.g. under /data or /mnt/ps5upload) — the image itself is fine.`;
+    return te("err_mount_nmount_other", {
+      reason: tail ? tail[1] : te("err_unknown_reason"),
+    });
   }
 
   // ─── Sony AppInstUtil error codes ─────────────────────────────────
@@ -239,25 +272,25 @@ export function humanizePs5Error(
   // for any code the engine emitted in decimal, leaving the user
   // with the raw "PS5 rejected the request: -2136862720" copy.
   if (/0x80A30000|-2136862720|SCE_APP_INST_UTIL_ERROR_NOT_INITIALIZED/i.test(raw)) {
-    return "Sony's installer subsystem isn't initialised yet — push the latest bundled payload (Connection → Send payload) so the lazy-init in 2.2.46+ runs. If the error persists, the install API isn't reachable from our process context on this firmware; FTP-upload + Library → Register is the workaround.";
+    return te("err_appinst_not_initialized");
   }
   if (/0x80A2FF02|-2136801278|SCE_APP_INSTALLER_ERROR_NOSPACE/i.test(raw)) {
-    return "Your PS5 doesn't have enough free space for this install. Settings → Storage → Free up space, then retry.";
+    return te("err_appinst_nospace");
   }
   if (/0x80A2FF06|-2136801274|SCE_APP_INSTALLER_ERROR_PKG_INVALID_DRM_TYPE/i.test(raw)) {
-    return "Sony's installer rejected this PKG's DRM type. Try the Library → Register flow with 'Patch DRM' instead — it rewrites applicationDrmType to 'standard' before installing.";
+    return te("err_appinst_drm_type");
   }
   if (/0x80A2FF09|-2136801271|SCE_APP_INSTALLER_ERROR_PKG_INVALID_CONTENT_TYPE/i.test(raw)) {
-    return "Sony's installer doesn't accept this PKG's content type on the current firmware (e.g. some patch-pkgs / DLC formats). The base game's PKG should still install if you have it.";
+    return te("err_appinst_content_type");
   }
   if (/0x80A2FF14|-2136801260|SCE_APP_INSTALLER_ERROR_BUSY/i.test(raw)) {
-    return "Sony's installer is busy with another install or an unfinished BGFT task. Wait a moment, or check the PS5's Notifications for a stuck download to clear, then retry.";
+    return te("err_appinst_busy");
   }
   if (/0x80A2FF15|-2136801259|SCE_APP_INSTALLER_ERROR_DLAPP_ALREADY_INSTALLED/i.test(raw)) {
-    return "This title is already installed. Uninstall it first if you want to re-install.";
+    return te("err_already_installed");
   }
   if (/0x80A30001|-2136862719|SCE_APP_INST_UTIL_ERROR_OUT_OF_MEMORY/i.test(raw)) {
-    return "Sony's installer ran out of memory mid-install. Reboot the PS5, reload the payload, and retry.";
+    return te("err_appinst_oom");
   }
 
   // ─── 0x80B2_xxxx — Sony installer / package-format rejection ────────
@@ -283,7 +316,7 @@ export function humanizePs5Error(
     // try again later". Most common cause on FW 9.60: a previous
     // install for the same content_id is still queued in Sony's
     // installer state and blocking the new one.
-    return "Sony's installer is busy — error 0x80020023 (EAGAIN). A previous install with the same content_id is still queued on the PS5. Open Settings → Notifications on the PS5 and dismiss any pending Store-related entries, OR reboot the PS5 to clear stale install state. Then retry.";
+    return te("err_install_eagain");
   }
   if (/\b0x80b21106\b/i.test(raw)) {
     // 0x80B21106 from Sony's AppInstaller. Direct testing across
@@ -300,7 +333,7 @@ export function humanizePs5Error(
     // synthetically forever for shellui-rpc-backed tasks; the
     // actual install runs in Sony's background and surfaces in
     // the PS5's own Settings → Notifications → Downloads panel.
-    return "Sony's installer rejected this register with 0x80B21106 — most likely because the previous install for the same content_id is still queued/running on the PS5. Check Settings → Notifications → Downloads on the PS5 to see if it's already installing. If you really want to re-register (e.g. the previous attempt failed silently), reboot the PS5 first. DO NOT click Start repeatedly — each retry just confirms Sony's response.";
+    return te("err_install_dup_register");
   }
   if (
     /0x80B2_?2404\b/i.test(raw) ||
@@ -317,7 +350,7 @@ export function humanizePs5Error(
     // certainly fine — same file installs via Settings → Debug
     // Settings → Install Package on the PS5 itself, because that
     // path runs from ShellUI.
-    return "PS5 rejected our HTTP fetch attempt for the install (0x80B22404). This isn't about the pkg's format — Sony's installer didn't read any of the file's bytes. It's a process-context issue: Sony's PlayGo whitelists ShellUI's process for install-side HTTP fetch and rejects ours. The 2.2.52 build has a new ShellUI-RPC install path that routes through ShellUI's process so the same fetch succeeds. If you're still seeing this error, the running payload is the old one — push the latest payload via Connection → Send payload, restart the install, and the diag panel should show register_path=shellui-rpc.";
+    return te("err_install_http_fetch");
   }
   // ─── 0x80B2_116F — installer rejected (FW 9.60 + NPXS path) ────────
   // Hardware-observed against an NPXS pkg on FW 9.60 when all 3 tiers
@@ -330,27 +363,27 @@ export function humanizePs5Error(
   // wildcard catches it first and this branch is dead code.
   if (/0x80B2_?116F/i.test(raw)) {
     if (isNpxsContentId(contentId)) {
-      return "PS5 installer rejected this system pkg (0x80B2116F). Sony's installer can't complete system patches (Store updates, Settings) — use Settings → Debug Settings → Game → Package Installer on the PS5 itself for these.";
+      return te("err_install_116f_npxs");
     }
-    return "PS5 installer rejected the pkg (0x80B2116F). On FW 9.60 this firmware point is missing the BGFT registers our payload uses; try pushing the latest payload (Connection → Send payload), and if it still fails the pkg may need installing via the PS5's own Debug Settings → Game → Package Installer.";
+    return te("err_install_116f_game");
   }
   // ─── 0x80B2_1401 — ShellUI install path rejected ───────────────────
   // Tier-2 (shellui-rpc) returned this; usually paired with 0x80B2116F
   // on the same firmware point. Distinct surface so the user knows
   // it's the ShellUI path specifically that bailed.
   if (/0x80B2_?1401/i.test(raw)) {
-    return "PS5's ShellUI install path rejected the request (0x80B21401). Usually paired with another tier failure on FW 9.60 when the firmware point lacks the BGFT registers we depend on. Try the latest payload from Connection → Send payload, or install via the PS5's own Debug Settings panel.";
+    return te("err_install_1401");
   }
   // ─── 0x80B2_2101 — earlier download still queued ───────────────────
   // Must precede the generic 0x80B2_xxxx wildcard below, which would
   // otherwise shadow this specific, actionable case (0x80B2 + "2101").
   if (/0x80B22101/i.test(raw)) {
-    return "Earlier download for the same content is still queued on the PS5. Open the PS5's notification panel, clear it, then retry the install.";
+    return te("err_install_2101");
   }
   if (/\b0x80B2[0-9A-Fa-f]{4}\b/i.test(raw)) {
     // Other 0x80B2_xxxx — PlayGo errors, not pkg-format errors.
     // Don't blame the file.
-    return "PS5's PlayGo subsystem rejected the install with a 0x80B2_xxxx error. This is the install fetch path, not the pkg parser — your file likely is fine. Try pushing the latest payload (Connection → Send payload); the new ShellUI-RPC install path bypasses the most common 0x80B2 reject class.";
+    return te("err_install_80b2_generic");
   }
 
   // ─── BGFT init failure (0xE0000001 = BGFT_ERR_LIB_NOT_LOADABLE) ──
@@ -368,7 +401,7 @@ export function humanizePs5Error(
     /dlopen libSceBgft\.sprx failed/i.test(raw) ||
     /0xE0000001|BGFT_ERR_LIB_NOT_LOADABLE/i.test(raw)
   ) {
-    return "Your PS5 firmware doesn't expose Sony's BGFT installer in a way ps5upload can use. Push the latest bundled payload (Connection → Send payload) — it tries more library paths and symbol variants. If it still fails, install via FTP + Library → Register instead; .pkg-via-BGFT isn't available on this firmware.";
+    return te("err_bgft_not_loadable");
   }
 
   // ─── 0x80020002 — sceKernelOpen() ENOENT from Sony's installer ──
@@ -404,9 +437,12 @@ export function humanizePs5Error(
     );
     if (dlcMatch) {
       const baseTitle = dlcMatch[2];
-      return `This looks like a DLC pkg (content_id ${contentId}). Sony's installer needs the base game (${baseTitle}) to be installed BEFORE the DLC, because the install reads metadata from the base game's app_home. Install ${baseTitle} first, then retry this DLC. The 0x80020002 is the kernel reporting "no such file" when it tried to follow the base-game reference — not a problem with your DLC pkg.`;
+      return te("err_install_enoent_dlc", {
+        contentId: contentId ?? "",
+        baseTitle,
+      });
     }
-    return "Sony's installer couldn't open a file it needed during install (kernel error 0x80020002 = ENOENT). If this is a DLC pkg, the base game isn't installed yet — install the base first. Otherwise the staging file may have been deleted between upload and install; retry the install once. If it keeps failing, FTP-upload the pkg to /user/data/ps5upload/pkg_temp/ manually and use Library → Register to install.";
+    return te("err_install_enoent_generic");
   }
 
   // ─── BGFT / Install Package error codes ─────────────────────────
@@ -415,28 +451,28 @@ export function humanizePs5Error(
   // This block catches the rare cases where a code comes through raw
   // (e.g. from a nested error wrap).
   if (/0x80990088|already.installed/i.test(raw)) {
-    return "This title is already installed. Uninstall it first if you want to re-install.";
+    return te("err_already_installed");
   }
   if (/0x80990085|defrag/i.test(raw)) {
-    return "Your PS5 needs defragmented free space. Settings → Storage → Free up space, then retry.";
+    return te("err_install_defrag");
   }
   if (/0x80990086/i.test(raw)) {
-    return "Leftover download in PS5 notifications. Open the PS5's notification panel (PS button → Notifications → Downloads), clear the stuck entry, then retry the install.";
+    return te("err_install_leftover_download");
   }
   if (/0x80990036/i.test(raw)) {
-    return "DRM mismatch — this PKG isn't valid for this console. The pkg was created for a different account or region.";
+    return te("err_install_drm_mismatch");
   }
   if (/0x80990038/i.test(raw)) {
-    return "PKG entitlement check failed. The signed-in PSN account doesn't own this title, or the region doesn't match.";
+    return te("err_install_entitlement");
   }
   if (/0x80990039|0x80A30026|out of (free )?space/i.test(raw)) {
-    return "Out of free space on the PS5. Settings → Storage → Free up space, then retry.";
+    return te("err_install_no_free_space");
   }
   if (/0x80B64002/i.test(raw)) {
-    return "Title blocked by PS5 parental / content controls. Adjust the user's restrictions in PS5 Settings → Users and Accounts → Family Management before retrying.";
+    return te("err_install_parental");
   }
   if (/0x80020005/i.test(raw)) {
-    return "PS5 install daemon couldn't reach our process (ESRCH = no such process). Usually means the payload hasn't elevated yet — kstuff/etaHEN may not be loaded. Re-send the payload from Connection → Send payload, then retry.";
+    return te("err_install_esrch");
   }
   // 0x80B2116F, 0x80B21401, and 0x80B22101 handled above (each must
   // precede the generic 0x80B2 wildcard, which would otherwise shadow
@@ -447,7 +483,9 @@ export function humanizePs5Error(
   // namespace at least gets a clear "this is the install service
   // saying no" framing instead of a raw hex dump.
   if (/\b0x80990[0-9A-Fa-f]{3}\b/i.test(raw)) {
-    return `Sony's install service rejected the request with ${raw.match(/0x80990[0-9A-Fa-f]{3}/i)?.[0]}. Common causes: stuck previous install (open PS5 notifications → Downloads → clear), wrong account/region, or out of space. If none of those apply, capture the diag panel and file a bug.`;
+    return te("err_install_bgft_generic", {
+      code: raw.match(/0x80990[0-9A-Fa-f]{3}/i)?.[0] ?? "",
+    });
   }
 
   // ─── Generic payload rejection — extract the reason verbatim ───────
@@ -455,7 +493,7 @@ export function humanizePs5Error(
   // The `errno_N` tail is opaque — strip the frame-name prefix so the
   // surfaced copy is at least not alarming even for unrecognized codes.
   const m = raw.match(/payload rejected [A-Z_]+(?:\([^)]*\))?:\s*(.+)$/);
-  if (m) return `PS5 rejected the request: ${m[1]}`;
+  if (m) return te("err_payload_rejected", { reason: m[1] });
 
   return raw;
 }

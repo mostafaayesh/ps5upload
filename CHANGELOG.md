@@ -4,6 +4,24 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.23.0
+
+- **Fix: uploads no longer fail when a file or folder name contains a
+  `}`.** A game folder with a `}` in any file or folder name (or a very
+  long path) made the PS5 reject the whole upload with a cryptic
+  `manifest_invalid` error. The on-console payload now reads those names
+  correctly, the app blocks an over-long path early with a clear,
+  file-named message, and any leftover rejection is shown in plain
+  language instead of the raw error code. Reload the payload on your PS5
+  to pick up the fix — Connection → Send payload.
+- **Every language is now complete, and error messages are translated
+  too.** All 17 non-English languages now fully cover the Installed Apps
+  and Package Library screens, and the app's error and troubleshooting
+  messages are localized for the first time (they were English-only
+  before). 18 languages in total.
+
+---
+
 ## 2.22.0
 
 - **Android: the screen now stays on during transfers.** While an upload,

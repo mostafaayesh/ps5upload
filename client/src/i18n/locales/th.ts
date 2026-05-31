@@ -1246,6 +1246,163 @@ nav_close_aria: "ปิดการนำทาง",
 notifications: "ประกาศ",
 os_notify_label: "ระบบแจ้งเตือน",
 os_notify_hint: "มิเรอร์การแจ้งเตือนในแอป (การถ่ายโอนเสร็จสิ้นข้อผิดพลาดฯลฯ) ไปยังศูนย์การแจ้งเตือนของระบบปฏิบัติการของคุณ — แต่เฉพาะเมื่อแอปอยู่ในพื้นหลังดังนั้นคุณจะไม่ได้รับการแจ้งเตือนสองครั้งคุณอาจถูกขอให้อนุญาตการแจ้งเตือน",
+"pkglib.install": "ติดตั้ง",
+"pkglib.reinstall": "ติดตั้งใหม่",
+"pkglib.delete": "ลบ",
+"pkglib.installing": "กำลังติดตั้ง…",
+"pkglib.uploading": "กำลังอัปโหลดไปยัง PS5…",
+"pkglib.badge.installed": "ติดตั้งแล้ว",
+"pkglib.install.busyHint": "รอให้การอัปโหลด/ติดตั้งปัจจุบันเสร็จก่อน",
+"pkglib.add.installingHint": "รอให้การติดตั้งปัจจุบันเสร็จก่อน",
+"pkglib.note.title": "การติดตั้งทำงานผ่าน DPI daemon",
+"pkglib.note.body": "เป็นวิธีที่สะอาดที่สุดสำหรับ pkg เกม ระหว่างติดตั้ง payload ของ ps5upload จะถูกสลับเป็น DPI loader ชั่วคราวแล้วคืนค่ากลับเมื่อเสร็จ ดังนั้นการเชื่อมต่ออาจสะดุดสองสามวินาที pkg เกมทำงานได้ดีที่สุด ส่วน pkg ระบบ (NPXS) บางตัวอาจยังต้องใช้ Settings → Package Installer ของ PS5 เอง",
+"pkglib.error": "เกิดข้อผิดพลาดบางอย่าง",
+"pkglib.empty.title": "ยังไม่มีแพ็กเกจที่อัปโหลด",
+"pkglib.empty.drop": "วางเพื่ออัปโหลด",
+"pkglib.empty.body": "เพิ่มไฟล์ .pkg เพื่ออัปโหลดไปยัง PS5 ของคุณ — แล้วติดตั้งจากที่นี่ คุณยังสามารถลากไฟล์ .pkg มาวางบนหน้าต่างได้ด้วย",
+"pkglib.delete.confirmTitle": "ลบ {name}?",
+"pkglib.delete.confirmBody": "การทำเช่นนี้จะลบไฟล์ .pkg ที่อัปโหลด ({size}) ออกจาก PS5 ของคุณอย่างถาวร สำเนาเกมที่ติดตั้งไว้แล้ว (ถ้ามี) จะยังคงอยู่ คุณเพียงต้องอัปโหลด .pkg ใหม่เพื่อติดตั้งอีกครั้ง",
+"pkglib.footer.count": "{n} แพ็กเกจ",
+"pkglib.footer.size": "{size} บน PS5",
+installed_apps: "แอปที่ติดตั้ง",
+installed_apps_title: "แอปที่ติดตั้ง",
+installed_apps_subtitle:
+  "ทุกอย่างที่ติดตั้งบน PS5 จัดกลุ่มตามวิธีที่มันมาถึง การถอนการติดตั้งจะลบชื่อเกมออก (และสำหรับเกมที่เมานต์ไว้ จะยกเลิกการเมานต์ด้วย)",
+installed_error_title: "อ่านแอปที่ติดตั้งไม่ได้",
+installed_no_host_title: "ยังไม่ได้เชื่อมต่อ",
+installed_no_host_body: "เชื่อมต่อกับ PS5 ในแท็บ Connection เพื่อดูแอปที่ติดตั้ง",
+installed_loading: "กำลังอ่านชื่อเกมที่ติดตั้ง…",
+installed_loading_hint: "กำลังแจกแจง /user/appmeta บน PS5",
+installed_empty_title: "ไม่พบชื่อเกมที่ติดตั้ง",
+installed_empty_body:
+  "ไม่มีอะไรใน /user/appmeta ติดตั้งแพ็กเกจหรือลงทะเบียนเกมก่อน",
+installed_registered_unavailable:
+  "อ่านชุดที่เมานต์/ลงทะเบียนจาก payload ไม่ได้ — ทุกอย่างจะแสดงภายใต้ \"ติดตั้งจากแพ็กเกจ\" โหลด payload ใหม่เพื่อแก้การจัดกลุ่ม",
+installed_section_pkg: "ติดตั้งจากแพ็กเกจ",
+installed_section_pkg_hint:
+  "ติดตั้งผ่านตัวติดตั้งของ Sony จากไฟล์ .pkg (หรือมาพร้อมเครื่อง)",
+installed_section_registered: "เมานต์และลงทะเบียนโดย PS5Upload",
+installed_section_registered_hint:
+  "ลงทะเบียนจากโฟลเดอร์เกม, อิมเมจดิสก์ .exfat/.ffpkg หรือการอัปโหลด การถอนการติดตั้งจะยกเลิกการเมานต์ ไฟล์ต้นฉบับของคุณยังคงอยู่",
+installed_badge_system: "ระบบ",
+installed_badge_image: "อิมเมจดิสก์",
+installed_badge_folder: "โฟลเดอร์",
+installed_badge_pkg: "แพ็กเกจ",
+installed_uninstall: "ถอนการติดตั้ง",
+installed_uninstalling: "กำลังลบ…",
+installed_uninstall_confirm_title: "ถอนการติดตั้ง {name}?",
+installed_uninstall_confirm_system:
+  "{id} เป็นแอประบบ (SYSTEM) การลบอาจทำให้เครื่องไม่เสถียรและอาจต้องติดตั้งใหม่เพื่อกู้คืน ดำเนินการต่อเฉพาะเมื่อคุณรู้แน่ชัดว่าแพ็กเกจนี้คืออะไร",
+installed_uninstall_confirm_registered:
+  "การทำเช่นนี้จะยกเลิกการเมานต์และลบชื่อเกมออกจากหน้าจอหลัก ไฟล์ต้นฉบับ/อิมเมจของคุณบนดิสก์จะไม่ถูกลบ",
+installed_uninstall_confirm_pkg:
+  "การทำเช่นนี้จะลบชื่อเกมที่ติดตั้งออกจาก PS5 คุณสามารถติดตั้งใหม่ภายหลังจากแพ็กเกจได้",
+err_unmount_busy:
+  "ยกเลิกการเมานต์ไม่ได้: เกมในอิมเมจนี้กำลังทำงานอยู่บน PS5 ปิดเกมก่อน (PS Home → ปิดเกม) แล้วลองใหม่",
+err_unmount_permission:
+  "ยกเลิกการเมานต์ไม่ได้: เคอร์เนลปฏิเสธด้วย EACCES/EPERM payload อาจสูญเสียสิทธิ์ root — โหลดใหม่จาก Connection → Send payload",
+err_npxs_mgmt_disconnect:
+  "บริการ mgmt ของ PS5 หยุดตอบสนองกลางคันระหว่างติดตั้ง นี่คือความล้มเหลวที่รู้จักของ pkg ระบบ NPXS: Sony ยอมรับการลงทะเบียน แต่ `sceAppInstUtilInstallByPackage` ไม่ได้ออกแบบมาสำหรับแพตช์ระบบ (อัปเดต Store, Settings ฯลฯ) โดยปกติ PS5 จะกู้คืนเองภายในหนึ่งถึงสองนาที หรือหลังรีบูต — แต่ ps5upload ติดตั้ง pkg นี้ไม่ได้ สำหรับ pkg ระบบ ให้ใช้ Settings → Debug Settings → Game → Package Installer บน PS5 เอง",
+err_network_drop:
+  "PS5 ของคุณหยุดตอบสนอง อาจแครชหรือเข้าสู่โหมดพัก โหลด payload ใหม่ (Connection → Send payload) แล้วลองใหม่",
+err_connect_mgmt:
+  "เข้าถึงบริการ management ของ PS5 ไม่ได้ ตรวจสอบว่าโหลด payload แล้ว (Connection → Send payload)",
+err_connect_transfer:
+  "เข้าถึง PS5 เพื่อถ่ายโอนไฟล์ไม่ได้ ตรวจสอบว่าโหลด payload แล้ว (Connection → Send payload)",
+err_manifest_invalid:
+  "PS5 ของคุณปฏิเสธรายการไฟล์ที่จะอัปโหลด โดยปกติหมายความว่าชื่อไฟล์หรือโฟลเดอร์มีอักขระผิดปกติ (บ่อยที่สุดคือ } ) หรือพาธยาวเกินไป โหลด payload ล่าสุดใหม่ (Connection → Send payload) — ซึ่งแก้กรณีอักขระ — หรือเปลี่ยนชื่อ/ย่อไฟล์หรือโฟลเดอร์ที่มีปัญหา แล้วลองใหม่",
+err_dest_write_refused:
+  "PS5 ปฏิเสธการเขียนไปยังปลายทางนี้ ลองวอลุมจัดเก็บหรือโฟลเดอร์ปลายทางอื่น",
+err_dest_full:
+  "ที่จัดเก็บ PS5 ของคุณเต็มที่ปลายทางนั้น เลือกวอลุมอื่นหรือเพิ่มพื้นที่ว่าง",
+err_volumes_unavailable:
+  "คราวนี้ PS5 ไม่ส่งรายการวอลุมกลับมา — ลองใหม่อีกครั้งในอีกวินาที หากยังล้มเหลว ให้โหลด payload ใหม่จาก Connection → Send payload",
+err_sqlite_unavailable:
+  "การค้นหาการลงทะเบียนชื่อเกมไม่พร้อมใช้งานบนเฟิร์มแวร์ PS5 นี้ ส่วนที่เหลือของมุมมองไลบรารียังใช้งานได้",
+err_service_unavailable:
+  "การกระทำนี้ต้องใช้บริการของ Sony ที่ไม่ได้ส่งออกบนเฟิร์มแวร์ของคุณ ทุกอย่างที่เหลือยังใช้งานได้",
+err_launch_no_profile:
+  "PS5 ยังไม่ได้เลือกโปรไฟล์ เลือกโปรไฟล์ผู้ใช้บนหน้าจอหลักของ PS5 แล้วลอง Launch อีกครั้ง",
+err_launch_not_registered:
+  "PS5 แจ้งว่าชื่อเกมยังไม่ได้ลงทะเบียน คลิก Register ก่อน หรือยกเลิกการลงทะเบียนแล้วลงทะเบียนใหม่หากเพิ่มไว้แล้ว",
+err_launch_busy:
+  "ตัวเรียกใช้ของ PS5 กำลังยุ่งกับชื่อเกมอื่น ปิดเกมที่กำลังทำงานบน PS5 แล้วลอง Launch อีกครั้ง",
+err_launch_corrupt:
+  "PS5 แจ้งว่าข้อมูลของชื่อเกมนี้เสียหาย ไฟล์ eboot.bin หรือโฟลเดอร์ sce_sys อาจไม่สมบูรณ์ — อัปโหลดเกมใหม่",
+err_launch_unknown:
+  "ตัวเรียกใช้ PS5 ส่งกลับ 0x{code} ชื่อเกมอาจถูกลบ หรือการติดตั้งไม่สมบูรณ์ — ลอง Re-register จากแท็บ Library",
+err_launch_title_id_invalid:
+  "Title ID ดูไม่ถูกต้อง ตรวจสอบว่า PARAM.SFO ของเกมมี title_id แบบ CUSA12345 หรือ PPSA01234",
+err_mount_not_a_file:
+  "PS5 หาไฟล์นั้นที่ปลายทางไม่พบ การอัปโหลดอาจยังไม่เสร็จ — รอสักครู่แล้วลองใหม่",
+err_mount_unsupported_format:
+  "PS5 ไม่รู้จักไฟล์นี้ว่าเป็นอิมเมจดิสก์ที่เมานต์ได้ รองรับเฉพาะ .ffpkg (UFS), .exfat และ .ffpfs",
+err_mount_source_unstable:
+  "PS5 เห็นว่าไฟล์ยังถูกเขียนอยู่ รอ 5 วินาทีให้การอัปโหลดเสร็จ แล้วคลิก Mount อีกครั้ง",
+err_mount_path_not_allowed:
+  "PS5 ไม่อนุญาตการเมานต์ที่พาธนั้น ใช้ /data, /user, /mnt/ext*, /mnt/usb* หรือ /mnt/ps5upload",
+err_mount_attach_failed:
+  "PS5 ผูกอิมเมจกับอุปกรณ์บล็อก (LVD หรือ md) ไม่ได้ อิมเมจอาจเสียหาย — ลองอัปโหลดใหม่หรือสร้างใหม่",
+err_mount_dev_node_missing:
+  "PS5 ผูกอิมเมจแล้วแต่ device node ไม่ปรากฏ รีบูต PS5 และโหลด payload ใหม่ แล้วลองอีกครั้ง",
+err_mount_nmount_eperm:
+  "เคอร์เนล PS5 ปฏิเสธจุดเมานต์นี้ (Operation not permitted) ตำแหน่งของไฟล์ .exfat ไม่สำคัญในที่นี้ — ลองเมานต์ภายใต้ /data/homebrew/<name> หรือ /mnt/ps5upload/<name> บางซับพาธของ USB/ext ถูกบล็อกโดยนโยบายเคอร์เนลบนบางเฟิร์มแวร์",
+err_mount_nmount_other:
+  "เคอร์เนล PS5 ปฏิเสธการเมานต์: {reason} ลองจุดเมานต์อื่น (เช่นภายใต้ /data หรือ /mnt/ps5upload) — ตัวอิมเมจเองไม่มีปัญหา",
+err_unknown_reason: "ไม่ทราบสาเหตุ",
+err_appinst_not_initialized:
+  "ระบบย่อยตัวติดตั้งของ Sony ยังไม่ได้เริ่มต้น — ส่ง payload ที่มาพร้อมตัวล่าสุด (Connection → Send payload) เพื่อให้ lazy-init ใน 2.2.46+ ทำงาน หากข้อผิดพลาดยังคงอยู่ API ติดตั้งไม่สามารถเข้าถึงได้จากบริบทกระบวนการของเราบนเฟิร์มแวร์นี้ วิธีแก้คือ อัปโหลดผ่าน FTP + Library → Register",
+err_appinst_nospace:
+  "PS5 ของคุณมีพื้นที่ว่างไม่พอสำหรับการติดตั้งนี้ Settings → Storage → Free up space แล้วลองใหม่",
+err_appinst_drm_type:
+  "ตัวติดตั้งของ Sony ปฏิเสธชนิด DRM ของ PKG นี้ ลองใช้ขั้นตอน Library → Register พร้อม 'Patch DRM' แทน — มันจะเขียน applicationDrmType ใหม่เป็น 'standard' ก่อนติดตั้ง",
+err_appinst_content_type:
+  "ตัวติดตั้งของ Sony ไม่รับชนิดเนื้อหาของ PKG นี้บนเฟิร์มแวร์ปัจจุบัน (เช่น patch-pkg / รูปแบบ DLC บางชนิด) PKG ของเกมหลักน่าจะยังติดตั้งได้หากคุณมี",
+err_appinst_busy:
+  "ตัวติดตั้งของ Sony กำลังยุ่งกับการติดตั้งอื่นหรืองาน BGFT ที่ยังไม่เสร็จ รอสักครู่ หรือตรวจสอบ Notifications ของ PS5 เพื่อล้างดาวน์โหลดที่ค้าง แล้วลองใหม่",
+err_already_installed:
+  "ชื่อเกมนี้ติดตั้งไว้แล้ว ถอนการติดตั้งก่อนหากต้องการติดตั้งใหม่",
+err_appinst_oom:
+  "ตัวติดตั้งของ Sony หน่วยความจำหมดกลางคัน รีบูต PS5 โหลด payload ใหม่ แล้วลองใหม่",
+err_install_eagain:
+  "ตัวติดตั้งของ Sony กำลังยุ่ง — ข้อผิดพลาด 0x80020023 (EAGAIN) การติดตั้งก่อนหน้าที่มี content_id เดียวกันยังอยู่ในคิวบน PS5 เปิด Settings → Notifications บน PS5 และนำรายการที่เกี่ยวกับ Store ที่ค้างออก หรือรีบูต PS5 เพื่อล้างสถานะติดตั้งเก่า แล้วลองใหม่",
+err_install_dup_register:
+  "ตัวติดตั้งของ Sony ปฏิเสธการลงทะเบียนนี้ด้วย 0x80B21106 — น่าจะเพราะการติดตั้งก่อนหน้าที่มี content_id เดียวกันยังอยู่ในคิว/กำลังทำงานบน PS5 ตรวจสอบ Settings → Notifications → Downloads บน PS5 เพื่อดูว่ากำลังติดตั้งอยู่หรือไม่ หากคุณต้องการลงทะเบียนใหม่จริง ๆ (เช่นครั้งก่อนล้มเหลวเงียบ ๆ) ให้รีบูต PS5 ก่อน อย่ากด Start ซ้ำ ๆ — แต่ละครั้งเพียงยืนยันการตอบกลับของ Sony",
+err_install_http_fetch:
+  "PS5 ปฏิเสธความพยายามดึงข้อมูลผ่าน HTTP ของเราสำหรับการติดตั้ง (0x80B22404) นี่ไม่เกี่ยวกับรูปแบบ pkg — ตัวติดตั้งของ Sony ยังไม่ได้อ่านไบต์ใดของไฟล์เลย เป็นปัญหาบริบทกระบวนการ: PlayGo ของ Sony อนุญาตให้กระบวนการ ShellUI ดึง HTTP ฝั่งติดตั้ง และปฏิเสธของเรา บิลด์ 2.2.52 มีเส้นทางติดตั้ง ShellUI-RPC ใหม่ที่ส่งผ่านกระบวนการ ShellUI การดึงเดียวกันจึงสำเร็จ หากยังเห็นข้อผิดพลาดนี้ payload ที่กำลังทำงานเป็นตัวเก่า — ส่ง payload ล่าสุดผ่าน Connection → Send payload เริ่มติดตั้งใหม่ และแผง diag ควรแสดง register_path=shellui-rpc",
+err_install_116f_npxs:
+  "ตัวติดตั้ง PS5 ปฏิเสธ pkg ระบบนี้ (0x80B2116F) ตัวติดตั้งของ Sony ทำแพตช์ระบบ (อัปเดต Store, Settings) ไม่สำเร็จ — สำหรับสิ่งเหล่านี้ให้ใช้ Settings → Debug Settings → Game → Package Installer บน PS5 เอง",
+err_install_116f_game:
+  "ตัวติดตั้ง PS5 ปฏิเสธ pkg (0x80B2116F) บน FW 9.60 จุดเฟิร์มแวร์นี้ขาดรีจิสเตอร์ BGFT ที่ payload ของเราใช้ ลองส่ง payload ล่าสุด (Connection → Send payload) และหากยังล้มเหลว pkg อาจต้องติดตั้งผ่าน Debug Settings → Game → Package Installer ของ PS5 เอง",
+err_install_1401:
+  "เส้นทางติดตั้ง ShellUI ของ PS5 ปฏิเสธคำขอ (0x80B21401) มักมาคู่กับความล้มเหลวอีกชั้นบน FW 9.60 เมื่อจุดเฟิร์มแวร์ขาดรีจิสเตอร์ BGFT ที่เราพึ่งพา ลอง payload ล่าสุดจาก Connection → Send payload หรือติดตั้งผ่านแผง Debug Settings ของ PS5 เอง",
+err_install_2101:
+  "ดาวน์โหลดก่อนหน้าของเนื้อหาเดียวกันยังอยู่ในคิวบน PS5 เปิดแผงการแจ้งเตือนของ PS5 ล้างมันออก แล้วลองติดตั้งใหม่",
+err_install_80b2_generic:
+  "ระบบย่อย PlayGo ของ PS5 ปฏิเสธการติดตั้งด้วยข้อผิดพลาด 0x80B2_xxxx นี่คือเส้นทางดึงข้อมูลตอนติดตั้ง ไม่ใช่ตัวแยกวิเคราะห์ pkg — ไฟล์ของคุณน่าจะปกติ ลองส่ง payload ล่าสุด (Connection → Send payload) เส้นทางติดตั้ง ShellUI-RPC ใหม่ข้ามกลุ่มการปฏิเสธ 0x80B2 ที่พบบ่อยที่สุด",
+err_bgft_not_loadable:
+  "เฟิร์มแวร์ PS5 ของคุณไม่เปิดเผยตัวติดตั้ง BGFT ของ Sony ในแบบที่ ps5upload ใช้ได้ ส่ง payload ที่มาพร้อมตัวล่าสุด (Connection → Send payload) — มันลองพาธไลบรารีและรูปแบบชื่อสัญลักษณ์มากขึ้น หากยังล้มเหลว ให้ติดตั้งผ่าน FTP + Library → Register แทน การติดตั้ง .pkg ผ่าน BGFT ไม่พร้อมใช้งานบนเฟิร์มแวร์นี้",
+err_install_enoent_dlc:
+  "นี่ดูเหมือน pkg DLC (content_id {contentId}) ตัวติดตั้งของ Sony ต้องการให้ติดตั้งเกมหลัก ({baseTitle}) ก่อน DLC เพราะการติดตั้งอ่านข้อมูลเมตาจาก app_home ของเกมหลัก ติดตั้ง {baseTitle} ก่อน แล้วลอง DLC นี้อีกครั้ง 0x80020002 คือเคอร์เนลรายงาน \"no such file\" เมื่อพยายามตามการอ้างอิงเกมหลัก — ไม่ใช่ปัญหาของ pkg DLC ของคุณ",
+err_install_enoent_generic:
+  "ตัวติดตั้งของ Sony เปิดไฟล์ที่จำเป็นระหว่างติดตั้งไม่ได้ (ข้อผิดพลาดเคอร์เนล 0x80020002 = ENOENT) หากนี่เป็น pkg DLC แสดงว่ายังไม่ได้ติดตั้งเกมหลัก — ติดตั้งเกมหลักก่อน มิฉะนั้นไฟล์ staging อาจถูกลบระหว่างอัปโหลดกับติดตั้ง ลองติดตั้งอีกครั้งหนึ่งครั้ง หากยังล้มเหลว ให้อัปโหลด pkg ไปยัง /user/data/ps5upload/pkg_temp/ ด้วยตนเองผ่าน FTP แล้วใช้ Library → Register เพื่อติดตั้ง",
+err_install_defrag:
+  "PS5 ของคุณต้องการพื้นที่ว่างที่จัดเรียงข้อมูลแล้ว Settings → Storage → Free up space แล้วลองใหม่",
+err_install_leftover_download:
+  "มีดาวน์โหลดค้างอยู่ในการแจ้งเตือนของ PS5 เปิดแผงการแจ้งเตือนของ PS5 (ปุ่ม PS → Notifications → Downloads) ล้างรายการที่ค้าง แล้วลองติดตั้งใหม่",
+err_install_drm_mismatch:
+  "DRM ไม่ตรงกัน — PKG นี้ใช้กับเครื่องนี้ไม่ได้ แพ็กเกจถูกสร้างสำหรับบัญชีหรือภูมิภาคอื่น",
+err_install_entitlement:
+  "การตรวจสอบสิทธิ์ PKG ล้มเหลว บัญชี PSN ที่ลงชื่อเข้าใช้ไม่ได้เป็นเจ้าของชื่อเกมนี้ หรือภูมิภาคไม่ตรงกัน",
+err_install_no_free_space:
+  "ไม่มีพื้นที่ว่างบน PS5 Settings → Storage → Free up space แล้วลองใหม่",
+err_install_parental:
+  "ชื่อเกมถูกบล็อกโดยการควบคุมโดยผู้ปกครอง / เนื้อหาของ PS5 ปรับข้อจำกัดของผู้ใช้ใน PS5 Settings → Users and Accounts → Family Management ก่อนลองใหม่",
+err_install_esrch:
+  "เดมอนติดตั้งของ PS5 เข้าถึงกระบวนการของเราไม่ได้ (ESRCH = ไม่มีกระบวนการดังกล่าว) มักหมายความว่า payload ยังไม่ได้ยกระดับสิทธิ์ — kstuff/etaHEN อาจยังไม่ถูกโหลด ส่ง payload ใหม่จาก Connection → Send payload แล้วลองใหม่",
+err_install_bgft_generic:
+  "บริการติดตั้งของ Sony ปฏิเสธคำขอด้วย {code} สาเหตุที่พบบ่อย: การติดตั้งก่อนหน้าค้าง (เปิดการแจ้งเตือน PS5 → Downloads → ล้าง) บัญชี/ภูมิภาคผิด หรือพื้นที่ไม่พอ หากไม่ใช่กรณีเหล่านั้น ให้จับภาพแผง diag แล้วรายงานบั๊ก",
+err_payload_rejected: "PS5 ปฏิเสธคำขอ: {reason}",
 };
 
 export default th;

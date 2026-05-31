@@ -1247,6 +1247,170 @@ nav_close_aria: "ナビゲーションを閉じる",
 notifications: "通知",
 os_notify_label: "システム通知",
 os_notify_hint: "アプリ内通知（転送完了、エラーなど）をオペレーティングシステムの通知センターにミラーリングしますが、アプリがバックグラウンドにある場合にのみ、2回通知されることはありません。通知権限の付与を求められる場合があります。",
+
+// パッケージライブラリ（再設計された「パッケージをインストール」画面 — DPI 専用）
+"pkglib.install": "インストール",
+"pkglib.reinstall": "再インストール",
+"pkglib.delete": "削除",
+"pkglib.installing": "インストール中…",
+"pkglib.uploading": "PS5 へアップロード中…",
+"pkglib.badge.installed": "インストール済み",
+"pkglib.install.busyHint": "現在のアップロード/インストールが完了するまでお待ちください",
+"pkglib.add.installingHint": "現在のインストールが完了するまでお待ちください",
+"pkglib.note.title": "インストールは DPI デーモン経由で実行されます",
+"pkglib.note.body": "ゲーム pkg にとって最もクリーンな方法です。インストール時には ps5upload ペイロードを一時的に DPI ローダーに切り替え、完了後に元に戻すため、接続が数秒間途切れることがあります。ゲーム pkg が最も適しています。一部のシステム（NPXS）pkg は、PS5 本体の Settings → Package Installer が必要な場合があります。",
+"pkglib.error": "問題が発生しました",
+"pkglib.empty.title": "アップロード済みのパッケージはまだありません",
+"pkglib.empty.drop": "ドロップしてアップロード",
+"pkglib.empty.body": ".pkg を追加して PS5 にアップロードし、ここからインストールできます。.pkg ファイルをウィンドウにドラッグすることもできます。",
+"pkglib.delete.confirmTitle": "{name} を削除しますか？",
+"pkglib.delete.confirmBody": "アップロードした .pkg（{size}）を PS5 から完全に削除します。インストール済みのゲーム本体はそのまま残ります。再びインストールするには .pkg を再アップロードする必要があります。",
+"pkglib.footer.count": "{n} 個のパッケージ",
+"pkglib.footer.size": "PS5 上で {size}",
+
+// インストール済みアプリ画面
+installed_apps: "インストール済みアプリ",
+installed_apps_title: "インストール済みアプリ",
+installed_apps_subtitle:
+  "PS5 にインストールされているすべてを、インストール経路ごとに分類して表示します。アンインストールするとタイトルが削除され、マウント済みタイトルの場合はアンマウントされます。",
+installed_error_title: "インストール済みアプリを読み取れません",
+installed_no_host_title: "未接続",
+installed_no_host_body: "インストール済みアプリを表示するには、Connection タブで PS5 に接続してください。",
+installed_loading: "インストール済みタイトルを読み込み中…",
+installed_loading_hint: "PS5 の /user/appmeta を列挙しています。",
+installed_empty_title: "インストール済みタイトルが見つかりません",
+installed_empty_body:
+  "/user/appmeta には何もありません。まずパッケージをインストールするか、ゲームを登録してください。",
+installed_registered_unavailable:
+  "ペイロードからマウント済み/登録済みのセットを読み取れませんでした — すべて「パッケージからインストール」に表示されています。グループ分けを修正するにはペイロードを再読み込みしてください。",
+installed_section_pkg: "パッケージからインストール",
+installed_section_pkg_hint:
+  "Sony のインストーラーで .pkg からインストール（または本体に同梱）されたものです。",
+installed_section_registered: "PS5Upload によりマウント・登録",
+installed_section_registered_hint:
+  "ゲームフォルダ、.exfat/.ffpkg ディスクイメージ、またはアップロードから登録されたものです。アンインストールするとアンマウントされますが、ソースファイルは保持されます。",
+installed_badge_system: "システム",
+installed_badge_image: "ディスクイメージ",
+installed_badge_folder: "フォルダ",
+installed_badge_pkg: "パッケージ",
+installed_uninstall: "アンインストール",
+installed_uninstalling: "削除中…",
+installed_uninstall_confirm_title: "{name} をアンインストールしますか？",
+installed_uninstall_confirm_system:
+  "{id} はシステムアプリです。削除すると本体が不安定になり、復旧に再インストールが必要になる場合があります。このパッケージが何であるかを正確に理解している場合のみ続行してください。",
+installed_uninstall_confirm_registered:
+  "タイトルをアンマウントし、ホーム画面から削除します。ディスク上のソースファイル/イメージは削除されません。",
+installed_uninstall_confirm_pkg:
+  "インストール済みのタイトルを PS5 から削除します。後でパッケージから再インストールできます。",
+
+// 人間向けに整形したエラーメッセージ — lib/humanizeError.ts が表示します。{placeholders}
+// は実行時に置換されるため、翻訳時はそのまま残してください。
+err_unmount_busy:
+  "アンマウントできません: このイメージ内のゲームが現在 PS5 で実行中です。ゲームを終了し（PS Home → ゲームを閉じる）、もう一度お試しください。",
+err_unmount_permission:
+  "アンマウントできません: カーネルが EACCES/EPERM で拒否しました。ペイロードが root 権限を失った可能性があります — Connection → Send payload から再読み込みしてください。",
+err_npxs_mgmt_disconnect:
+  "インストール中に PS5 の管理サービスが応答しなくなりました。これは既知の NPXS システム pkg の失敗パターンです: Sony は登録を受け付けますが、`sceAppInstUtilInstallByPackage` はシステムパッチ（ストア更新、Settings など）向けには設計されていません。PS5 は通常 1〜2 分後、または再起動後に自動的に復旧しますが、ps5upload ではこの pkg をインストールできません。システム pkg には PS5 本体の Settings → Debug Settings → Game → Package Installer を使用してください。",
+err_network_drop:
+  "PS5 が応答しなくなりました。クラッシュしたか、レストモードに入った可能性があります。ペイロードを再読み込みし（Connection → Send payload）、もう一度お試しください。",
+err_connect_mgmt:
+  "PS5 の管理サービスに接続できません。ペイロードが読み込まれていることを確認してください（Connection → Send payload）。",
+err_connect_transfer:
+  "ファイル転送のため PS5 に接続できません。ペイロードが読み込まれていることを確認してください（Connection → Send payload）。",
+err_manifest_invalid:
+  "PS5 がアップロードするファイルの一覧を拒否しました。これは通常、ファイルやフォルダ名に特殊な文字（多くは } ）が含まれているか、パスが長すぎることを意味します。最新のペイロードを再読み込みする（Connection → Send payload）と文字の問題が修正されます。または問題のあるファイルやフォルダの名前を変更・短縮してからお試しください。",
+err_dest_write_refused:
+  "PS5 がこの保存先への書き込みを拒否しました。別のストレージボリュームまたは保存先フォルダをお試しください。",
+err_dest_full:
+  "その保存先の PS5 ストレージが満杯です。別のボリュームを選ぶか、空き容量を確保してください。",
+err_volumes_unavailable:
+  "今回 PS5 がボリューム一覧を返しませんでした — 少し待ってからもう一度お試しください。繰り返し失敗する場合は、Connection → Send payload からペイロードを再読み込みしてください。",
+err_sqlite_unavailable:
+  "この PS5 ファームウェアではタイトル登録の照会が利用できません。ライブラリ表示のその他の機能は引き続き動作します。",
+err_service_unavailable:
+  "この操作には、お使いのファームウェアで公開されていない Sony のサービスが必要です。その他の機能はすべて動作します。",
+err_launch_no_profile:
+  "PS5 でプロファイルが選択されていません。PS5 のホーム画面でユーザープロファイルを選択してから、もう一度 Launch をお試しください。",
+err_launch_not_registered:
+  "PS5 はこのタイトルが未登録だと報告しています。まず Register をクリックするか、すでに追加済みの場合は登録解除してから再登録してください。",
+err_launch_busy:
+  "PS5 のランチャーが別のタイトルで処理中です。PS5 で実行中のゲームを閉じてから、もう一度 Launch をお試しください。",
+err_launch_corrupt:
+  "PS5 はこのタイトルのデータが破損していると報告しています。eboot.bin または sce_sys フォルダが不完全な可能性があります — ゲームを再アップロードしてください。",
+err_launch_unknown:
+  "PS5 のランチャーが 0x{code} を返しました。タイトルが削除されたか、インストールが完了していない可能性があります — Library タブから再登録をお試しください。",
+err_launch_title_id_invalid:
+  "タイトル ID が有効ではないようです。ゲームの PARAM.SFO に CUSA12345 や PPSA01234 のような title_id が含まれていることを確認してください。",
+err_mount_not_a_file:
+  "PS5 が保存先にそのファイルを見つけられません。アップロードが完了していない可能性があります — 少し待ってから再試行してください。",
+err_mount_unsupported_format:
+  "PS5 はこのファイルをマウント可能なディスクイメージとして認識できません。対応形式は .ffpkg（UFS）、.exfat、.ffpfs のみです。",
+err_mount_source_unstable:
+  "PS5 はこのファイルがまだ書き込み中だと検出しています。アップロードが完了するまで 5 秒待ってから、もう一度 Mount をクリックしてください。",
+err_mount_path_not_allowed:
+  "PS5 はそのパスでのマウントを許可しません。/data、/user、/mnt/ext*、/mnt/usb*、または /mnt/ps5upload を使用してください。",
+err_mount_attach_failed:
+  "PS5 がイメージをブロックデバイス（LVD または md）にアタッチできませんでした。イメージが破損している可能性があります — 再アップロードするか、作り直してください。",
+err_mount_dev_node_missing:
+  "PS5 はイメージをアタッチしましたが、デバイスノードが現れませんでした。PS5 を再起動してペイロードを再読み込みし、もう一度お試しください。",
+err_mount_nmount_eperm:
+  "PS5 のカーネルがこのマウントポイントを拒否しました（操作は許可されていません）。.exfat ファイルの場所はここでは関係ありません — /data/homebrew/<name> または /mnt/ps5upload/<name> の下へのマウントをお試しください。一部の USB/ext のサブパスは、特定のファームウェアではカーネルポリシーによりブロックされています。",
+err_mount_nmount_other:
+  "PS5 のカーネルがマウントを拒否しました: {reason}。別のマウントポイント（例: /data または /mnt/ps5upload の下）をお試しください — イメージ自体に問題はありません。",
+err_unknown_reason: "不明な理由",
+err_appinst_not_initialized:
+  "Sony のインストーラーサブシステムがまだ初期化されていません — 最新の同梱ペイロードを送信し（Connection → Send payload）、2.2.46+ の遅延初期化を実行してください。それでもエラーが続く場合、このファームウェアでは当方のプロセスコンテキストからインストール API に到達できません。FTP アップロード + Library → Register が回避策です。",
+err_appinst_nospace:
+  "この PS5 にはこのインストールに必要な空き容量が足りません。Settings → Storage → 空き容量を確保してから再試行してください。",
+err_appinst_drm_type:
+  "Sony のインストーラーがこの PKG の DRM タイプを拒否しました。代わりに Library → Register フローで「Patch DRM」をお試しください — インストール前に applicationDrmType を「standard」に書き換えます。",
+err_appinst_content_type:
+  "Sony のインストーラーは、現在のファームウェアではこの PKG のコンテンツタイプを受け付けません（一部のパッチ pkg / DLC 形式など）。ベースゲームの PKG があれば、それは引き続きインストールできるはずです。",
+err_appinst_busy:
+  "Sony のインストーラーが別のインストールまたは未完了の BGFT タスクで処理中です。少し待つか、PS5 の通知で止まっているダウンロードを確認・解消してから再試行してください。",
+err_already_installed:
+  "このタイトルはすでにインストールされています。再インストールしたい場合は、まずアンインストールしてください。",
+err_appinst_oom:
+  "Sony のインストーラーがインストール中にメモリ不足になりました。PS5 を再起動し、ペイロードを再読み込みしてから再試行してください。",
+err_install_eagain:
+  "Sony のインストーラーが処理中です — エラー 0x80020023（EAGAIN）。同じ content_id の以前のインストールがまだ PS5 でキューに残っています。PS5 の Settings → Notifications を開き、保留中のストア関連エントリを消去するか、PS5 を再起動して古いインストール状態をクリアしてください。その後再試行してください。",
+err_install_dup_register:
+  "Sony のインストーラーがこの登録を 0x80B21106 で拒否しました — 最も可能性が高いのは、同じ content_id の以前のインストールがまだ PS5 でキュー/実行中であることです。PS5 の Settings → Notifications → Downloads を確認し、すでにインストール中かどうかをチェックしてください。本当に再登録したい場合（例: 前回が無音で失敗した）は、まず PS5 を再起動してください。Start を繰り返しクリックしないでください — 再試行のたびに Sony の応答を再確認するだけです。",
+err_install_http_fetch:
+  "PS5 がインストール用の HTTP 取得試行を拒否しました（0x80B22404）。これは pkg の形式の問題ではありません — Sony のインストーラーはファイルのバイトを 1 つも読み取りませんでした。これはプロセスコンテキストの問題です: Sony の PlayGo はインストール側の HTTP 取得を ShellUI のプロセスにのみ許可し、当方を拒否します。2.2.52 ビルドには、ShellUI のプロセス経由でルーティングする新しい ShellUI-RPC インストールパスがあり、同じ取得が成功します。このエラーがまだ表示される場合、実行中のペイロードは古いものです — Connection → Send payload から最新のペイロードを送信し、インストールをやり直してください。診断パネルに register_path=shellui-rpc と表示されるはずです。",
+err_install_116f_npxs:
+  "PS5 のインストーラーがこのシステム pkg を拒否しました（0x80B2116F）。Sony のインストーラーはシステムパッチ（ストア更新、Settings）を完了できません — これらには PS5 本体の Settings → Debug Settings → Game → Package Installer を使用してください。",
+err_install_116f_game:
+  "PS5 のインストーラーが pkg を拒否しました（0x80B2116F）。FW 9.60 では、このファームウェアポイントに当方のペイロードが使用する BGFT レジスタが欠けています。最新のペイロードの送信（Connection → Send payload）をお試しください。それでも失敗する場合は、PS5 本体の Debug Settings → Game → Package Installer 経由でのインストールが必要な pkg の可能性があります。",
+err_install_1401:
+  "PS5 の ShellUI インストールパスがリクエストを拒否しました（0x80B21401）。FW 9.60 で、ファームウェアポイントに依存先の BGFT レジスタが欠けている場合、別の tier の失敗と併発することが多いです。Connection → Send payload から最新のペイロードをお試しになるか、PS5 本体の Debug Settings パネル経由でインストールしてください。",
+err_install_2101:
+  "同じコンテンツの以前のダウンロードがまだ PS5 でキューに残っています。PS5 の通知パネルを開いて消去してから、インストールを再試行してください。",
+err_install_80b2_generic:
+  "PS5 の PlayGo サブシステムが 0x80B2_xxxx エラーでインストールを拒否しました。これは pkg のパーサーではなくインストールの取得パスの問題です — ファイル自体はおそらく正常です。最新のペイロードの送信（Connection → Send payload）をお試しください。新しい ShellUI-RPC インストールパスは、最も一般的な 0x80B2 拒否を回避します。",
+err_bgft_not_loadable:
+  "お使いの PS5 ファームウェアは、ps5upload が利用できる形で Sony の BGFT インストーラーを公開していません。最新の同梱ペイロードを送信してください（Connection → Send payload）— より多くのライブラリパスとシンボルのバリアントを試します。それでも失敗する場合は、代わりに FTP + Library → Register でインストールしてください。このファームウェアでは BGFT 経由の .pkg は利用できません。",
+err_install_enoent_dlc:
+  "これは DLC pkg（content_id {contentId}）のようです。Sony のインストーラーは、DLC の前にベースゲーム（{baseTitle}）がインストールされている必要があります。インストール時にベースゲームの app_home からメタデータを読み取るためです。まず {baseTitle} をインストールしてから、この DLC を再試行してください。0x80020002 は、ベースゲームの参照をたどろうとしたときにカーネルが「そのようなファイルはない」と報告したもので、DLC pkg の問題ではありません。",
+err_install_enoent_generic:
+  "Sony のインストーラーがインストール中に必要なファイルを開けませんでした（カーネルエラー 0x80020002 = ENOENT）。これが DLC pkg の場合、ベースゲームがまだインストールされていません — まずベースをインストールしてください。それ以外の場合、ステージングファイルがアップロードとインストールの間に削除された可能性があります。インストールを一度再試行してください。失敗が続く場合は、pkg を /user/data/ps5upload/pkg_temp/ に手動で FTP アップロードし、Library → Register でインストールしてください。",
+err_install_defrag:
+  "PS5 にはデフラグされた空き容量が必要です。Settings → Storage → 空き容量を確保してから再試行してください。",
+err_install_leftover_download:
+  "PS5 の通知にダウンロードが残っています。PS5 の通知パネル（PS ボタン → Notifications → Downloads）を開き、止まっているエントリを消去してから、インストールを再試行してください。",
+err_install_drm_mismatch:
+  "DRM 不一致 — この PKG はこの本体では有効ではありません。pkg は別のアカウントまたはリージョン向けに作成されています。",
+err_install_entitlement:
+  "PKG のエンタイトルメントチェックに失敗しました。サインイン中の PSN アカウントがこのタイトルを所有していないか、リージョンが一致しません。",
+err_install_no_free_space:
+  "PS5 の空き容量が不足しています。Settings → Storage → 空き容量を確保してから再試行してください。",
+err_install_parental:
+  "PS5 のペアレンタル/コンテンツ制限によりタイトルがブロックされています。再試行する前に、PS5 Settings → Users and Accounts → Family Management でユーザーの制限を調整してください。",
+err_install_esrch:
+  "PS5 のインストールデーモンが当方のプロセスに到達できませんでした（ESRCH = そのようなプロセスはない）。通常はペイロードがまだ権限昇格していないことを意味します — kstuff/etaHEN が読み込まれていない可能性があります。Connection → Send payload からペイロードを再送信してから再試行してください。",
+err_install_bgft_generic:
+  "Sony のインストールサービスがリクエストを {code} で拒否しました。よくある原因: 止まっている以前のインストール（PS5 の通知 → Downloads → 消去）、アカウント/リージョンの不一致、空き容量不足など。いずれにも該当しない場合は、診断パネルを取得してバグを報告してください。",
+err_payload_rejected: "PS5 がリクエストを拒否しました: {reason}",
 };
 
 export default ja;

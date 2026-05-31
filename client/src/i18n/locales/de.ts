@@ -1247,6 +1247,170 @@ nav_close_aria: "Navigation schließen",
 notifications: "Benachrichtigungen",
 os_notify_label: "System Benachrichtigungen anzeigen",
 os_notify_hint: "Spiegeln Sie In-App-Benachrichtigungen (Übertragung abgeschlossen, Fehler usw.) in die Benachrichtigungszentrale Ihres Betriebssystems — aber nur, wenn sich die App im Hintergrund befindet, sodass Sie nicht zweimal benachrichtigt werden. Möglicherweise werden Sie aufgefordert, die Erlaubnis zur Benachrichtigung zu erteilen.",
+
+// Paketbibliothek (neu gestalteter Bildschirm „Paket installieren" — nur DPI)
+"pkglib.install": "Installieren",
+"pkglib.reinstall": "Neu installieren",
+"pkglib.delete": "Löschen",
+"pkglib.installing": "Wird installiert…",
+"pkglib.uploading": "Wird auf die PS5 hochgeladen…",
+"pkglib.badge.installed": "installiert",
+"pkglib.install.busyHint": "Warten Sie, bis der aktuelle Upload bzw. die Installation abgeschlossen ist",
+"pkglib.add.installingHint": "Warten Sie, bis die aktuelle Installation abgeschlossen ist",
+"pkglib.note.title": "Installationen laufen über den DPI-Daemon",
+"pkglib.note.body": "der sauberste Weg für Game-pkgs. Beim Installieren wird kurz das ps5upload-Payload gegen den DPI-Loader getauscht und danach wiederhergestellt, sodass die Verbindung für ein paar Sekunden aussetzen kann. Game-pkgs funktionieren am besten; manche System-pkgs (NPXS) brauchen unter Umständen weiterhin den PS5-eigenen Package Installer unter Settings → Storage.",
+"pkglib.error": "Etwas ist schiefgelaufen",
+"pkglib.empty.title": "Noch keine Pakete hochgeladen",
+"pkglib.empty.drop": "Zum Hochladen ablegen",
+"pkglib.empty.body": "Fügen Sie eine .pkg hinzu, um sie auf Ihre PS5 hochzuladen — dann installieren Sie sie von hier aus. Sie können .pkg-Dateien auch in das Fenster ziehen.",
+"pkglib.delete.confirmTitle": "{name} löschen?",
+"pkglib.delete.confirmBody": "Dies entfernt die hochgeladene .pkg ({size}) dauerhaft von Ihrer PS5. Eine bereits installierte Kopie des Spiels bleibt installiert; Sie müssten lediglich die .pkg erneut hochladen, um sie wieder zu installieren.",
+"pkglib.footer.count": "{n} Pakete",
+"pkglib.footer.size": "{size} auf der PS5",
+
+// Bildschirm „Installierte Apps"
+installed_apps: "Installierte Apps",
+installed_apps_title: "Installierte Apps",
+installed_apps_subtitle:
+  "Alles, was auf der PS5 installiert ist, gruppiert danach, wie es dorthin kam. Deinstallieren entfernt einen Titel (und hängt ihn bei eingehängten Titeln aus).",
+installed_error_title: "Installierte Apps konnten nicht gelesen werden",
+installed_no_host_title: "Nicht verbunden",
+installed_no_host_body: "Verbinde dich im Connection-Tab mit einer PS5, um installierte Apps zu sehen.",
+installed_loading: "Installierte Titel werden gelesen…",
+installed_loading_hint: "/user/appmeta auf der PS5 wird durchsucht.",
+installed_empty_title: "Keine installierten Titel gefunden",
+installed_empty_body:
+  "Nichts unter /user/appmeta. Installiere zuerst ein Paket oder registriere ein Spiel.",
+installed_registered_unavailable:
+  "Die eingehängte/registrierte Liste konnte nicht vom Payload gelesen werden — alles wird unter „Aus Paket installiert\" angezeigt. Lade das Payload neu, um die Gruppierung zu korrigieren.",
+installed_section_pkg: "Aus Paket installiert",
+installed_section_pkg_hint:
+  "Über Sonys Installer aus einer .pkg installiert (oder mit der Konsole ausgeliefert).",
+installed_section_registered: "Von PS5Upload eingehängt & registriert",
+installed_section_registered_hint:
+  "Aus einem Spielordner, einem .exfat-/.ffpkg-Disk-Image oder Upload registriert. Beim Deinstallieren werden sie ausgehängt; deine Quelldateien bleiben erhalten.",
+installed_badge_system: "System",
+installed_badge_image: "Disk-Image",
+installed_badge_folder: "Ordner",
+installed_badge_pkg: "Paket",
+installed_uninstall: "Deinstallieren",
+installed_uninstalling: "Wird entfernt…",
+installed_uninstall_confirm_title: "{name} deinstallieren?",
+installed_uninstall_confirm_system:
+  "{id} ist eine SYSTEM-App. Sie zu entfernen, kann die Konsole destabilisieren und erfordert zur Wiederherstellung möglicherweise eine Neuinstallation. Fahre nur fort, wenn du genau weißt, was dieses Paket ist.",
+installed_uninstall_confirm_registered:
+  "Dies hängt den Titel aus und entfernt ihn vom Startbildschirm. Deine Quelldateien/das Image auf dem Datenträger werden nicht gelöscht.",
+installed_uninstall_confirm_pkg:
+  "Dies entfernt den installierten Titel von der PS5. Du kannst ihn später aus dem Paket neu installieren.",
+
+// Verständliche Fehlertexte — angezeigt über lib/humanizeError.ts. {placeholders}
+// werden zur Laufzeit ersetzt; beim Übersetzen unverändert lassen.
+err_unmount_busy:
+  "Aushängen nicht möglich: Das Spiel in diesem Image läuft gerade auf der PS5. Beende es (PS Home → Spiel schließen) und versuche es erneut.",
+err_unmount_permission:
+  "Aushängen nicht möglich: Der Kernel hat mit EACCES/EPERM abgelehnt. Das Payload hat möglicherweise seine Root-Rechte verloren — lade es neu über Connection → Send payload.",
+err_npxs_mgmt_disconnect:
+  "Der Verwaltungsdienst der PS5 hat mitten in der Installation aufgehört zu antworten. Das ist der bekannte Fehlerfall bei NPXS-System-pkgs: Sony akzeptiert die Registrierung, aber `sceAppInstUtilInstallByPackage` ist nicht für Systempatches (Store-Updates, Settings usw.) gedacht. Die PS5 erholt sich normalerweise innerhalb von ein bis zwei Minuten von selbst oder nach einem Neustart — ps5upload kann diese pkg jedoch nicht installieren. Verwende für System-pkgs den PS5-eigenen Package Installer unter Settings → Debug Settings → Game.",
+err_network_drop:
+  "Deine PS5 hat aufgehört zu antworten. Möglicherweise ist sie abgestürzt oder in den Ruhemodus gegangen. Lade das Payload neu (Connection → Send payload) und versuche es erneut.",
+err_connect_mgmt:
+  "Der Verwaltungsdienst deiner PS5 ist nicht erreichbar. Stelle sicher, dass das Payload geladen ist (Connection → Send payload).",
+err_connect_transfer:
+  "Deine PS5 ist für die Dateiübertragung nicht erreichbar. Stelle sicher, dass das Payload geladen ist (Connection → Send payload).",
+err_manifest_invalid:
+  "Deine PS5 hat die Liste der hochzuladenden Dateien abgelehnt. Das bedeutet meist, dass ein Datei- oder Ordnername ein ungewöhnliches Zeichen enthält (am häufigsten ein }) oder ein Pfad zu lang ist. Lade das neueste Payload neu (Connection → Send payload) — das behebt das Zeichen-Problem — oder benenne die betroffene Datei bzw. den Ordner um oder kürze sie und versuche es erneut.",
+err_dest_write_refused:
+  "Die PS5 hat das Schreiben an dieses Ziel verweigert. Versuche einen anderen Speicher-Datenträger oder Zielordner.",
+err_dest_full:
+  "Der Speicher deiner PS5 ist an diesem Ziel voll. Wähle einen anderen Datenträger oder gib Speicherplatz frei.",
+err_volumes_unavailable:
+  "Die PS5 hat diesmal die Datenträgerliste nicht zurückgegeben — versuche es gleich noch einmal. Wenn es weiterhin fehlschlägt, lade das Payload neu über Connection → Send payload.",
+err_sqlite_unavailable:
+  "Abfragen zur Titelregistrierung sind auf dieser PS5-Firmware nicht verfügbar. Der Rest der Bibliotheksansicht funktioniert weiterhin.",
+err_service_unavailable:
+  "Diese Aktion benötigt einen Sony-Dienst, der auf deiner Firmware nicht bereitgestellt wird. Alles andere funktioniert weiterhin.",
+err_launch_no_profile:
+  "Auf der PS5 ist kein Profil ausgewählt. Wähle auf dem PS5-Startbildschirm ein Benutzerprofil und versuche Starten erneut.",
+err_launch_not_registered:
+  "Die PS5 meldet, dass der Titel nicht registriert ist. Klicke zuerst auf Registrieren oder hebe die Registrierung auf und registriere erneut, falls er bereits hinzugefügt war.",
+err_launch_busy:
+  "Der PS5-Launcher ist mit einem anderen Titel beschäftigt. Schließe alle laufenden Spiele auf der PS5 und versuche Starten erneut.",
+err_launch_corrupt:
+  "Die PS5 meldet, dass die Daten dieses Titels beschädigt sind. Die eboot.bin oder der sce_sys-Ordner ist möglicherweise unvollständig — lade das Spiel erneut hoch.",
+err_launch_unknown:
+  "Der PS5-Launcher hat 0x{code} zurückgegeben. Der Titel wurde möglicherweise entfernt oder die Installation ist nicht abgeschlossen — versuche im Library-Tab eine erneute Registrierung.",
+err_launch_title_id_invalid:
+  "Die Titel-ID sieht nicht gültig aus. Stelle sicher, dass die PARAM.SFO des Spiels eine title_id wie CUSA12345 oder PPSA01234 hat.",
+err_mount_not_a_file:
+  "Die PS5 kann diese Datei am Ziel nicht finden. Der Upload ist möglicherweise nicht abgeschlossen — warte einen Moment und versuche es erneut.",
+err_mount_unsupported_format:
+  "Die PS5 erkennt diese Datei nicht als einhängbares Disk-Image. Unterstützt werden nur .ffpkg (UFS), .exfat und .ffpfs.",
+err_mount_source_unstable:
+  "Die PS5 sieht, dass die Datei noch geschrieben wird. Warte 5 Sekunden, bis der Upload fertig ist, und klicke dann erneut auf Mount.",
+err_mount_path_not_allowed:
+  "Die PS5 erlaubt an diesem Pfad keine Mounts. Verwende /data, /user, /mnt/ext*, /mnt/usb* oder /mnt/ps5upload.",
+err_mount_attach_failed:
+  "Die PS5 konnte das Image nicht an ein Blockgerät (LVD oder md) anhängen. Das Image ist möglicherweise beschädigt — versuche, es erneut hochzuladen oder neu zu erstellen.",
+err_mount_dev_node_missing:
+  "Die PS5 hat das Image angehängt, aber der Gerätenoten ist nicht erschienen. Starte die PS5 neu, lade das Payload neu und versuche es dann erneut.",
+err_mount_nmount_eperm:
+  "Der PS5-Kernel hat diesen Einhängepunkt verweigert (Operation not permitted). Der Speicherort der .exfat-Datei spielt hier keine Rolle — versuche, unter /data/homebrew/<name> oder /mnt/ps5upload/<name> einzuhängen. Einige USB-/ext-Unterpfade werden auf bestimmten Firmwares durch die Kernel-Richtlinie blockiert.",
+err_mount_nmount_other:
+  "Der PS5-Kernel hat den Mount abgelehnt: {reason}. Versuche einen anderen Einhängepunkt (z. B. unter /data oder /mnt/ps5upload) — das Image selbst ist in Ordnung.",
+err_unknown_reason: "unbekannter Grund",
+err_appinst_not_initialized:
+  "Sonys Installer-Subsystem ist noch nicht initialisiert — sende das neueste mitgelieferte Payload (Connection → Send payload), damit die Lazy-Init ab 2.2.46+ ausgeführt wird. Bleibt der Fehler bestehen, ist die Install-API aus unserem Prozesskontext auf dieser Firmware nicht erreichbar; der Umweg ist dann FTP-Upload + Library → Register.",
+err_appinst_nospace:
+  "Deine PS5 hat nicht genug freien Speicher für diese Installation. Settings → Storage → Speicher freigeben, dann erneut versuchen.",
+err_appinst_drm_type:
+  "Sonys Installer hat den DRM-Typ dieser PKG abgelehnt. Probiere stattdessen den Ablauf Library → Register mit „Patch DRM\" — er ändert applicationDrmType vor der Installation auf „standard\".",
+err_appinst_content_type:
+  "Sonys Installer akzeptiert den Inhaltstyp dieser PKG auf der aktuellen Firmware nicht (z. B. manche Patch-pkgs / DLC-Formate). Die PKG des Basisspiels sollte sich trotzdem installieren lassen, falls du sie hast.",
+err_appinst_busy:
+  "Sonys Installer ist mit einer anderen Installation oder einer unfertigen BGFT-Aufgabe beschäftigt. Warte einen Moment oder prüfe die PS5-Benachrichtigungen auf einen hängenden Download, lösche ihn und versuche es dann erneut.",
+err_already_installed:
+  "Dieser Titel ist bereits installiert. Deinstalliere ihn zuerst, wenn du ihn neu installieren möchtest.",
+err_appinst_oom:
+  "Sonys Installer hatte mitten in der Installation keinen Speicher mehr. Starte die PS5 neu, lade das Payload neu und versuche es erneut.",
+err_install_eagain:
+  "Sonys Installer ist beschäftigt — Fehler 0x80020023 (EAGAIN). Eine vorherige Installation mit derselben content_id steht noch in der Warteschlange der PS5. Öffne auf der PS5 Settings → Notifications und verwirf alle ausstehenden Store-bezogenen Einträge ODER starte die PS5 neu, um den veralteten Installationszustand zu löschen. Versuche es dann erneut.",
+err_install_dup_register:
+  "Sonys Installer hat diese Registrierung mit 0x80B21106 abgelehnt — höchstwahrscheinlich, weil die vorherige Installation für dieselbe content_id noch in der Warteschlange läuft/aussteht. Prüfe auf der PS5 unter Settings → Notifications → Downloads, ob sie bereits installiert wird. Wenn du wirklich neu registrieren möchtest (z. B. weil der vorherige Versuch stillschweigend fehlschlug), starte die PS5 zuerst neu. Klicke NICHT wiederholt auf Start — jeder erneute Versuch bestätigt nur Sonys Antwort.",
+err_install_http_fetch:
+  "Die PS5 hat unseren HTTP-Abrufversuch für die Installation abgelehnt (0x80B22404). Das liegt nicht am Format der pkg — Sonys Installer hat keine einzige Datei-Byte gelesen. Es ist ein Prozesskontext-Problem: Sonys PlayGo lässt nur den Prozess von ShellUI für den HTTP-Abruf auf Install-Seite zu und lehnt unseren ab. Der Build 2.2.52 hat einen neuen ShellUI-RPC-Installationspfad, der über den Prozess von ShellUI läuft, sodass derselbe Abruf gelingt. Siehst du diesen Fehler weiterhin, ist das laufende Payload das alte — sende das neueste Payload über Connection → Send payload, starte die Installation neu, und das Diagnose-Panel sollte register_path=shellui-rpc anzeigen.",
+err_install_116f_npxs:
+  "Der PS5-Installer hat diese System-pkg abgelehnt (0x80B2116F). Sonys Installer kann Systempatches (Store-Updates, Settings) nicht abschließen — verwende dafür den PS5-eigenen Package Installer unter Settings → Debug Settings → Game.",
+err_install_116f_game:
+  "Der PS5-Installer hat die pkg abgelehnt (0x80B2116F). Auf FW 9.60 fehlen diesem Firmware-Punkt die BGFT-Register, die unser Payload nutzt; versuche, das neueste Payload zu senden (Connection → Send payload), und wenn es weiterhin fehlschlägt, muss die pkg eventuell über den PS5-eigenen Package Installer unter Debug Settings → Game installiert werden.",
+err_install_1401:
+  "Der ShellUI-Installationspfad der PS5 hat die Anfrage abgelehnt (0x80B21401). Tritt auf FW 9.60 meist zusammen mit einem weiteren Tier-Fehler auf, wenn dem Firmware-Punkt die BGFT-Register fehlen, von denen wir abhängen. Probiere das neueste Payload über Connection → Send payload oder installiere über das PS5-eigene Debug-Settings-Panel.",
+err_install_2101:
+  "Ein früherer Download für denselben Inhalt steht noch in der Warteschlange der PS5. Öffne das Benachrichtigungsfeld der PS5, lösche ihn und versuche die Installation dann erneut.",
+err_install_80b2_generic:
+  "Sonys PlayGo-Subsystem hat die Installation mit einem Fehler 0x80B2_xxxx abgelehnt. Das ist der Install-Abrufpfad, nicht der pkg-Parser — deine Datei ist wahrscheinlich in Ordnung. Versuche, das neueste Payload zu senden (Connection → Send payload); der neue ShellUI-RPC-Installationspfad umgeht die häufigste 0x80B2-Ablehnungsklasse.",
+err_bgft_not_loadable:
+  "Deine PS5-Firmware stellt Sonys BGFT-Installer nicht so bereit, dass ps5upload ihn nutzen kann. Sende das neueste mitgelieferte Payload (Connection → Send payload) — es probiert mehr Bibliothekspfade und Symbolvarianten aus. Schlägt es weiterhin fehl, installiere stattdessen über FTP + Library → Register; .pkg-über-BGFT ist auf dieser Firmware nicht verfügbar.",
+err_install_enoent_dlc:
+  "Das sieht nach einer DLC-pkg aus (content_id {contentId}). Sonys Installer braucht das installierte Basisspiel ({baseTitle}), BEVOR das DLC kommt, weil die Installation Metadaten aus dem app_home des Basisspiels liest. Installiere zuerst {baseTitle} und versuche dann dieses DLC erneut. Der Fehler 0x80020002 ist der Kernel, der „no such file\" meldet, als er der Basisspiel-Referenz folgen wollte — kein Problem mit deiner DLC-pkg.",
+err_install_enoent_generic:
+  "Sonys Installer konnte eine während der Installation benötigte Datei nicht öffnen (Kernel-Fehler 0x80020002 = ENOENT). Handelt es sich um eine DLC-pkg, ist das Basisspiel noch nicht installiert — installiere zuerst die Basis. Andernfalls wurde die Staging-Datei möglicherweise zwischen Upload und Installation gelöscht; versuche die Installation einmal erneut. Schlägt sie weiterhin fehl, lade die pkg per FTP manuell nach /user/data/ps5upload/pkg_temp/ hoch und nutze Library → Register zum Installieren.",
+err_install_defrag:
+  "Deine PS5 benötigt defragmentierten freien Speicher. Settings → Storage → Speicher freigeben, dann erneut versuchen.",
+err_install_leftover_download:
+  "Übrig gebliebener Download in den PS5-Benachrichtigungen. Öffne das Benachrichtigungsfeld der PS5 (PS-Taste → Notifications → Downloads), lösche den hängenden Eintrag und versuche die Installation dann erneut.",
+err_install_drm_mismatch:
+  "DRM-Konflikt — diese PKG ist für diese Konsole nicht gültig. Die pkg wurde für ein anderes Konto oder eine andere Region erstellt.",
+err_install_entitlement:
+  "Die PKG-Berechtigungsprüfung ist fehlgeschlagen. Das angemeldete PSN-Konto besitzt diesen Titel nicht, oder die Region stimmt nicht überein.",
+err_install_no_free_space:
+  "Kein freier Speicher mehr auf der PS5. Settings → Storage → Speicher freigeben, dann erneut versuchen.",
+err_install_parental:
+  "Titel durch die PS5-Jugendschutz-/Inhaltsbeschränkungen blockiert. Passe die Beschränkungen des Benutzers in den PS5-Einstellungen unter Settings → Users and Accounts → Family Management an, bevor du es erneut versuchst.",
+err_install_esrch:
+  "Der PS5-Install-Daemon konnte unseren Prozess nicht erreichen (ESRCH = no such process). Bedeutet meist, dass das Payload noch keine erhöhten Rechte hat — kstuff/etaHEN ist möglicherweise nicht geladen. Sende das Payload erneut über Connection → Send payload und versuche es dann erneut.",
+err_install_bgft_generic:
+  "Sonys Installationsdienst hat die Anfrage mit {code} abgelehnt. Häufige Ursachen: eine hängende vorherige Installation (PS5-Benachrichtigungen → Downloads → löschen), falsches Konto/falsche Region oder kein Speicherplatz mehr. Trifft nichts davon zu, erfasse das Diagnose-Panel und melde einen Fehler.",
+err_payload_rejected: "Die PS5 hat die Anfrage abgelehnt: {reason}",
 };
 
 export default de;

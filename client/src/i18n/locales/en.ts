@@ -1393,6 +1393,115 @@ installed_uninstall_confirm_registered:
   "This unmounts and removes the title from the home screen. Your source files/image on disk are not deleted.",
 installed_uninstall_confirm_pkg:
   "This removes the installed title from the PS5. You can reinstall it later from the package.",
+
+// Humanized error copy — surfaced by lib/humanizeError.ts. {placeholders}
+// are substituted at runtime; keep them verbatim when translating.
+err_unmount_busy:
+  "Can't unmount: the game inside this image is currently running on the PS5. Exit it (PS Home → close the game) and try again.",
+err_unmount_permission:
+  "Can't unmount: kernel refused with EACCES/EPERM. The payload may have lost root credentials — reload it from Connection → Send payload.",
+err_npxs_mgmt_disconnect:
+  "PS5 mgmt service stopped responding mid-install. This is the known NPXS-system-pkg failure mode: Sony accepts the register but `sceAppInstUtilInstallByPackage` isn't designed for system patches (Store updates, Settings, etc.). The PS5 typically recovers on its own in a minute or two, or after a reboot — but ps5upload can't install this pkg. Use Settings → Debug Settings → Game → Package Installer on the PS5 itself for system pkgs.",
+err_network_drop:
+  "Your PS5 stopped responding. It may have crashed or entered rest mode. Reload the payload (Connection → Send payload) and try again.",
+err_connect_mgmt:
+  "Can't reach your PS5's management service. Make sure the payload is loaded (Connection → Send payload).",
+err_connect_transfer:
+  "Can't reach your PS5 for file transfer. Make sure the payload is loaded (Connection → Send payload).",
+err_manifest_invalid:
+  "Your PS5 rejected the list of files to upload. This usually means a file or folder name has an unusual character (most often a } ), or a path is too long. Reload the latest payload (Connection → Send payload) — it fixes the character case — or rename/shorten the offending file or folder, then try again.",
+err_dest_write_refused:
+  "The PS5 refused to write to this destination. Try a different storage volume or destination folder.",
+err_dest_full:
+  "Your PS5 storage is full at that destination. Pick a different volume or free up space.",
+err_volumes_unavailable:
+  "PS5 didn't return the volume list this time — try again in a second. If it keeps failing, reload the payload from Connection → Send payload.",
+err_sqlite_unavailable:
+  "Title-registration lookups aren't available on this PS5 firmware. The rest of the library view still works.",
+err_service_unavailable:
+  "This action needs a Sony service that isn't exported on your firmware. Everything else still works.",
+err_launch_no_profile:
+  "PS5 has no profile selected. Pick a user profile on the PS5 home screen, then try Launch again.",
+err_launch_not_registered:
+  "PS5 says the title isn't registered. Click Register first, or unregister + re-register if it was already added.",
+err_launch_busy:
+  "PS5 launcher is busy with another title. Close any running game on the PS5 and try Launch again.",
+err_launch_corrupt:
+  "PS5 says this title's data is corrupted. The eboot.bin or sce_sys folder may be incomplete — re-upload the game.",
+err_launch_unknown:
+  "PS5 launcher returned 0x{code}. The title may have been removed, or the install isn't complete — try Re-register from the Library tab.",
+err_launch_title_id_invalid:
+  "Title ID doesn't look valid. Make sure the game's PARAM.SFO has a title_id like CUSA12345 or PPSA01234.",
+err_mount_not_a_file:
+  "PS5 can't find that file at the destination. The upload may not have completed — wait a moment and retry.",
+err_mount_unsupported_format:
+  "PS5 doesn't recognize this file as a mountable disk image. Only .ffpkg (UFS), .exfat, and .ffpfs are supported.",
+err_mount_source_unstable:
+  "PS5 sees the file is still being written. Wait 5 seconds for the upload to finish, then click Mount again.",
+err_mount_path_not_allowed:
+  "PS5 doesn't allow mounts at that path. Use /data, /user, /mnt/ext*, /mnt/usb*, or /mnt/ps5upload.",
+err_mount_attach_failed:
+  "PS5 couldn't attach the image to a block device (LVD or md). Image may be corrupt — try re-uploading or rebuild it.",
+err_mount_dev_node_missing:
+  "PS5 attached the image but the device node didn't appear. Reboot the PS5 and re-load the payload, then try again.",
+err_mount_nmount_eperm:
+  "PS5 kernel refused this mount point (Operation not permitted). The .exfat file's location doesn't matter here — try mounting under /data/homebrew/<name> or /mnt/ps5upload/<name>. Some USB/ext sub-paths are blocked by kernel policy on certain firmware.",
+err_mount_nmount_other:
+  "PS5 kernel rejected the mount: {reason}. Try a different mount point (e.g. under /data or /mnt/ps5upload) — the image itself is fine.",
+err_unknown_reason: "unknown reason",
+err_appinst_not_initialized:
+  "Sony's installer subsystem isn't initialised yet — push the latest bundled payload (Connection → Send payload) so the lazy-init in 2.2.46+ runs. If the error persists, the install API isn't reachable from our process context on this firmware; FTP-upload + Library → Register is the workaround.",
+err_appinst_nospace:
+  "Your PS5 doesn't have enough free space for this install. Settings → Storage → Free up space, then retry.",
+err_appinst_drm_type:
+  "Sony's installer rejected this PKG's DRM type. Try the Library → Register flow with 'Patch DRM' instead — it rewrites applicationDrmType to 'standard' before installing.",
+err_appinst_content_type:
+  "Sony's installer doesn't accept this PKG's content type on the current firmware (e.g. some patch-pkgs / DLC formats). The base game's PKG should still install if you have it.",
+err_appinst_busy:
+  "Sony's installer is busy with another install or an unfinished BGFT task. Wait a moment, or check the PS5's Notifications for a stuck download to clear, then retry.",
+err_already_installed:
+  "This title is already installed. Uninstall it first if you want to re-install.",
+err_appinst_oom:
+  "Sony's installer ran out of memory mid-install. Reboot the PS5, reload the payload, and retry.",
+err_install_eagain:
+  "Sony's installer is busy — error 0x80020023 (EAGAIN). A previous install with the same content_id is still queued on the PS5. Open Settings → Notifications on the PS5 and dismiss any pending Store-related entries, OR reboot the PS5 to clear stale install state. Then retry.",
+err_install_dup_register:
+  "Sony's installer rejected this register with 0x80B21106 — most likely because the previous install for the same content_id is still queued/running on the PS5. Check Settings → Notifications → Downloads on the PS5 to see if it's already installing. If you really want to re-register (e.g. the previous attempt failed silently), reboot the PS5 first. DO NOT click Start repeatedly — each retry just confirms Sony's response.",
+err_install_http_fetch:
+  "PS5 rejected our HTTP fetch attempt for the install (0x80B22404). This isn't about the pkg's format — Sony's installer didn't read any of the file's bytes. It's a process-context issue: Sony's PlayGo whitelists ShellUI's process for install-side HTTP fetch and rejects ours. The 2.2.52 build has a new ShellUI-RPC install path that routes through ShellUI's process so the same fetch succeeds. If you're still seeing this error, the running payload is the old one — push the latest payload via Connection → Send payload, restart the install, and the diag panel should show register_path=shellui-rpc.",
+err_install_116f_npxs:
+  "PS5 installer rejected this system pkg (0x80B2116F). Sony's installer can't complete system patches (Store updates, Settings) — use Settings → Debug Settings → Game → Package Installer on the PS5 itself for these.",
+err_install_116f_game:
+  "PS5 installer rejected the pkg (0x80B2116F). On FW 9.60 this firmware point is missing the BGFT registers our payload uses; try pushing the latest payload (Connection → Send payload), and if it still fails the pkg may need installing via the PS5's own Debug Settings → Game → Package Installer.",
+err_install_1401:
+  "PS5's ShellUI install path rejected the request (0x80B21401). Usually paired with another tier failure on FW 9.60 when the firmware point lacks the BGFT registers we depend on. Try the latest payload from Connection → Send payload, or install via the PS5's own Debug Settings panel.",
+err_install_2101:
+  "Earlier download for the same content is still queued on the PS5. Open the PS5's notification panel, clear it, then retry the install.",
+err_install_80b2_generic:
+  "PS5's PlayGo subsystem rejected the install with a 0x80B2_xxxx error. This is the install fetch path, not the pkg parser — your file likely is fine. Try pushing the latest payload (Connection → Send payload); the new ShellUI-RPC install path bypasses the most common 0x80B2 reject class.",
+err_bgft_not_loadable:
+  "Your PS5 firmware doesn't expose Sony's BGFT installer in a way ps5upload can use. Push the latest bundled payload (Connection → Send payload) — it tries more library paths and symbol variants. If it still fails, install via FTP + Library → Register instead; .pkg-via-BGFT isn't available on this firmware.",
+err_install_enoent_dlc:
+  "This looks like a DLC pkg (content_id {contentId}). Sony's installer needs the base game ({baseTitle}) to be installed BEFORE the DLC, because the install reads metadata from the base game's app_home. Install {baseTitle} first, then retry this DLC. The 0x80020002 is the kernel reporting \"no such file\" when it tried to follow the base-game reference — not a problem with your DLC pkg.",
+err_install_enoent_generic:
+  "Sony's installer couldn't open a file it needed during install (kernel error 0x80020002 = ENOENT). If this is a DLC pkg, the base game isn't installed yet — install the base first. Otherwise the staging file may have been deleted between upload and install; retry the install once. If it keeps failing, FTP-upload the pkg to /user/data/ps5upload/pkg_temp/ manually and use Library → Register to install.",
+err_install_defrag:
+  "Your PS5 needs defragmented free space. Settings → Storage → Free up space, then retry.",
+err_install_leftover_download:
+  "Leftover download in PS5 notifications. Open the PS5's notification panel (PS button → Notifications → Downloads), clear the stuck entry, then retry the install.",
+err_install_drm_mismatch:
+  "DRM mismatch — this PKG isn't valid for this console. The pkg was created for a different account or region.",
+err_install_entitlement:
+  "PKG entitlement check failed. The signed-in PSN account doesn't own this title, or the region doesn't match.",
+err_install_no_free_space:
+  "Out of free space on the PS5. Settings → Storage → Free up space, then retry.",
+err_install_parental:
+  "Title blocked by PS5 parental / content controls. Adjust the user's restrictions in PS5 Settings → Users and Accounts → Family Management before retrying.",
+err_install_esrch:
+  "PS5 install daemon couldn't reach our process (ESRCH = no such process). Usually means the payload hasn't elevated yet — kstuff/etaHEN may not be loaded. Re-send the payload from Connection → Send payload, then retry.",
+err_install_bgft_generic:
+  "Sony's install service rejected the request with {code}. Common causes: stuck previous install (open PS5 notifications → Downloads → clear), wrong account/region, or out of space. If none of those apply, capture the diag panel and file a bug.",
+err_payload_rejected: "PS5 rejected the request: {reason}",
 };
 
 export default en;

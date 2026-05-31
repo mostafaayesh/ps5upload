@@ -492,6 +492,11 @@ static void json_escape_into(const char *src, char *dst, size_t dst_cap);
 static const char *json_string_end(const char *start, const char *limit);
 static int json_copy_unescaped_string(const char *start, const char *end,
                                       char *out, size_t out_len);
+/* Find the closing brace of the JSON object at `obj_start`, skipping any
+ * brace that appears inside a quoted string value (e.g. a file path that
+ * literally contains '}'). See the definition for why a plain strchr('}')
+ * is wrong here. */
+static const char *json_object_end(const char *obj_start, const char *limit);
 static const char *find_bounded(const char *hay, size_t hay_len,
                                 const char *needle);
 /* Forward declarations — runtime_reconcile_mounts uses fs_mount and
@@ -3227,7 +3232,10 @@ static int build_manifest_index(const char *blob, size_t blob_len,
 
         obj_start = strchr(p, '{');
         if (!obj_start) break;
-        obj_end = strchr(obj_start, '}');
+        /* Brace-aware object end: a file path containing a literal '}'
+         * (valid, and emitted unescaped by the engine's serializer) must
+         * not be mistaken for the object terminator. See json_object_end. */
+        obj_end = json_object_end(obj_start, blob_len ? blob + blob_len : NULL);
         if (!obj_end) { free(idx); return -1; }
 
         /* Extract shard_start / shard_count from within this object only.
@@ -3519,10 +3527,14 @@ static int manifest_get_nth_file_path(const char *json, uint64_t n,
             if (!is_path_allowed(out->path)) return -1;
             return 0;
         }
-        /* Skip to the closing brace of this object. */
-        p = strchr(p, '}');
-        if (!p) return -1;
-        p++;
+        /* Skip past this object's closing brace. Brace-aware (not strchr)
+         * so a '}' inside an earlier entry's path can't mis-count which
+         * object we're on. Manifest is NUL-terminated → NULL limit is fine. */
+        {
+            const char *obj_end = json_object_end(obj_start, NULL);
+            if (!obj_end) return -1;
+            p = obj_end + 1;
+        }
     }
 }
 
@@ -4883,6 +4895,50 @@ static int json_copy_unescaped_string(const char *start, const char *end,
     }
     out[oi] = '\0';
     return 0;
+}
+
+/*
+ * Find the matching closing '}' of the JSON object beginning at `obj_start`
+ * (which must point at the opening '{'), scanning past any '{' or '}' that
+ * appears inside a quoted string value. Returns NULL if the object is
+ * unterminated before `limit` (NULL `limit` scans to the NUL terminator).
+ *
+ * Why this exists: serde_json (the engine's serializer) emits '}' literally
+ * inside string values, so a perfectly valid file path like
+ * "/data/My}Game/eboot.bin" carries a brace that a naive strchr(obj_start,'}')
+ * mistakes for the object terminator. That truncated the manifest entry
+ * mid-parse and made BEGIN_TX reject the whole transfer with `manifest_invalid`
+ * for any upload containing a '}' in a file or directory name. Tracking string
+ * state (and backslash escapes, matching json_string_end) finds the real
+ * object boundary regardless of what the path contains.
+ */
+static const char *json_object_end(const char *obj_start, const char *limit) {
+    const char *p = obj_start;
+    int in_string = 0;
+    int depth = 0;
+    if (!p || *p != '{') return NULL;
+    while ((!limit || p < limit) && *p) {
+        char c = *p;
+        if (in_string) {
+            if (c == '\\') {
+                /* Skip the escaped char so an escaped quote (\") doesn't
+                 * prematurely close the string. Mirrors json_string_end. */
+                p++;
+                if ((limit && p >= limit) || !*p) return NULL;
+            } else if (c == '"') {
+                in_string = 0;
+            }
+        } else if (c == '"') {
+            in_string = 1;
+        } else if (c == '{') {
+            depth++;
+        } else if (c == '}') {
+            depth--;
+            if (depth == 0) return p;
+        }
+        p++;
+    }
+    return NULL;
 }
 
 static const char *find_bounded(const char *hay, size_t hay_len,

@@ -80,6 +80,11 @@
   patch on rejection, then launches. Unmount unregisters every
   title inside the image first so the dashboard stays clean —
   no ghost tiles after unmount.
+- **Speaks your language** — the whole UI, including error messages
+  and troubleshooting hints, is translated into 18 languages: English,
+  Simplified & Traditional Chinese, Spanish, Hindi, Arabic, Bengali,
+  Brazilian Portuguese, Russian, Japanese, German, French, Korean,
+  Turkish, Vietnamese, Indonesian, Italian, and Thai.
 
 ## What it doesn't do
 

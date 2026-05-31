@@ -25,7 +25,6 @@ upload: "رفع",
 // Upload Queue
 // Manage / File Browser
 refresh: "تحديث",
-files: "ملفات",
 download: "تحميل",
 copy: "نسخ",
 delete: "حذف",
@@ -1247,6 +1246,163 @@ nav_close_aria: "إغلاق قائمة التنقل",
 notifications: "الإشعارات",
 os_notify_label: "إعدادات الإشعارات",
 os_notify_hint: "اعكس الإشعارات داخل التطبيق (تم النقل، الأخطاء، وما إلى ذلك) إلى مركز الإشعارات في نظام التشغيل الخاص بك — ولكن فقط عندما يكون التطبيق في الخلفية، لذلك لا يتم إشعارك مرتين. قد يُطلب منك منح إذن الإخطار.",
+"pkglib.install": "تثبيت",
+"pkglib.reinstall": "إعادة التثبيت",
+"pkglib.delete": "حذف",
+"pkglib.installing": "جارٍ التثبيت…",
+"pkglib.uploading": "جارٍ الرفع إلى PS5…",
+"pkglib.badge.installed": "مُثبَّت",
+"pkglib.install.busyHint": "انتظر حتى ينتهي الرفع/التثبيت الحالي",
+"pkglib.add.installingHint": "انتظر حتى ينتهي التثبيت الحالي",
+"pkglib.note.title": "تتم عمليات التثبيت عبر خدمة DPI",
+"pkglib.note.body": "أنظف مسار لحزم الألعاب. أثناء التثبيت يتم استبدال payload الخاص بـ ps5upload مؤقتًا بمُحمِّل DPI ثم استعادته عند الانتهاء، لذا قد ينقطع الاتصال لبضع ثوانٍ. تعمل حزم الألعاب بأفضل شكل؛ وقد تظل بعض حزم النظام (NPXS) بحاجة إلى Settings → Package Installer الخاص بجهاز PS5 نفسه.",
+"pkglib.error": "حدث خطأ ما",
+"pkglib.empty.title": "لم يتم رفع أي حزم بعد",
+"pkglib.empty.drop": "أفلت للرفع",
+"pkglib.empty.body": "أضِف ملف ‎.pkg‎ لرفعه إلى PS5 — ثم ثبّته من هنا. يمكنك أيضًا سحب ملفات ‎.pkg‎ وإفلاتها على النافذة.",
+"pkglib.delete.confirmTitle": "حذف {name}؟",
+"pkglib.delete.confirmBody": "يؤدي هذا إلى إزالة ملف ‎.pkg‎ المرفوع ({size}) نهائيًا من PS5. تبقى أي نسخة مثبَّتة من اللعبة كما هي؛ ستحتاج فقط إلى إعادة رفع ملف ‎.pkg‎ لتثبيتها مرة أخرى.",
+"pkglib.footer.count": "{n} حزمة",
+"pkglib.footer.size": "{size} على PS5",
+installed_apps: "التطبيقات المثبَّتة",
+installed_apps_title: "التطبيقات المثبَّتة",
+installed_apps_subtitle:
+  "كل ما هو مثبَّت على PS5، مُجمَّعًا حسب طريقة وصوله. يؤدي إلغاء التثبيت إلى إزالة العنوان (وفي العناوين المُركَّبة، يلغي تركيبها أيضًا).",
+installed_error_title: "تعذّرت قراءة التطبيقات المثبَّتة",
+installed_no_host_title: "غير متصل",
+installed_no_host_body: "اتصل بجهاز PS5 من تبويب Connection لرؤية التطبيقات المثبَّتة.",
+installed_loading: "جارٍ قراءة العناوين المثبَّتة…",
+installed_loading_hint: "جارٍ تعداد /user/appmeta على PS5.",
+installed_empty_title: "لم يتم العثور على عناوين مثبَّتة",
+installed_empty_body:
+  "لا يوجد شيء ضمن /user/appmeta. ثبّت حزمة أو سجّل لعبة أولًا.",
+installed_registered_unavailable:
+  "تعذّرت قراءة المجموعة المُركَّبة/المُسجَّلة من الـ payload — يتم عرض كل شيء ضمن \"مُثبَّت من حزمة\". أعد تحميل الـ payload لإصلاح التجميع.",
+installed_section_pkg: "مُثبَّت من حزمة",
+installed_section_pkg_hint:
+  "مُثبَّت عبر مُثبِّت Sony من ملف ‎.pkg‎ (أو مُرفق مع الجهاز).",
+installed_section_registered: "مُركَّب ومُسجَّل بواسطة PS5Upload",
+installed_section_registered_hint:
+  "مُسجَّل من مجلد لعبة، أو صورة قرص ‎.exfat/.ffpkg‎، أو رفع. يؤدي إلغاء التثبيت إلى إلغاء تركيبها؛ وتبقى ملفاتك المصدرية محفوظة.",
+installed_badge_system: "نظام",
+installed_badge_image: "صورة قرص",
+installed_badge_folder: "مجلد",
+installed_badge_pkg: "حزمة",
+installed_uninstall: "إلغاء التثبيت",
+installed_uninstalling: "جارٍ الإزالة…",
+installed_uninstall_confirm_title: "إلغاء تثبيت {name}؟",
+installed_uninstall_confirm_system:
+  "‏{id} تطبيق نظام (SYSTEM). قد تؤدي إزالته إلى زعزعة استقرار الجهاز وقد تتطلب إعادة تثبيت للاستعادة. تابع فقط إذا كنت تعرف تمامًا ما هذه الحزمة.",
+installed_uninstall_confirm_registered:
+  "يؤدي هذا إلى إلغاء التركيب وإزالة العنوان من الشاشة الرئيسية. لا يتم حذف ملفاتك المصدرية/صورة القرص على القرص.",
+installed_uninstall_confirm_pkg:
+  "يؤدي هذا إلى إزالة العنوان المثبَّت من PS5. يمكنك إعادة تثبيته لاحقًا من الحزمة.",
+err_unmount_busy:
+  "تعذّر إلغاء التركيب: اللعبة داخل هذه الصورة قيد التشغيل حاليًا على PS5. أغلقها (PS Home → أغلق اللعبة) ثم حاول مرة أخرى.",
+err_unmount_permission:
+  "تعذّر إلغاء التركيب: رفضت النواة العملية بالخطأ EACCES/EPERM. ربما فقد الـ payload صلاحيات الجذر — أعد تحميله من Connection → Send payload.",
+err_npxs_mgmt_disconnect:
+  "توقفت خدمة الإدارة في PS5 عن الاستجابة أثناء التثبيت. هذا هو وضع الفشل المعروف لحزم نظام NPXS: تقبل Sony التسجيل لكن `sceAppInstUtilInstallByPackage` ليست مصممة لتحديثات النظام (تحديثات Store وSettings وغيرها). عادةً ما يتعافى PS5 من تلقاء نفسه خلال دقيقة أو دقيقتين، أو بعد إعادة التشغيل — لكن ps5upload لا يستطيع تثبيت هذه الحزمة. استخدم Settings → Debug Settings → Game → Package Installer على PS5 نفسه لحزم النظام.",
+err_network_drop:
+  "توقف PS5 عن الاستجابة. ربما تعطّل أو دخل وضع الراحة. أعد تحميل الـ payload (Connection → Send payload) ثم حاول مرة أخرى.",
+err_connect_mgmt:
+  "تعذّر الوصول إلى خدمة الإدارة في PS5. تأكد من تحميل الـ payload (Connection → Send payload).",
+err_connect_transfer:
+  "تعذّر الوصول إلى PS5 لنقل الملفات. تأكد من تحميل الـ payload (Connection → Send payload).",
+err_manifest_invalid:
+  "رفض PS5 قائمة الملفات المراد رفعها. يعني هذا عادةً أن اسم ملف أو مجلد يحتوي على حرف غير معتاد (غالبًا } )، أو أن المسار طويل جدًا. أعد تحميل أحدث payload (Connection → Send payload) — فهو يعالج حالة الحرف — أو غيّر اسم/اختصر الملف أو المجلد المسبب للمشكلة ثم حاول مرة أخرى.",
+err_dest_write_refused:
+  "رفض PS5 الكتابة إلى هذه الوجهة. جرّب وحدة تخزين أو مجلد وجهة مختلفًا.",
+err_dest_full:
+  "تخزين PS5 ممتلئ عند تلك الوجهة. اختر وحدة تخزين أخرى أو حرّر مساحة.",
+err_volumes_unavailable:
+  "لم يُرجِع PS5 قائمة وحدات التخزين هذه المرة — حاول مرة أخرى بعد ثانية. إذا استمر الفشل، أعد تحميل الـ payload من Connection → Send payload.",
+err_sqlite_unavailable:
+  "عمليات البحث عن تسجيل العناوين غير متاحة على إصدار البرنامج الثابت لهذا PS5. تبقى بقية عرض المكتبة تعمل.",
+err_service_unavailable:
+  "يحتاج هذا الإجراء إلى خدمة من Sony غير مُصدَّرة في البرنامج الثابت لديك. كل شيء آخر يعمل.",
+err_launch_no_profile:
+  "لا يوجد ملف تعريف محدد في PS5. اختر ملف تعريف مستخدم على الشاشة الرئيسية لـ PS5، ثم جرّب التشغيل (Launch) مرة أخرى.",
+err_launch_not_registered:
+  "يقول PS5 إن العنوان غير مُسجَّل. اضغط Register أولًا، أو ألغِ التسجيل ثم أعِد التسجيل إذا كان مُضافًا من قبل.",
+err_launch_busy:
+  "مُشغِّل PS5 مشغول بعنوان آخر. أغلق أي لعبة قيد التشغيل على PS5 وجرّب التشغيل (Launch) مرة أخرى.",
+err_launch_corrupt:
+  "يقول PS5 إن بيانات هذا العنوان تالفة. قد يكون ملف eboot.bin أو مجلد sce_sys غير مكتمل — أعد رفع اللعبة.",
+err_launch_unknown:
+  "أرجع مُشغِّل PS5 الرمز 0x{code}. ربما تمت إزالة العنوان، أو أن التثبيت غير مكتمل — جرّب Re-register من تبويب Library.",
+err_launch_title_id_invalid:
+  "لا يبدو Title ID صالحًا. تأكد من أن ملف PARAM.SFO للعبة يحتوي على title_id بصيغة مثل CUSA12345 أو PPSA01234.",
+err_mount_not_a_file:
+  "لا يجد PS5 ذلك الملف في الوجهة. ربما لم يكتمل الرفع — انتظر لحظة ثم أعد المحاولة.",
+err_mount_unsupported_format:
+  "لا يتعرّف PS5 على هذا الملف كصورة قرص قابلة للتركيب. المدعوم فقط ‎.ffpkg‎ (UFS) و‎.exfat‎ و‎.ffpfs‎.",
+err_mount_source_unstable:
+  "يرى PS5 أن الملف لا يزال قيد الكتابة. انتظر 5 ثوانٍ حتى ينتهي الرفع، ثم اضغط Mount مرة أخرى.",
+err_mount_path_not_allowed:
+  "لا يسمح PS5 بالتركيب عند ذلك المسار. استخدم /data أو /user أو /mnt/ext* أو /mnt/usb* أو /mnt/ps5upload.",
+err_mount_attach_failed:
+  "تعذّر على PS5 ربط الصورة بجهاز كتلي (LVD أو md). قد تكون الصورة تالفة — جرّب إعادة الرفع أو أعد بناءها.",
+err_mount_dev_node_missing:
+  "ركّب PS5 الصورة لكن عقدة الجهاز لم تظهر. أعد تشغيل PS5 وأعد تحميل الـ payload، ثم حاول مرة أخرى.",
+err_mount_nmount_eperm:
+  "رفضت نواة PS5 نقطة التركيب هذه (Operation not permitted). موقع ملف ‎.exfat‎ لا يهم هنا — جرّب التركيب ضمن /data/homebrew/<name> أو /mnt/ps5upload/<name>. بعض المسارات الفرعية لـ USB/ext محظورة بسياسة النواة على بعض إصدارات البرنامج الثابت.",
+err_mount_nmount_other:
+  "رفضت نواة PS5 التركيب: {reason}. جرّب نقطة تركيب مختلفة (مثلًا ضمن /data أو /mnt/ps5upload) — الصورة نفسها سليمة.",
+err_unknown_reason: "سبب غير معروف",
+err_appinst_not_initialized:
+  "لم تتم تهيئة نظام التثبيت الفرعي من Sony بعد — ادفع أحدث payload مُرفق (Connection → Send payload) لتشغيل التهيئة المتأخرة في 2.2.46+. إذا استمر الخطأ، فإن واجهة التثبيت غير قابلة للوصول من سياق عمليتنا على هذا البرنامج الثابت؛ الحل البديل هو الرفع عبر FTP + Library → Register.",
+err_appinst_nospace:
+  "لا تتوفر مساحة كافية في PS5 لهذا التثبيت. Settings → Storage → Free up space، ثم أعد المحاولة.",
+err_appinst_drm_type:
+  "رفض مُثبِّت Sony نوع DRM لهذه الحزمة. جرّب بدلًا من ذلك مسار Library → Register مع 'Patch DRM' — فهو يعيد كتابة applicationDrmType إلى 'standard' قبل التثبيت.",
+err_appinst_content_type:
+  "لا يقبل مُثبِّت Sony نوع محتوى هذه الحزمة على البرنامج الثابت الحالي (مثل بعض حزم التحديث / صيغ DLC). يفترض أن تظل حزمة اللعبة الأساسية قابلة للتثبيت إن كانت لديك.",
+err_appinst_busy:
+  "مُثبِّت Sony مشغول بتثبيت آخر أو بمهمة BGFT غير مكتملة. انتظر لحظة، أو تحقق من إشعارات PS5 لمسح تنزيل عالق، ثم أعد المحاولة.",
+err_already_installed:
+  "هذا العنوان مثبَّت بالفعل. ألغِ تثبيته أولًا إذا أردت إعادة تثبيته.",
+err_appinst_oom:
+  "نفدت ذاكرة مُثبِّت Sony أثناء التثبيت. أعد تشغيل PS5، وأعد تحميل الـ payload، ثم أعد المحاولة.",
+err_install_eagain:
+  "مُثبِّت Sony مشغول — الخطأ 0x80020023 (EAGAIN). لا يزال تثبيت سابق بنفس content_id في قائمة الانتظار على PS5. افتح Settings → Notifications على PS5 وأزل أي عناصر متعلقة بـ Store معلّقة، أو أعد تشغيل PS5 لمسح حالة التثبيت القديمة. ثم أعد المحاولة.",
+err_install_dup_register:
+  "رفض مُثبِّت Sony هذا التسجيل بالرمز 0x80B21106 — على الأرجح لأن التثبيت السابق بنفس content_id لا يزال في قائمة الانتظار/قيد التشغيل على PS5. تحقق من Settings → Notifications → Downloads على PS5 لمعرفة ما إذا كان قيد التثبيت بالفعل. إذا أردت حقًا إعادة التسجيل (مثلًا فشلت المحاولة السابقة بصمت)، فأعد تشغيل PS5 أولًا. لا تضغط Start بشكل متكرر — كل محاولة تؤكد فقط رد Sony.",
+err_install_http_fetch:
+  "رفض PS5 محاولتنا لجلب التثبيت عبر HTTP (0x80B22404). لا علاقة لهذا بصيغة الحزمة — لم يقرأ مُثبِّت Sony أي بايت من الملف. إنها مشكلة سياق عملية: يسمح PlayGo من Sony لعملية ShellUI بالجلب عبر HTTP في جانب التثبيت ويرفض عمليتنا. يحتوي إصدار 2.2.52 على مسار تثبيت ShellUI-RPC جديد يمرّر عبر عملية ShellUI فينجح الجلب نفسه. إذا كنت لا تزال ترى هذا الخطأ، فإن الـ payload قيد التشغيل قديم — ادفع أحدث payload عبر Connection → Send payload، وأعد بدء التثبيت، وستُظهر لوحة التشخيص register_path=shellui-rpc.",
+err_install_116f_npxs:
+  "رفض مُثبِّت PS5 حزمة النظام هذه (0x80B2116F). لا يستطيع مُثبِّت Sony إكمال تحديثات النظام (تحديثات Store وSettings) — استخدم Settings → Debug Settings → Game → Package Installer على PS5 نفسه لهذه الحزم.",
+err_install_116f_game:
+  "رفض مُثبِّت PS5 الحزمة (0x80B2116F). على البرنامج الثابت FW 9.60 تفتقر هذه النقطة إلى سجلات BGFT التي يستخدمها الـ payload لدينا؛ جرّب دفع أحدث payload (Connection → Send payload)، وإذا استمر الفشل فقد تحتاج الحزمة إلى التثبيت عبر Debug Settings → Game → Package Installer الخاص بـ PS5 نفسه.",
+err_install_1401:
+  "رفض مسار تثبيت ShellUI في PS5 الطلب (0x80B21401). يقترن عادةً بفشل طبقة أخرى على FW 9.60 عندما تفتقر النقطة إلى سجلات BGFT التي نعتمد عليها. جرّب أحدث payload من Connection → Send payload، أو ثبّت عبر لوحة Debug Settings الخاصة بـ PS5 نفسه.",
+err_install_2101:
+  "لا يزال تنزيل سابق لنفس المحتوى في قائمة الانتظار على PS5. افتح لوحة إشعارات PS5، وامسحه، ثم أعد محاولة التثبيت.",
+err_install_80b2_generic:
+  "رفض نظام PlayGo الفرعي في PS5 التثبيت بخطأ من نوع 0x80B2_xxxx. هذا مسار جلب التثبيت، وليس محلل الحزم — ملفك على الأرجح سليم. جرّب دفع أحدث payload (Connection → Send payload)؛ فمسار تثبيت ShellUI-RPC الجديد يتجاوز أكثر فئات رفض 0x80B2 شيوعًا.",
+err_bgft_not_loadable:
+  "لا يكشف البرنامج الثابت لـ PS5 لديك عن مُثبِّت BGFT من Sony بطريقة يمكن لـ ps5upload استخدامها. ادفع أحدث payload مُرفق (Connection → Send payload) — فهو يجرّب مزيدًا من مسارات المكتبات وصيغ أسماء الرموز. إذا استمر الفشل، فثبّت عبر FTP + Library → Register بدلًا من ذلك؛ تثبيت ‎.pkg‎ عبر BGFT غير متاح على هذا البرنامج الثابت.",
+err_install_enoent_dlc:
+  "يبدو أن هذه حزمة DLC (content_id {contentId}). يحتاج مُثبِّت Sony إلى تثبيت اللعبة الأساسية ({baseTitle}) قبل DLC، لأن التثبيت يقرأ البيانات الوصفية من app_home للعبة الأساسية. ثبّت {baseTitle} أولًا، ثم أعد محاولة هذا DLC. الخطأ 0x80020002 هو إبلاغ النواة عن \"no such file\" عندما حاولت تتبّع مرجع اللعبة الأساسية — وليس مشكلة في حزمة DLC الخاصة بك.",
+err_install_enoent_generic:
+  "تعذّر على مُثبِّت Sony فتح ملف يحتاجه أثناء التثبيت (خطأ النواة 0x80020002 = ENOENT). إذا كانت هذه حزمة DLC، فإن اللعبة الأساسية غير مثبَّتة بعد — ثبّت الأساسية أولًا. وإلا فربما حُذف ملف التحضير بين الرفع والتثبيت؛ أعد محاولة التثبيت مرة واحدة. إذا استمر الفشل، فارفع الحزمة إلى /user/data/ps5upload/pkg_temp/ يدويًا عبر FTP واستخدم Library → Register للتثبيت.",
+err_install_defrag:
+  "يحتاج PS5 إلى مساحة فارغة بعد إلغاء التجزئة. Settings → Storage → Free up space، ثم أعد المحاولة.",
+err_install_leftover_download:
+  "تنزيل متبقٍّ في إشعارات PS5. افتح لوحة إشعارات PS5 (زر PS → Notifications → Downloads)، وامسح العنصر العالق، ثم أعد محاولة التثبيت.",
+err_install_drm_mismatch:
+  "عدم تطابق DRM — هذه الحزمة غير صالحة لهذا الجهاز. أُنشئت الحزمة لحساب أو منطقة مختلفة.",
+err_install_entitlement:
+  "فشل التحقق من استحقاق الحزمة. لا يملك حساب PSN المسجَّل دخوله هذا العنوان، أو أن المنطقة غير متطابقة.",
+err_install_no_free_space:
+  "لا توجد مساحة فارغة على PS5. Settings → Storage → Free up space، ثم أعد المحاولة.",
+err_install_parental:
+  "العنوان محظور بضوابط الرقابة الأبوية / المحتوى في PS5. عدّل قيود المستخدم في PS5 Settings → Users and Accounts → Family Management قبل إعادة المحاولة.",
+err_install_esrch:
+  "تعذّر على خدمة التثبيت في PS5 الوصول إلى عمليتنا (ESRCH = لا توجد عملية). يعني هذا عادةً أن الـ payload لم يحصل على صلاحيات مرتفعة بعد — قد لا يكون kstuff/etaHEN محمَّلًا. أعد إرسال الـ payload من Connection → Send payload، ثم أعد المحاولة.",
+err_install_bgft_generic:
+  "رفضت خدمة التثبيت من Sony الطلب بالرمز {code}. الأسباب الشائعة: تثبيت سابق عالق (افتح إشعارات PS5 → Downloads → امسح)، أو حساب/منطقة خاطئة، أو نفاد المساحة. إذا لم ينطبق أي منها، فالتقط لوحة التشخيص وأبلِغ عن المشكلة.",
+err_payload_rejected: "رفض PS5 الطلب: {reason}",
 };
 
 export default ar;

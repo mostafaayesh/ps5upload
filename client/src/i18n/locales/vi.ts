@@ -1248,6 +1248,163 @@ nav_close_aria: "Đóng menu điều hướng",
 notifications: "Thông báo",
 os_notify_label: "Thông báo của hệ thống",
 os_notify_hint: "Phản chiếu thông báo trong ứng dụng (đã hoàn tất chuyển khoản, lỗi, v.v.) đến trung tâm thông báo của hệ điều hành — nhưng chỉ khi ứng dụng ở chế độ nền, vì vậy bạn sẽ không được thông báo hai lần. Quý vị có thể được yêu cầu cấp quyền thông báo.",
+"pkglib.install": "Cài đặt",
+"pkglib.reinstall": "Cài đặt lại",
+"pkglib.delete": "Xóa",
+"pkglib.installing": "Đang cài đặt…",
+"pkglib.uploading": "Đang tải lên PS5…",
+"pkglib.badge.installed": "đã cài đặt",
+"pkglib.install.busyHint": "Hãy đợi quá trình tải lên/cài đặt hiện tại hoàn tất",
+"pkglib.add.installingHint": "Hãy đợi quá trình cài đặt hiện tại hoàn tất",
+"pkglib.note.title": "Cài đặt chạy qua daemon DPI",
+"pkglib.note.body": "cách sạch nhất cho các gói game. Khi cài đặt, payload ps5upload sẽ tạm thời được thay bằng trình tải DPI rồi khôi phục khi xong, nên kết nối có thể gián đoạn vài giây. Gói game hoạt động tốt nhất; một số gói hệ thống (NPXS) vẫn có thể cần dùng Settings → Package Installer của chính PS5.",
+"pkglib.error": "Đã xảy ra lỗi",
+"pkglib.empty.title": "Chưa có gói nào được tải lên",
+"pkglib.empty.drop": "Thả để tải lên",
+"pkglib.empty.body": "Thêm một tệp .pkg để tải lên PS5 — rồi cài đặt từ đây. Bạn cũng có thể kéo các tệp .pkg vào cửa sổ.",
+"pkglib.delete.confirmTitle": "Xóa {name}?",
+"pkglib.delete.confirmBody": "Thao tác này xóa vĩnh viễn tệp .pkg đã tải lên ({size}) khỏi PS5 của bạn. Bản game đã cài (nếu có) vẫn được giữ; bạn chỉ cần tải lại tệp .pkg để cài lại.",
+"pkglib.footer.count": "{n} gói",
+"pkglib.footer.size": "{size} trên PS5",
+installed_apps: "Ứng dụng đã cài",
+installed_apps_title: "Ứng dụng đã cài",
+installed_apps_subtitle:
+  "Mọi thứ được cài trên PS5, nhóm theo cách chúng được cài. Gỡ cài đặt sẽ xóa một tựa game (và với các tựa đã gắn kết, sẽ tháo gắn kết).",
+installed_error_title: "Không đọc được ứng dụng đã cài",
+installed_no_host_title: "Chưa kết nối",
+installed_no_host_body: "Kết nối tới một PS5 ở tab Connection để xem ứng dụng đã cài.",
+installed_loading: "Đang đọc các tựa đã cài…",
+installed_loading_hint: "Đang liệt kê /user/appmeta trên PS5.",
+installed_empty_title: "Không tìm thấy tựa nào đã cài",
+installed_empty_body:
+  "Không có gì trong /user/appmeta. Hãy cài một gói hoặc đăng ký một game trước.",
+installed_registered_unavailable:
+  "Không đọc được tập hợp đã gắn kết/đã đăng ký từ payload — mọi thứ được hiển thị trong mục Cài đặt từ gói. Hãy tải lại payload để sửa cách nhóm.",
+installed_section_pkg: "Cài đặt từ gói",
+installed_section_pkg_hint:
+  "Được cài qua trình cài đặt của Sony từ một tệp .pkg (hoặc đi kèm máy).",
+installed_section_registered: "Đã gắn kết & đăng ký bởi PS5Upload",
+installed_section_registered_hint:
+  "Được đăng ký từ thư mục game, ảnh đĩa .exfat/.ffpkg, hoặc bản tải lên. Gỡ cài đặt sẽ tháo gắn kết chúng; tệp nguồn của bạn được giữ lại.",
+installed_badge_system: "Hệ thống",
+installed_badge_image: "Ảnh đĩa",
+installed_badge_folder: "Thư mục",
+installed_badge_pkg: "Gói",
+installed_uninstall: "Gỡ cài đặt",
+installed_uninstalling: "Đang xóa…",
+installed_uninstall_confirm_title: "Gỡ cài đặt {name}?",
+installed_uninstall_confirm_system:
+  "{id} là một ứng dụng HỆ THỐNG. Việc xóa nó có thể gây mất ổn định máy và có thể cần cài lại để khôi phục. Chỉ tiếp tục nếu bạn biết chính xác gói này là gì.",
+installed_uninstall_confirm_registered:
+  "Thao tác này sẽ tháo gắn kết và xóa tựa game khỏi màn hình chính. Tệp nguồn/ảnh đĩa của bạn trên ổ đĩa sẽ không bị xóa.",
+installed_uninstall_confirm_pkg:
+  "Thao tác này xóa tựa đã cài khỏi PS5. Bạn có thể cài lại sau từ gói.",
+err_unmount_busy:
+  "Không thể tháo gắn kết: game bên trong ảnh đĩa này đang chạy trên PS5. Hãy thoát game (PS Home → đóng game) rồi thử lại.",
+err_unmount_permission:
+  "Không thể tháo gắn kết: nhân (kernel) từ chối với EACCES/EPERM. Payload có thể đã mất quyền root — hãy tải lại từ Connection → Send payload.",
+err_npxs_mgmt_disconnect:
+  "Dịch vụ quản lý của PS5 ngừng phản hồi giữa chừng khi cài đặt. Đây là lỗi đã biết với gói hệ thống NPXS: Sony chấp nhận đăng ký nhưng `sceAppInstUtilInstallByPackage` không được thiết kế cho các bản vá hệ thống (cập nhật Store, Settings, v.v.). PS5 thường tự khôi phục sau một, hai phút hoặc sau khi khởi động lại — nhưng ps5upload không thể cài gói này. Hãy dùng Settings → Debug Settings → Game → Package Installer ngay trên PS5 cho các gói hệ thống.",
+err_network_drop:
+  "PS5 của bạn đã ngừng phản hồi. Có thể máy bị treo hoặc vào chế độ nghỉ. Hãy tải lại payload (Connection → Send payload) rồi thử lại.",
+err_connect_mgmt:
+  "Không thể kết nối tới dịch vụ quản lý của PS5. Hãy đảm bảo payload đã được nạp (Connection → Send payload).",
+err_connect_transfer:
+  "Không thể kết nối tới PS5 để truyền tệp. Hãy đảm bảo payload đã được nạp (Connection → Send payload).",
+err_manifest_invalid:
+  "PS5 của bạn đã từ chối danh sách tệp cần tải lên. Điều này thường có nghĩa là một tên tệp hoặc thư mục chứa ký tự bất thường (hay gặp nhất là dấu } ), hoặc đường dẫn quá dài. Hãy tải lại payload mới nhất (Connection → Send payload) — bản này khắc phục trường hợp ký tự — hoặc đổi tên/rút ngắn tệp hay thư mục gây lỗi rồi thử lại.",
+err_dest_write_refused:
+  "PS5 từ chối ghi vào đích này. Hãy thử một ổ lưu trữ hoặc thư mục đích khác.",
+err_dest_full:
+  "Bộ nhớ PS5 của bạn đã đầy tại đích đó. Hãy chọn ổ khác hoặc giải phóng dung lượng.",
+err_volumes_unavailable:
+  "Lần này PS5 không trả về danh sách ổ đĩa — hãy thử lại sau một giây. Nếu cứ lỗi, hãy tải lại payload từ Connection → Send payload.",
+err_sqlite_unavailable:
+  "Tính năng tra cứu đăng ký tựa game không khả dụng trên firmware PS5 này. Phần còn lại của thư viện vẫn hoạt động.",
+err_service_unavailable:
+  "Thao tác này cần một dịch vụ của Sony không được xuất ra trên firmware của bạn. Mọi thứ khác vẫn hoạt động.",
+err_launch_no_profile:
+  "PS5 chưa chọn hồ sơ nào. Hãy chọn một hồ sơ người dùng trên màn hình chính PS5 rồi thử Khởi chạy lại.",
+err_launch_not_registered:
+  "PS5 cho biết tựa game chưa được đăng ký. Hãy bấm Register trước, hoặc hủy đăng ký rồi đăng ký lại nếu đã thêm trước đó.",
+err_launch_busy:
+  "Trình khởi chạy của PS5 đang bận với một tựa khác. Hãy đóng game đang chạy trên PS5 rồi thử Khởi chạy lại.",
+err_launch_corrupt:
+  "PS5 cho biết dữ liệu của tựa này bị hỏng. Tệp eboot.bin hoặc thư mục sce_sys có thể chưa đầy đủ — hãy tải lại game.",
+err_launch_unknown:
+  "Trình khởi chạy PS5 trả về 0x{code}. Tựa game có thể đã bị xóa, hoặc bản cài chưa hoàn tất — hãy thử Re-register từ tab Library.",
+err_launch_title_id_invalid:
+  "Title ID trông không hợp lệ. Hãy đảm bảo PARAM.SFO của game có title_id dạng CUSA12345 hoặc PPSA01234.",
+err_mount_not_a_file:
+  "PS5 không tìm thấy tệp đó tại đích. Bản tải lên có thể chưa hoàn tất — hãy đợi một lát rồi thử lại.",
+err_mount_unsupported_format:
+  "PS5 không nhận diện tệp này là ảnh đĩa có thể gắn kết. Chỉ hỗ trợ .ffpkg (UFS), .exfat và .ffpfs.",
+err_mount_source_unstable:
+  "PS5 thấy tệp vẫn đang được ghi. Hãy đợi 5 giây để bản tải lên hoàn tất rồi bấm Mount lại.",
+err_mount_path_not_allowed:
+  "PS5 không cho phép gắn kết tại đường dẫn đó. Hãy dùng /data, /user, /mnt/ext*, /mnt/usb*, hoặc /mnt/ps5upload.",
+err_mount_attach_failed:
+  "PS5 không thể gắn ảnh đĩa vào thiết bị khối (LVD hoặc md). Ảnh đĩa có thể bị hỏng — hãy thử tải lại hoặc tạo lại.",
+err_mount_dev_node_missing:
+  "PS5 đã gắn ảnh đĩa nhưng nút thiết bị không xuất hiện. Hãy khởi động lại PS5 và nạp lại payload, rồi thử lại.",
+err_mount_nmount_eperm:
+  "Nhân PS5 từ chối điểm gắn kết này (Operation not permitted). Vị trí của tệp .exfat không quan trọng ở đây — hãy thử gắn kết dưới /data/homebrew/<name> hoặc /mnt/ps5upload/<name>. Một số đường dẫn con USB/ext bị chính sách nhân chặn trên một số firmware.",
+err_mount_nmount_other:
+  "Nhân PS5 từ chối gắn kết: {reason}. Hãy thử một điểm gắn kết khác (ví dụ dưới /data hoặc /mnt/ps5upload) — bản thân ảnh đĩa vẫn ổn.",
+err_unknown_reason: "lý do không rõ",
+err_appinst_not_initialized:
+  "Hệ con cài đặt của Sony chưa được khởi tạo — hãy đẩy payload đi kèm mới nhất (Connection → Send payload) để chạy bước lazy-init trong 2.2.46+. Nếu lỗi vẫn còn, API cài đặt không tiếp cận được từ ngữ cảnh tiến trình của chúng tôi trên firmware này; cách khắc phục là tải lên qua FTP + Library → Register.",
+err_appinst_nospace:
+  "PS5 của bạn không đủ dung lượng trống cho bản cài này. Settings → Storage → Free up space, rồi thử lại.",
+err_appinst_drm_type:
+  "Trình cài đặt của Sony đã từ chối loại DRM của PKG này. Hãy thử quy trình Library → Register với 'Patch DRM' — nó sẽ ghi lại applicationDrmType thành 'standard' trước khi cài.",
+err_appinst_content_type:
+  "Trình cài đặt của Sony không chấp nhận loại nội dung của PKG này trên firmware hiện tại (ví dụ một số gói vá / định dạng DLC). PKG của game gốc vẫn nên cài được nếu bạn có.",
+err_appinst_busy:
+  "Trình cài đặt của Sony đang bận với một bản cài khác hoặc một tác vụ BGFT chưa xong. Hãy đợi một lát, hoặc kiểm tra mục Thông báo của PS5 để xóa một bản tải bị kẹt, rồi thử lại.",
+err_already_installed:
+  "Tựa này đã được cài. Hãy gỡ cài đặt trước nếu bạn muốn cài lại.",
+err_appinst_oom:
+  "Trình cài đặt của Sony bị hết bộ nhớ giữa chừng. Hãy khởi động lại PS5, nạp lại payload, rồi thử lại.",
+err_install_eagain:
+  "Trình cài đặt của Sony đang bận — lỗi 0x80020023 (EAGAIN). Một bản cài trước với cùng content_id vẫn còn trong hàng đợi trên PS5. Hãy mở Settings → Notifications trên PS5 và bỏ mọi mục liên quan đến Store đang chờ, HOẶC khởi động lại PS5 để xóa trạng thái cài đặt cũ. Rồi thử lại.",
+err_install_dup_register:
+  "Trình cài đặt của Sony đã từ chối đăng ký này với 0x80B21106 — nhiều khả năng vì bản cài trước với cùng content_id vẫn đang trong hàng đợi/đang chạy trên PS5. Hãy kiểm tra Settings → Notifications → Downloads trên PS5 để xem nó có đang cài hay không. Nếu bạn thực sự muốn đăng ký lại (ví dụ lần trước thất bại âm thầm), hãy khởi động lại PS5 trước. ĐỪNG bấm Start liên tục — mỗi lần thử chỉ xác nhận lại phản hồi của Sony.",
+err_install_http_fetch:
+  "PS5 đã từ chối yêu cầu tải HTTP của chúng tôi cho bản cài (0x80B22404). Điều này không liên quan đến định dạng pkg — trình cài đặt của Sony chưa đọc byte nào của tệp. Đây là vấn đề ngữ cảnh tiến trình: PlayGo của Sony chỉ cho phép tiến trình ShellUI tải HTTP phía cài đặt và từ chối tiến trình của chúng tôi. Bản 2.2.52 có đường cài ShellUI-RPC mới định tuyến qua tiến trình ShellUI nên yêu cầu tải này thành công. Nếu bạn vẫn gặp lỗi này, payload đang chạy là bản cũ — hãy đẩy payload mới nhất qua Connection → Send payload, khởi động lại bản cài, và bảng chẩn đoán sẽ hiển thị register_path=shellui-rpc.",
+err_install_116f_npxs:
+  "Trình cài đặt PS5 đã từ chối gói hệ thống này (0x80B2116F). Trình cài đặt của Sony không thể hoàn tất các bản vá hệ thống (cập nhật Store, Settings) — hãy dùng Settings → Debug Settings → Game → Package Installer ngay trên PS5 cho những gói này.",
+err_install_116f_game:
+  "Trình cài đặt PS5 đã từ chối gói (0x80B2116F). Trên FW 9.60, điểm firmware này thiếu các register BGFT mà payload của chúng tôi dùng; hãy thử đẩy payload mới nhất (Connection → Send payload), và nếu vẫn lỗi thì gói có thể cần cài qua Debug Settings → Game → Package Installer của chính PS5.",
+err_install_1401:
+  "Đường cài ShellUI của PS5 đã từ chối yêu cầu (0x80B21401). Thường đi kèm lỗi ở một tầng khác trên FW 9.60 khi điểm firmware thiếu các register BGFT mà chúng tôi cần. Hãy thử payload mới nhất từ Connection → Send payload, hoặc cài qua bảng Debug Settings của chính PS5.",
+err_install_2101:
+  "Một bản tải trước cho cùng nội dung vẫn đang trong hàng đợi trên PS5. Hãy mở bảng thông báo của PS5, xóa nó, rồi thử cài lại.",
+err_install_80b2_generic:
+  "Hệ con PlayGo của PS5 đã từ chối bản cài với lỗi 0x80B2_xxxx. Đây là đường tải khi cài, không phải bộ phân tích pkg — tệp của bạn nhiều khả năng vẫn ổn. Hãy thử đẩy payload mới nhất (Connection → Send payload); đường cài ShellUI-RPC mới sẽ vượt qua nhóm lỗi 0x80B2 phổ biến nhất.",
+err_bgft_not_loadable:
+  "Firmware PS5 của bạn không cung cấp trình cài đặt BGFT của Sony theo cách ps5upload có thể dùng. Hãy đẩy payload đi kèm mới nhất (Connection → Send payload) — nó thử nhiều đường thư viện và biến thể tên ký hiệu hơn. Nếu vẫn lỗi, hãy cài qua FTP + Library → Register; cài .pkg-qua-BGFT không khả dụng trên firmware này.",
+err_install_enoent_dlc:
+  "Đây có vẻ là một gói DLC (content_id {contentId}). Trình cài đặt của Sony cần game gốc ({baseTitle}) được cài TRƯỚC DLC, vì quá trình cài đọc dữ liệu mô tả từ app_home của game gốc. Hãy cài {baseTitle} trước, rồi thử lại DLC này. Lỗi 0x80020002 là nhân báo \"no such file\" khi nó cố truy theo tham chiếu game gốc — không phải vấn đề với gói DLC của bạn.",
+err_install_enoent_generic:
+  "Trình cài đặt của Sony không mở được một tệp cần thiết khi cài (lỗi nhân 0x80020002 = ENOENT). Nếu đây là gói DLC, game gốc chưa được cài — hãy cài game gốc trước. Nếu không, tệp tạm có thể đã bị xóa giữa lúc tải lên và cài; hãy thử cài lại một lần. Nếu vẫn lỗi, hãy tải pkg lên /user/data/ps5upload/pkg_temp/ thủ công qua FTP rồi dùng Library → Register để cài.",
+err_install_defrag:
+  "PS5 của bạn cần dung lượng trống đã chống phân mảnh. Settings → Storage → Free up space, rồi thử lại.",
+err_install_leftover_download:
+  "Còn một bản tải sót trong thông báo PS5. Hãy mở bảng thông báo của PS5 (nút PS → Notifications → Downloads), xóa mục bị kẹt, rồi thử cài lại.",
+err_install_drm_mismatch:
+  "DRM không khớp — PKG này không hợp lệ cho máy này. Gói được tạo cho tài khoản hoặc khu vực khác.",
+err_install_entitlement:
+  "Kiểm tra quyền sở hữu PKG thất bại. Tài khoản PSN đang đăng nhập không sở hữu tựa này, hoặc khu vực không khớp.",
+err_install_no_free_space:
+  "Hết dung lượng trống trên PS5. Settings → Storage → Free up space, rồi thử lại.",
+err_install_parental:
+  "Tựa game bị chặn bởi kiểm soát của phụ huynh / nội dung của PS5. Hãy điều chỉnh hạn chế của người dùng trong PS5 Settings → Users and Accounts → Family Management trước khi thử lại.",
+err_install_esrch:
+  "Daemon cài đặt của PS5 không tiếp cận được tiến trình của chúng tôi (ESRCH = không có tiến trình). Thường nghĩa là payload chưa được nâng quyền — kstuff/etaHEN có thể chưa được nạp. Hãy gửi lại payload từ Connection → Send payload, rồi thử lại.",
+err_install_bgft_generic:
+  "Dịch vụ cài đặt của Sony đã từ chối yêu cầu với {code}. Nguyên nhân thường gặp: bản cài trước bị kẹt (mở thông báo PS5 → Downloads → xóa), sai tài khoản/khu vực, hoặc hết dung lượng. Nếu không phải các nguyên nhân đó, hãy chụp bảng chẩn đoán và báo lỗi.",
+err_payload_rejected: "PS5 đã từ chối yêu cầu: {reason}",
 };
 
 export default vi;

@@ -1246,6 +1246,170 @@ nav_close_aria: "tutup <ph id=\"mtc_1\" equiv-text=\"base64:Jmx0O2FwcCBjZj0ibmF2
 notifications: "Notifikasi",
 os_notify_label: "Tampilkan notifikasi sistem.",
 os_notify_hint: "Cerminkan pemberitahuan dalam aplikasi (transfer selesai, kesalahan, dll.) ke pusat pemberitahuan sistem operasi Anda — tetapi hanya ketika aplikasi ada di latar belakang, sehingga Anda tidak diberi tahu dua kali. Anda mungkin diminta untuk memberikan izin notifikasi.",
+
+// Package Library (layar Install Package yang didesain ulang — khusus DPI)
+"pkglib.install": "Pasang",
+"pkglib.reinstall": "Pasang ulang",
+"pkglib.delete": "Hapus",
+"pkglib.installing": "Memasang…",
+"pkglib.uploading": "Mengunggah ke PS5…",
+"pkglib.badge.installed": "terpasang",
+"pkglib.install.busyHint": "Tunggu hingga unggahan/pemasangan saat ini selesai",
+"pkglib.add.installingHint": "Tunggu hingga pemasangan saat ini selesai",
+"pkglib.note.title": "Pemasangan berjalan melalui daemon DPI",
+"pkglib.note.body": "jalur paling bersih untuk pkg game. Saat memasang, ps5upload sebentar menukar payload-nya dengan loader DPI lalu memulihkannya setelah selesai, jadi koneksi mungkin terputus sejenak. Pkg game bekerja paling baik; beberapa pkg sistem (NPXS) mungkin masih memerlukan Settings → Package Installer milik PS5 sendiri.",
+"pkglib.error": "Terjadi kesalahan",
+"pkglib.empty.title": "Belum ada paket yang diunggah",
+"pkglib.empty.drop": "Lepaskan untuk mengunggah",
+"pkglib.empty.body": "Tambahkan .pkg untuk mengunggahnya ke PS5 Anda — lalu pasang dari sini. Anda juga dapat menyeret file .pkg ke jendela.",
+"pkglib.delete.confirmTitle": "Hapus {name}?",
+"pkglib.delete.confirmBody": "Ini menghapus permanen .pkg ({size}) yang diunggah dari PS5 Anda. Salinan game yang sudah terpasang tetap terpasang; Anda hanya perlu mengunggah ulang .pkg untuk memasangnya lagi.",
+"pkglib.footer.count": "{n} paket",
+"pkglib.footer.size": "{size} di PS5",
+
+// Layar Installed Apps
+installed_apps: "Aplikasi Terpasang",
+installed_apps_title: "Aplikasi Terpasang",
+installed_apps_subtitle:
+  "Semua yang terpasang di PS5, dikelompokkan berdasarkan cara pemasangannya. Hapus pemasangan akan menghapus judul (dan, untuk judul yang dipasang, melepasnya).",
+installed_error_title: "Gagal membaca aplikasi terpasang",
+installed_no_host_title: "Tidak terhubung",
+installed_no_host_body: "Hubungkan ke PS5 di tab Connection untuk melihat aplikasi terpasang.",
+installed_loading: "Membaca judul terpasang…",
+installed_loading_hint: "Mengenumerasi /user/appmeta di PS5.",
+installed_empty_title: "Tidak ada judul terpasang yang ditemukan",
+installed_empty_body:
+  "Tidak ada apa pun di /user/appmeta. Pasang paket atau daftarkan game terlebih dahulu.",
+installed_registered_unavailable:
+  "Gagal membaca kumpulan yang terpasang/terdaftar dari payload — semuanya ditampilkan di bawah Terpasang dari paket. Muat ulang payload untuk memperbaiki pengelompokan.",
+installed_section_pkg: "Terpasang dari paket",
+installed_section_pkg_hint:
+  "Dipasang melalui installer Sony dari .pkg (atau bawaan konsol).",
+installed_section_registered: "Dipasang & didaftarkan oleh PS5Upload",
+installed_section_registered_hint:
+  "Didaftarkan dari folder game, image disk .exfat/.ffpkg, atau unggahan. Menghapus pemasangan akan melepasnya; file sumber Anda tetap disimpan.",
+installed_badge_system: "Sistem",
+installed_badge_image: "Image disk",
+installed_badge_folder: "Folder",
+installed_badge_pkg: "Paket",
+installed_uninstall: "Hapus pemasangan",
+installed_uninstalling: "Menghapus…",
+installed_uninstall_confirm_title: "Hapus pemasangan {name}?",
+installed_uninstall_confirm_system:
+  "{id} adalah aplikasi SISTEM. Menghapusnya dapat membuat konsol tidak stabil dan mungkin memerlukan pemasangan ulang untuk memulihkannya. Lanjutkan hanya jika Anda benar-benar tahu apa paket ini.",
+installed_uninstall_confirm_registered:
+  "Ini melepas dan menghapus judul dari layar utama. File sumber/image Anda di disk tidak dihapus.",
+installed_uninstall_confirm_pkg:
+  "Ini menghapus judul yang terpasang dari PS5. Anda dapat memasangnya kembali nanti dari paket.",
+
+// Teks kesalahan yang dimanusiawikan — ditampilkan oleh lib/humanizeError.ts.
+// {placeholder} disubstitusi saat runtime; pertahankan apa adanya saat menerjemahkan.
+err_unmount_busy:
+  "Tidak dapat melepas: game di dalam image ini sedang berjalan di PS5. Keluar dari game (PS Home → tutup game) lalu coba lagi.",
+err_unmount_permission:
+  "Tidak dapat melepas: kernel menolak dengan EACCES/EPERM. Payload mungkin kehilangan kredensial root — muat ulang dari Connection → Send payload.",
+err_npxs_mgmt_disconnect:
+  "Layanan mgmt PS5 berhenti merespons di tengah pemasangan. Ini adalah mode kegagalan pkg-sistem-NPXS yang sudah diketahui: Sony menerima registrasi tetapi `sceAppInstUtilInstallByPackage` tidak dirancang untuk patch sistem (pembaruan Store, Settings, dll.). PS5 biasanya pulih sendiri dalam satu-dua menit, atau setelah reboot — tetapi ps5upload tidak dapat memasang pkg ini. Gunakan Settings → Debug Settings → Game → Package Installer di PS5 sendiri untuk pkg sistem.",
+err_network_drop:
+  "PS5 Anda berhenti merespons. Mungkin crash atau memasuki mode istirahat. Muat ulang payload (Connection → Send payload) lalu coba lagi.",
+err_connect_mgmt:
+  "Tidak dapat menjangkau layanan manajemen PS5 Anda. Pastikan payload sudah dimuat (Connection → Send payload).",
+err_connect_transfer:
+  "Tidak dapat menjangkau PS5 Anda untuk transfer file. Pastikan payload sudah dimuat (Connection → Send payload).",
+err_manifest_invalid:
+  "PS5 Anda menolak daftar file yang akan diunggah. Biasanya ini berarti ada nama file atau folder dengan karakter tidak biasa (paling sering } ), atau jalur yang terlalu panjang. Muat ulang payload terbaru (Connection → Send payload) — ini memperbaiki masalah karakter — atau ganti nama/perpendek file atau folder yang bermasalah, lalu coba lagi.",
+err_dest_write_refused:
+  "PS5 menolak menulis ke tujuan ini. Coba volume penyimpanan atau folder tujuan yang berbeda.",
+err_dest_full:
+  "Penyimpanan PS5 Anda penuh di tujuan tersebut. Pilih volume berbeda atau kosongkan ruang.",
+err_volumes_unavailable:
+  "PS5 tidak mengembalikan daftar volume kali ini — coba lagi sebentar. Jika terus gagal, muat ulang payload dari Connection → Send payload.",
+err_sqlite_unavailable:
+  "Pencarian registrasi judul tidak tersedia di firmware PS5 ini. Sisa tampilan pustaka tetap berfungsi.",
+err_service_unavailable:
+  "Tindakan ini memerlukan layanan Sony yang tidak diekspor di firmware Anda. Semua lainnya tetap berfungsi.",
+err_launch_no_profile:
+  "PS5 tidak memiliki profil yang dipilih. Pilih profil pengguna di layar utama PS5, lalu coba Launch lagi.",
+err_launch_not_registered:
+  "PS5 mengatakan judul belum terdaftar. Klik Register terlebih dahulu, atau unregister + daftar ulang jika sudah ditambahkan.",
+err_launch_busy:
+  "Launcher PS5 sedang sibuk dengan judul lain. Tutup game yang sedang berjalan di PS5 lalu coba Launch lagi.",
+err_launch_corrupt:
+  "PS5 mengatakan data judul ini rusak. eboot.bin atau folder sce_sys mungkin tidak lengkap — unggah ulang game.",
+err_launch_unknown:
+  "Launcher PS5 mengembalikan 0x{code}. Judul mungkin telah dihapus, atau pemasangan belum lengkap — coba Daftar ulang dari tab Library.",
+err_launch_title_id_invalid:
+  "Title ID tampaknya tidak valid. Pastikan PARAM.SFO game memiliki title_id seperti CUSA12345 atau PPSA01234.",
+err_mount_not_a_file:
+  "PS5 tidak dapat menemukan file itu di tujuan. Unggahan mungkin belum selesai — tunggu sebentar lalu coba lagi.",
+err_mount_unsupported_format:
+  "PS5 tidak mengenali file ini sebagai image disk yang dapat dipasang. Hanya .ffpkg (UFS), .exfat, dan .ffpfs yang didukung.",
+err_mount_source_unstable:
+  "PS5 melihat file masih sedang ditulis. Tunggu 5 detik hingga unggahan selesai, lalu klik Mount lagi.",
+err_mount_path_not_allowed:
+  "PS5 tidak mengizinkan mount di jalur tersebut. Gunakan /data, /user, /mnt/ext*, /mnt/usb*, atau /mnt/ps5upload.",
+err_mount_attach_failed:
+  "PS5 tidak dapat melampirkan image ke perangkat blok (LVD atau md). Image mungkin rusak — coba unggah ulang atau bangun ulang.",
+err_mount_dev_node_missing:
+  "PS5 melampirkan image tetapi node perangkat tidak muncul. Reboot PS5 dan muat ulang payload, lalu coba lagi.",
+err_mount_nmount_eperm:
+  "Kernel PS5 menolak titik mount ini (Operation not permitted). Lokasi file .exfat tidak masalah di sini — coba pasang di bawah /data/homebrew/<name> atau /mnt/ps5upload/<name>. Beberapa sub-jalur USB/ext diblokir oleh kebijakan kernel pada firmware tertentu.",
+err_mount_nmount_other:
+  "Kernel PS5 menolak mount: {reason}. Coba titik mount yang berbeda (mis. di bawah /data atau /mnt/ps5upload) — image-nya sendiri baik-baik saja.",
+err_unknown_reason: "alasan tidak diketahui",
+err_appinst_not_initialized:
+  "Subsistem installer Sony belum diinisialisasi — kirim payload bawaan terbaru (Connection → Send payload) agar lazy-init di 2.2.46+ berjalan. Jika kesalahan berlanjut, API pemasangan tidak dapat dijangkau dari konteks proses kami di firmware ini; unggah FTP + Library → Register adalah solusinya.",
+err_appinst_nospace:
+  "PS5 Anda tidak memiliki cukup ruang kosong untuk pemasangan ini. Settings → Storage → kosongkan ruang, lalu coba lagi.",
+err_appinst_drm_type:
+  "Installer Sony menolak jenis DRM PKG ini. Coba alur Library → Register dengan 'Patch DRM' — ini menulis ulang applicationDrmType menjadi 'standard' sebelum memasang.",
+err_appinst_content_type:
+  "Installer Sony tidak menerima jenis konten PKG ini pada firmware saat ini (mis. beberapa pkg-patch / format DLC). PKG base game seharusnya tetap dapat dipasang jika Anda memilikinya.",
+err_appinst_busy:
+  "Installer Sony sibuk dengan pemasangan lain atau tugas BGFT yang belum selesai. Tunggu sebentar, atau periksa Notifications PS5 untuk unduhan yang macet agar dibersihkan, lalu coba lagi.",
+err_already_installed:
+  "Judul ini sudah terpasang. Hapus pemasangannya terlebih dahulu jika Anda ingin memasang ulang.",
+err_appinst_oom:
+  "Installer Sony kehabisan memori di tengah pemasangan. Reboot PS5, muat ulang payload, lalu coba lagi.",
+err_install_eagain:
+  "Installer Sony sibuk — kesalahan 0x80020023 (EAGAIN). Pemasangan sebelumnya dengan content_id yang sama masih dalam antrean di PS5. Buka Settings → Notifications di PS5 dan tutup entri terkait Store yang tertunda, ATAU reboot PS5 untuk membersihkan status pemasangan yang basi. Lalu coba lagi.",
+err_install_dup_register:
+  "Installer Sony menolak registrasi ini dengan 0x80B21106 — kemungkinan besar karena pemasangan sebelumnya untuk content_id yang sama masih dalam antrean/berjalan di PS5. Periksa Settings → Notifications → Downloads di PS5 untuk melihat apakah sudah sedang dipasang. Jika Anda benar-benar ingin mendaftar ulang (mis. percobaan sebelumnya gagal diam-diam), reboot PS5 terlebih dahulu. JANGAN klik Start berulang kali — setiap percobaan ulang hanya mengonfirmasi respons Sony.",
+err_install_http_fetch:
+  "PS5 menolak upaya HTTP fetch kami untuk pemasangan (0x80B22404). Ini bukan tentang format pkg — installer Sony tidak membaca byte file sama sekali. Ini masalah konteks proses: PlayGo Sony memberi izin proses ShellUI untuk HTTP fetch sisi-pemasangan dan menolak proses kami. Build 2.2.52 memiliki jalur pemasangan ShellUI-RPC baru yang dialihkan melalui proses ShellUI sehingga fetch yang sama berhasil. Jika Anda masih melihat kesalahan ini, payload yang berjalan adalah yang lama — kirim payload terbaru via Connection → Send payload, mulai ulang pemasangan, dan panel diag akan menampilkan register_path=shellui-rpc.",
+err_install_116f_npxs:
+  "Installer PS5 menolak pkg sistem ini (0x80B2116F). Installer Sony tidak dapat menyelesaikan patch sistem (pembaruan Store, Settings) — gunakan Settings → Debug Settings → Game → Package Installer di PS5 sendiri untuk ini.",
+err_install_116f_game:
+  "Installer PS5 menolak pkg (0x80B2116F). Pada FW 9.60, titik firmware ini tidak memiliki register BGFT yang digunakan payload kami; coba kirim payload terbaru (Connection → Send payload), dan jika masih gagal, pkg mungkin perlu dipasang via Debug Settings → Game → Package Installer milik PS5 sendiri.",
+err_install_1401:
+  "Jalur pemasangan ShellUI PS5 menolak permintaan (0x80B21401). Biasanya dipasangkan dengan kegagalan tier lain pada FW 9.60 saat titik firmware tidak memiliki register BGFT yang kami andalkan. Coba payload terbaru dari Connection → Send payload, atau pasang via panel Debug Settings milik PS5 sendiri.",
+err_install_2101:
+  "Unduhan sebelumnya untuk konten yang sama masih dalam antrean di PS5. Buka panel notifikasi PS5, bersihkan, lalu coba ulang pemasangan.",
+err_install_80b2_generic:
+  "Subsistem PlayGo PS5 menolak pemasangan dengan kesalahan 0x80B2_xxxx. Ini adalah jalur fetch pemasangan, bukan parser pkg — file Anda kemungkinan baik-baik saja. Coba kirim payload terbaru (Connection → Send payload); jalur pemasangan ShellUI-RPC baru melewati kelas penolakan 0x80B2 yang paling umum.",
+err_bgft_not_loadable:
+  "Firmware PS5 Anda tidak mengekspos installer BGFT Sony dengan cara yang dapat digunakan ps5upload. Kirim payload bawaan terbaru (Connection → Send payload) — ini mencoba lebih banyak jalur pustaka dan varian simbol. Jika masih gagal, pasang via FTP + Library → Register sebagai gantinya; .pkg-via-BGFT tidak tersedia di firmware ini.",
+err_install_enoent_dlc:
+  "Ini tampaknya pkg DLC (content_id {contentId}). Installer Sony memerlukan base game ({baseTitle}) terpasang SEBELUM DLC, karena pemasangan membaca metadata dari app_home base game. Pasang {baseTitle} terlebih dahulu, lalu coba ulang DLC ini. 0x80020002 adalah kernel melaporkan \"tidak ada file seperti itu\" saat mencoba mengikuti referensi base-game — bukan masalah dengan pkg DLC Anda.",
+err_install_enoent_generic:
+  "Installer Sony tidak dapat membuka file yang diperlukannya selama pemasangan (kesalahan kernel 0x80020002 = ENOENT). Jika ini pkg DLC, base game belum terpasang — pasang base terlebih dahulu. Jika tidak, file staging mungkin terhapus antara unggah dan pasang; coba ulang pemasangan sekali. Jika terus gagal, unggah pkg via FTP ke /user/data/ps5upload/pkg_temp/ secara manual dan gunakan Library → Register untuk memasang.",
+err_install_defrag:
+  "PS5 Anda memerlukan ruang kosong yang terdefragmentasi. Settings → Storage → kosongkan ruang, lalu coba lagi.",
+err_install_leftover_download:
+  "Unduhan tersisa di notifikasi PS5. Buka panel notifikasi PS5 (tombol PS → Notifications → Downloads), bersihkan entri yang macet, lalu coba ulang pemasangan.",
+err_install_drm_mismatch:
+  "Ketidakcocokan DRM — PKG ini tidak valid untuk konsol ini. Pkg dibuat untuk akun atau wilayah yang berbeda.",
+err_install_entitlement:
+  "Pemeriksaan entitlement PKG gagal. Akun PSN yang masuk tidak memiliki judul ini, atau wilayahnya tidak cocok.",
+err_install_no_free_space:
+  "Kehabisan ruang kosong di PS5. Settings → Storage → kosongkan ruang, lalu coba lagi.",
+err_install_parental:
+  "Judul diblokir oleh kontrol orang tua / konten PS5. Sesuaikan pembatasan pengguna di PS5 Settings → Users and Accounts → Family Management sebelum mencoba lagi.",
+err_install_esrch:
+  "Daemon pemasangan PS5 tidak dapat menjangkau proses kami (ESRCH = tidak ada proses seperti itu). Biasanya berarti payload belum dielevasi — kstuff/etaHEN mungkin belum dimuat. Kirim ulang payload dari Connection → Send payload, lalu coba lagi.",
+err_install_bgft_generic:
+  "Layanan pemasangan Sony menolak permintaan dengan {code}. Penyebab umum: pemasangan sebelumnya yang macet (buka notifikasi PS5 → Downloads → bersihkan), akun/wilayah salah, atau kehabisan ruang. Jika tidak satu pun berlaku, tangkap panel diag dan laporkan bug.",
+err_payload_rejected: "PS5 menolak permintaan: {reason}",
 };
 
 export default id;

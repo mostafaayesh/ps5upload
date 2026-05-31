@@ -1246,6 +1246,170 @@ nav_close_aria: "Gezinme menüsünü kapat",
 notifications: "Bildirimler",
 os_notify_label: "Sistem Bildirimleri",
 os_notify_hint: "Uygulama içi bildirimleri (aktarım yapıldı, hatalar vb.) işletim sisteminizin bildirim merkezine yansıtın. Ancak yalnızca uygulama arka planda olduğunda iki kez bildirim almazsınız. Bildirim izni vermeniz istenebilir.",
+
+// Package Library (yeniden tasarlanan Paket Yükle ekranı — yalnızca DPI)
+"pkglib.install": "Yükle",
+"pkglib.reinstall": "Yeniden yükle",
+"pkglib.delete": "Sil",
+"pkglib.installing": "Yükleniyor…",
+"pkglib.uploading": "PS5'e yükleniyor…",
+"pkglib.badge.installed": "yüklü",
+"pkglib.install.busyHint": "Mevcut yükleme/kurulum bitene kadar bekleyin",
+"pkglib.add.installingHint": "Mevcut kurulum bitene kadar bekleyin",
+"pkglib.note.title": "Kurulumlar DPI daemon üzerinden çalışır",
+"pkglib.note.body": "oyun pkg'leri için en temiz yol. Kurulum sırasında ps5upload payload kısa süreliğine DPI yükleyicisiyle değiştirilir ve işlem bitince geri yüklenir, bu yüzden bağlantı birkaç saniye kesilebilir. Oyun pkg'leri en iyi şekilde çalışır; bazı sistem (NPXS) pkg'leri yine de PS5'in kendi Settings → Package Installer ekranını gerektirebilir.",
+"pkglib.error": "Bir şeyler ters gitti",
+"pkglib.empty.title": "Henüz paket yüklenmedi",
+"pkglib.empty.drop": "Yüklemek için bırakın",
+"pkglib.empty.body": "PS5'inize yüklemek için bir .pkg ekleyin — sonra buradan kurun. .pkg dosyalarını pencereye de sürükleyebilirsiniz.",
+"pkglib.delete.confirmTitle": "{name} silinsin mi?",
+"pkglib.delete.confirmBody": "Bu, yüklenen .pkg ({size}) dosyasını PS5'inizden kalıcı olarak kaldırır. Oyunun zaten kurulu olan herhangi bir kopyası kurulu kalır; tekrar kurmak için yalnızca .pkg dosyasını yeniden yüklemeniz gerekir.",
+"pkglib.footer.count": "{n} paket",
+"pkglib.footer.size": "PS5'te {size}",
+
+// Installed Apps ekranı
+installed_apps: "Yüklü Uygulamalar",
+installed_apps_title: "Yüklü Uygulamalar",
+installed_apps_subtitle:
+  "PS5'e yüklenmiş her şey, nasıl geldiğine göre gruplanmış. Kaldırma bir başlığı siler (ve bağlı başlıklar için bağlantısını da kaldırır).",
+installed_error_title: "Yüklü uygulamalar okunamadı",
+installed_no_host_title: "Bağlı değil",
+installed_no_host_body: "Yüklü uygulamaları görmek için Connection sekmesinden bir PS5'e bağlanın.",
+installed_loading: "Yüklü başlıklar okunuyor…",
+installed_loading_hint: "PS5'teki /user/appmeta numaralandırılıyor.",
+installed_empty_title: "Yüklü başlık bulunamadı",
+installed_empty_body:
+  "/user/appmeta altında hiçbir şey yok. Önce bir paket kurun veya bir oyun kaydedin.",
+installed_registered_unavailable:
+  "Bağlı/kayıtlı küme payload'dan okunamadı — her şey Paketten yüklendi altında gösteriliyor. Gruplamayı düzeltmek için payload'ı yeniden yükleyin.",
+installed_section_pkg: "Paketten yüklendi",
+installed_section_pkg_hint:
+  "Sony'nin yükleyicisi aracılığıyla bir .pkg'den kuruldu (veya konsolla birlikte geldi).",
+installed_section_registered: "PS5Upload tarafından bağlandı ve kaydedildi",
+installed_section_registered_hint:
+  "Bir oyun klasöründen, .exfat/.ffpkg disk görüntüsünden veya yüklemeden kaydedildi. Kaldırmak bunların bağlantısını keser; kaynak dosyalarınız korunur.",
+installed_badge_system: "Sistem",
+installed_badge_image: "Disk görüntüsü",
+installed_badge_folder: "Klasör",
+installed_badge_pkg: "Paket",
+installed_uninstall: "Kaldır",
+installed_uninstalling: "Kaldırılıyor…",
+installed_uninstall_confirm_title: "{name} kaldırılsın mı?",
+installed_uninstall_confirm_system:
+  "{id} bir SİSTEM uygulamasıdır. Kaldırmak konsolu kararsız hale getirebilir ve kurtarmak için yeniden kurulum gerektirebilir. Yalnızca bu paketin tam olarak ne olduğunu biliyorsanız devam edin.",
+installed_uninstall_confirm_registered:
+  "Bu, başlığın bağlantısını keser ve ana ekrandan kaldırır. Diskteki kaynak dosyalarınız/görüntünüz silinmez.",
+installed_uninstall_confirm_pkg:
+  "Bu, yüklü başlığı PS5'ten kaldırır. Daha sonra paketten yeniden kurabilirsiniz.",
+
+// İnsanlaştırılmış hata metinleri — lib/humanizeError.ts tarafından gösterilir.
+// {placeholders} çalışma zamanında değiştirilir; çevirirken aynen koruyun.
+err_unmount_busy:
+  "Bağlantı kaldırılamıyor: bu görüntünün içindeki oyun şu anda PS5'te çalışıyor. Çıkın (PS Home → oyunu kapatın) ve tekrar deneyin.",
+err_unmount_permission:
+  "Bağlantı kaldırılamıyor: çekirdek EACCES/EPERM ile reddetti. Payload root yetkilerini kaybetmiş olabilir — Connection → Send payload bölümünden yeniden yükleyin.",
+err_npxs_mgmt_disconnect:
+  "PS5 mgmt servisi kurulum ortasında yanıt vermeyi durdurdu. Bu, bilinen NPXS-sistem-pkg hata biçimidir: Sony kaydı kabul eder ama `sceAppInstUtilInstallByPackage` sistem yamaları (Store güncellemeleri, Settings vb.) için tasarlanmamıştır. PS5 genellikle bir iki dakika içinde veya yeniden başlatmadan sonra kendiliğinden toparlanır — ancak ps5upload bu pkg'yi kuramaz. Sistem pkg'leri için PS5'in kendisinde Settings → Debug Settings → Game → Package Installer kullanın.",
+err_network_drop:
+  "PS5'iniz yanıt vermeyi durdurdu. Çökmüş veya dinlenme moduna girmiş olabilir. Payload'ı yeniden yükleyin (Connection → Send payload) ve tekrar deneyin.",
+err_connect_mgmt:
+  "PS5'inizin yönetim servisine erişilemiyor. Payload'ın yüklü olduğundan emin olun (Connection → Send payload).",
+err_connect_transfer:
+  "Dosya aktarımı için PS5'inize erişilemiyor. Payload'ın yüklü olduğundan emin olun (Connection → Send payload).",
+err_manifest_invalid:
+  "PS5'iniz yüklenecek dosya listesini reddetti. Bu genellikle bir dosya veya klasör adının olağandışı bir karakter içermesi (çoğunlukla } ) veya bir yolun çok uzun olması anlamına gelir. En son payload'ı yeniden yükleyin (Connection → Send payload) — bu, karakter sorununu düzeltir — ya da soruna yol açan dosya veya klasörü yeniden adlandırın/kısaltın ve tekrar deneyin.",
+err_dest_write_refused:
+  "PS5 bu hedefe yazmayı reddetti. Farklı bir depolama birimi veya hedef klasör deneyin.",
+err_dest_full:
+  "PS5 deponuz o hedefte dolu. Farklı bir birim seçin veya yer açın.",
+err_volumes_unavailable:
+  "PS5 bu sefer birim listesini döndürmedi — bir saniye sonra tekrar deneyin. Başarısız olmaya devam ederse, payload'ı Connection → Send payload bölümünden yeniden yükleyin.",
+err_sqlite_unavailable:
+  "Başlık kaydı aramaları bu PS5 ürün yazılımında kullanılamıyor. Kütüphane görünümünün geri kalanı yine de çalışır.",
+err_service_unavailable:
+  "Bu eylem, ürün yazılımınızda dışa aktarılmayan bir Sony servisi gerektiriyor. Diğer her şey yine de çalışır.",
+err_launch_no_profile:
+  "PS5'te seçili profil yok. PS5 ana ekranından bir kullanıcı profili seçin, sonra tekrar Launch deneyin.",
+err_launch_not_registered:
+  "PS5 başlığın kayıtlı olmadığını söylüyor. Önce Register'a tıklayın veya zaten eklendiyse kaydı kaldırıp yeniden kaydedin.",
+err_launch_busy:
+  "PS5 başlatıcısı başka bir başlıkla meşgul. PS5'te çalışan oyunları kapatın ve tekrar Launch deneyin.",
+err_launch_corrupt:
+  "PS5 bu başlığın verilerinin bozuk olduğunu söylüyor. eboot.bin veya sce_sys klasörü eksik olabilir — oyunu yeniden yükleyin.",
+err_launch_unknown:
+  "PS5 başlatıcısı 0x{code} döndürdü. Başlık kaldırılmış olabilir veya kurulum tamamlanmamış olabilir — Library sekmesinden Re-register deneyin.",
+err_launch_title_id_invalid:
+  "Başlık ID'si geçerli görünmüyor. Oyunun PARAM.SFO dosyasında CUSA12345 veya PPSA01234 gibi bir title_id olduğundan emin olun.",
+err_mount_not_a_file:
+  "PS5 hedefte o dosyayı bulamıyor. Yükleme tamamlanmamış olabilir — bir an bekleyip tekrar deneyin.",
+err_mount_unsupported_format:
+  "PS5 bu dosyayı bağlanabilir bir disk görüntüsü olarak tanımıyor. Yalnızca .ffpkg (UFS), .exfat ve .ffpfs desteklenir.",
+err_mount_source_unstable:
+  "PS5 dosyanın hâlâ yazıldığını görüyor. Yüklemenin bitmesi için 5 saniye bekleyin, sonra tekrar Mount'a tıklayın.",
+err_mount_path_not_allowed:
+  "PS5 o yolda bağlamaya izin vermiyor. /data, /user, /mnt/ext*, /mnt/usb* veya /mnt/ps5upload kullanın.",
+err_mount_attach_failed:
+  "PS5 görüntüyü bir blok aygıtına (LVD veya md) ekleyemedi. Görüntü bozuk olabilir — yeniden yüklemeyi veya görüntüyü yeniden oluşturmayı deneyin.",
+err_mount_dev_node_missing:
+  "PS5 görüntüyü ekledi ama aygıt düğümü görünmedi. PS5'i yeniden başlatın ve payload'ı yeniden yükleyin, sonra tekrar deneyin.",
+err_mount_nmount_eperm:
+  "PS5 çekirdeği bu bağlama noktasını reddetti (Operation not permitted). .exfat dosyasının konumu burada önemli değil — /data/homebrew/<name> veya /mnt/ps5upload/<name> altına bağlamayı deneyin. Bazı USB/ext alt yolları belirli ürün yazılımlarında çekirdek politikasıyla engellenir.",
+err_mount_nmount_other:
+  "PS5 çekirdeği bağlamayı reddetti: {reason}. Farklı bir bağlama noktası deneyin (ör. /data veya /mnt/ps5upload altında) — görüntünün kendisi sorunsuz.",
+err_unknown_reason: "bilinmeyen neden",
+err_appinst_not_initialized:
+  "Sony'nin yükleyici alt sistemi henüz başlatılmadı — en son birlikte gelen payload'ı gönderin (Connection → Send payload), böylece 2.2.46+ sürümündeki gecikmeli başlatma çalışır. Hata devam ederse, kurulum API'sine bu ürün yazılımında bizim işlem bağlamımızdan erişilemez; FTP yükleme + Library → Register geçici çözümüdür.",
+err_appinst_nospace:
+  "PS5'inizde bu kurulum için yeterli boş alan yok. Settings → Storage → yer açın, sonra tekrar deneyin.",
+err_appinst_drm_type:
+  "Sony'nin yükleyicisi bu PKG'nin DRM türünü reddetti. Bunun yerine Library → Register akışını 'Patch DRM' ile deneyin — kurulumdan önce applicationDrmType değerini 'standard' olarak yeniden yazar.",
+err_appinst_content_type:
+  "Sony'nin yükleyicisi bu PKG'nin içerik türünü mevcut ürün yazılımında kabul etmiyor (ör. bazı yama-pkg'leri / DLC biçimleri). Elinizde varsa temel oyunun PKG'si yine de kurulabilir.",
+err_appinst_busy:
+  "Sony'nin yükleyicisi başka bir kurulumla veya bitmemiş bir BGFT göreviyle meşgul. Bir an bekleyin ya da PS5'in Bildirimleri'nde takılı bir indirme olup olmadığını kontrol edip temizleyin, sonra tekrar deneyin.",
+err_already_installed:
+  "Bu başlık zaten yüklü. Yeniden kurmak istiyorsanız önce kaldırın.",
+err_appinst_oom:
+  "Sony'nin yükleyicisi kurulum ortasında bellek yetersizliğine düştü. PS5'i yeniden başlatın, payload'ı yeniden yükleyin ve tekrar deneyin.",
+err_install_eagain:
+  "Sony'nin yükleyicisi meşgul — hata 0x80020023 (EAGAIN). Aynı content_id ile önceki bir kurulum hâlâ PS5'te kuyrukta. PS5'te Settings → Notifications açın ve bekleyen Store ile ilgili girişleri kapatın VEYA bayat kurulum durumunu temizlemek için PS5'i yeniden başlatın. Sonra tekrar deneyin.",
+err_install_dup_register:
+  "Sony'nin yükleyicisi bu kaydı 0x80B21106 ile reddetti — büyük olasılıkla aynı content_id için önceki kurulum hâlâ PS5'te kuyrukta/çalışıyor olduğu için. Zaten kuruluyor mu görmek için PS5'te Settings → Notifications → Downloads kontrol edin. Gerçekten yeniden kaydetmek istiyorsanız (ör. önceki deneme sessizce başarısız olduysa) önce PS5'i yeniden başlatın. Start'a tekrar tekrar TIKLAMAYIN — her deneme yalnızca Sony'nin yanıtını doğrular.",
+err_install_http_fetch:
+  "PS5 kurulum için HTTP getirme girişimimizi reddetti (0x80B22404). Bu, pkg'nin biçimiyle ilgili değil — Sony'nin yükleyicisi dosyanın hiçbir baytını okumadı. Bu bir işlem bağlamı sorunudur: Sony'nin PlayGo'su kurulum tarafı HTTP getirme için ShellUI'nin işlemini beyaz listeye alır ve bizimkini reddeder. 2.2.52 sürümü, aynı getirmenin başarılı olması için ShellUI'nin işlemi üzerinden yönlendiren yeni bir ShellUI-RPC kurulum yoluna sahip. Bu hatayı hâlâ görüyorsanız, çalışan payload eskisidir — en son payload'ı Connection → Send payload bölümünden gönderin, kurulumu yeniden başlatın ve tanı paneli register_path=shellui-rpc göstermelidir.",
+err_install_116f_npxs:
+  "PS5 yükleyicisi bu sistem pkg'sini reddetti (0x80B2116F). Sony'nin yükleyicisi sistem yamalarını (Store güncellemeleri, Settings) tamamlayamaz — bunlar için PS5'in kendisinde Settings → Debug Settings → Game → Package Installer kullanın.",
+err_install_116f_game:
+  "PS5 yükleyicisi pkg'yi reddetti (0x80B2116F). FW 9.60'ta bu ürün yazılımı noktasında payload'ımızın kullandığı BGFT register'ları eksik; en son payload'ı göndermeyi deneyin (Connection → Send payload) ve yine başarısız olursa pkg'nin PS5'in kendi Debug Settings → Game → Package Installer aracılığıyla kurulması gerekebilir.",
+err_install_1401:
+  "PS5'in ShellUI kurulum yolu isteği reddetti (0x80B21401). Ürün yazılımı noktası bağımlı olduğumuz BGFT register'larından yoksun olduğunda FW 9.60'ta genellikle başka bir tier hatasıyla birlikte görülür. Connection → Send payload bölümünden en son payload'ı deneyin veya PS5'in kendi Debug Settings panelinden kurun.",
+err_install_2101:
+  "Aynı içerik için daha önceki bir indirme hâlâ PS5'te kuyrukta. PS5'in bildirim panelini açın, temizleyin, sonra kurulumu tekrar deneyin.",
+err_install_80b2_generic:
+  "PS5'in PlayGo alt sistemi kurulumu bir 0x80B2_xxxx hatasıyla reddetti. Bu, kurulum getirme yoludur, pkg ayrıştırıcısı değil — dosyanız büyük olasılıkla sorunsuzdur. En son payload'ı göndermeyi deneyin (Connection → Send payload); yeni ShellUI-RPC kurulum yolu en yaygın 0x80B2 reddetme sınıfını atlar.",
+err_bgft_not_loadable:
+  "PS5 ürün yazılımınız Sony'nin BGFT yükleyicisini ps5upload'ın kullanabileceği bir şekilde sunmuyor. En son birlikte gelen payload'ı gönderin (Connection → Send payload) — daha fazla kütüphane yolu ve sembol varyantı dener. Yine başarısız olursa, bunun yerine FTP + Library → Register ile kurun; bu ürün yazılımında .pkg-via-BGFT mevcut değildir.",
+err_install_enoent_dlc:
+  "Bu bir DLC pkg'si gibi görünüyor (content_id {contentId}). Sony'nin yükleyicisi DLC'den ÖNCE temel oyunun ({baseTitle}) kurulu olmasını gerektirir, çünkü kurulum temel oyunun app_home'undan meta veri okur. Önce {baseTitle} kurun, sonra bu DLC'yi tekrar deneyin. 0x80020002, çekirdeğin temel oyun referansını izlemeye çalıştığında \"böyle bir dosya yok\" raporu vermesidir — DLC pkg'nizle ilgili bir sorun değil.",
+err_install_enoent_generic:
+  "Sony'nin yükleyicisi kurulum sırasında ihtiyaç duyduğu bir dosyayı açamadı (çekirdek hatası 0x80020002 = ENOENT). Bu bir DLC pkg'siyse, temel oyun henüz kurulu değil — önce temeli kurun. Aksi takdirde hazırlama dosyası yükleme ile kurulum arasında silinmiş olabilir; kurulumu bir kez tekrar deneyin. Başarısız olmaya devam ederse, pkg'yi FTP ile /user/data/ps5upload/pkg_temp/ konumuna elle yükleyip Library → Register ile kurun.",
+err_install_defrag:
+  "PS5'inizin birleştirilmiş boş alana ihtiyacı var. Settings → Storage → yer açın, sonra tekrar deneyin.",
+err_install_leftover_download:
+  "PS5 bildirimlerinde kalıntı indirme. PS5'in bildirim panelini açın (PS düğmesi → Notifications → Downloads), takılı girişi temizleyin, sonra kurulumu tekrar deneyin.",
+err_install_drm_mismatch:
+  "DRM uyuşmazlığı — bu PKG bu konsol için geçerli değil. Pkg farklı bir hesap veya bölge için oluşturulmuş.",
+err_install_entitlement:
+  "PKG hak kontrolü başarısız oldu. Oturum açan PSN hesabı bu başlığa sahip değil veya bölge eşleşmiyor.",
+err_install_no_free_space:
+  "PS5'te boş alan kalmadı. Settings → Storage → yer açın, sonra tekrar deneyin.",
+err_install_parental:
+  "Başlık PS5 ebeveyn / içerik denetimleri tarafından engellendi. Tekrar denemeden önce kullanıcının kısıtlamalarını PS5 Settings → Users and Accounts → Family Management bölümünden ayarlayın.",
+err_install_esrch:
+  "PS5 kurulum daemon'u işlemimize erişemedi (ESRCH = böyle bir işlem yok). Genellikle payload'ın henüz yetki yükseltmediği anlamına gelir — kstuff/etaHEN yüklü olmayabilir. Payload'ı Connection → Send payload bölümünden yeniden gönderin, sonra tekrar deneyin.",
+err_install_bgft_generic:
+  "Sony'nin kurulum servisi isteği {code} ile reddetti. Yaygın nedenler: takılı önceki kurulum (PS5 bildirimleri → Downloads → temizleyin), yanlış hesap/bölge veya yer yetersizliği. Bunların hiçbiri geçerli değilse, tanı panelini kaydedin ve bir hata bildirin.",
+err_payload_rejected: "PS5 isteği reddetti: {reason}",
 };
 
 export default tr;

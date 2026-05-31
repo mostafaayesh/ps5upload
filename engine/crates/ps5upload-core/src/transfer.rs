@@ -246,6 +246,102 @@ mod path_tests {
     }
 }
 
+/// Hard cap on a single destination path in a multi-file manifest, mirroring
+/// the on-console payload. `build_manifest_index` in `payload/src/runtime.c`
+/// rejects any `files[].path` whose JSON-encoded span between the quotes is
+/// `>= 512` and copies paths into fixed `char[512]` buffers, so this is a
+/// protocol limit rather than a tunable — it stays a hard cap even on the
+/// brace-safe payload.
+const MAX_PS5_MANIFEST_PATH_LEN: usize = 512;
+
+/// Byte length of `s` as it appears *inside the quotes* of its JSON encoding —
+/// i.e. exactly the `plen` the payload measures. JSON escaping (`"`, `\`,
+/// control chars) only grows this beyond the raw UTF-8 length, so measuring the
+/// escaped form is what makes the guard agree with the payload for paths that
+/// contain escapable characters (not just plain ASCII paths).
+fn json_encoded_inner_len(s: &str) -> usize {
+    // `to_string` of a `&str` never fails; the result is `"…"`, so subtract the
+    // two surrounding quotes. Fall back to the raw length on the impossible
+    // error path rather than under-counting.
+    serde_json::to_string(s)
+        .map(|q| q.len().saturating_sub(2))
+        .unwrap_or_else(|_| s.len())
+}
+
+/// Pre-flight the manifest so an over-long destination path fails here with a
+/// clear, file-named error instead of as the opaque `manifest_invalid` the
+/// payload returns at BEGIN_TX. Only the length is checked: other "unusual
+/// name" cases (e.g. a `}` in a filename) are handled by the brace-safe
+/// payload parser, so we deliberately do NOT reject them here — doing so would
+/// block names the current payload accepts.
+fn ensure_manifest_paths_fit(files: &[ManifestFile]) -> Result<()> {
+    for f in files {
+        let encoded = json_encoded_inner_len(&f.path);
+        if encoded >= MAX_PS5_MANIFEST_PATH_LEN {
+            bail!(
+                "destination path is too long for the PS5 ({} bytes encoded, limit {}): {}",
+                encoded,
+                MAX_PS5_MANIFEST_PATH_LEN - 1,
+                f.path
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod manifest_path_guard_tests {
+    use super::*;
+
+    fn mf(path: &str) -> ManifestFile {
+        ManifestFile {
+            path: path.to_string(),
+            size: 0,
+            shard_start: 1,
+            shard_count: 1,
+        }
+    }
+
+    #[test]
+    fn accepts_normal_and_brace_paths() {
+        // A '}' in the name is fine — the payload parser handles it; the
+        // guard must not reject it.
+        let ok = [mf("/data/game/eboot.bin"), mf("/data/My}Game/x.bin")];
+        assert!(ensure_manifest_paths_fit(&ok).is_ok());
+    }
+
+    #[test]
+    fn rejects_overlong_path_naming_the_file() {
+        let long = format!("/data/{}", "a".repeat(MAX_PS5_MANIFEST_PATH_LEN));
+        let files = [mf("/data/ok.bin"), mf(&long)];
+        let err = ensure_manifest_paths_fit(&files).unwrap_err().to_string();
+        assert!(err.contains("too long"), "got: {err}");
+        assert!(err.contains(&long), "error should name the offending path");
+    }
+
+    #[test]
+    fn boundary_511_ok_512_rejected() {
+        // 511 bytes total -> accepted; 512 -> rejected (matches payload `>= 512`).
+        let p511 = "/".to_string() + &"a".repeat(510);
+        assert_eq!(p511.len(), 511);
+        assert!(ensure_manifest_paths_fit(&[mf(&p511)]).is_ok());
+        let p512 = "/".to_string() + &"a".repeat(511);
+        assert_eq!(p512.len(), 512);
+        assert!(ensure_manifest_paths_fit(&[mf(&p512)]).is_err());
+    }
+
+    #[test]
+    fn measures_json_escaped_length_not_raw() {
+        // A path whose raw length is < 512 but whose JSON-escaped span is
+        // >= 512 must be rejected — that's what the payload actually measures.
+        // Backslash escapes to two bytes (\\), so 300 backslashes = 600 encoded.
+        let escapey = "/".to_string() + &"\\".repeat(300);
+        assert!(escapey.len() < MAX_PS5_MANIFEST_PATH_LEN);
+        assert!(json_encoded_inner_len(&escapey) >= MAX_PS5_MANIFEST_PATH_LEN);
+        assert!(ensure_manifest_paths_fit(&[mf(&escapey)]).is_err());
+    }
+}
+
 fn tx_meta_buf(tx_id: [u8; 16], kind: u32, extra: &[u8]) -> Vec<u8> {
     tx_meta_buf_flags(tx_id, kind, 0, extra)
 }
@@ -1571,6 +1667,7 @@ pub fn transfer_dir_with_flags(
         })
         .collect();
 
+    ensure_manifest_paths_fit(&manifest_files)?;
     let manifest_json = serde_json::to_vec(&Manifest {
         dest_root: dest_root.to_string(),
         file_count,
@@ -1783,6 +1880,7 @@ pub fn transfer_file_list_with_flags(
         })
         .collect();
 
+    ensure_manifest_paths_fit(&manifest_files)?;
     let manifest_json = serde_json::to_vec(&Manifest {
         dest_root: dest_root.to_string(),
         file_count,
@@ -2759,6 +2857,7 @@ pub fn transfer_zip_with_opts(
     let total_shards = next_seq - 1;
     let file_count = planned_files.len() as u64;
 
+    ensure_manifest_paths_fit(&planned_files)?;
     let manifest_json = serde_json::to_vec(&Manifest {
         dest_root: dest_root.to_string(),
         file_count,

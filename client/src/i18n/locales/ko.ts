@@ -1247,6 +1247,170 @@ nav_close_aria: "탐색 메뉴 닫기",
 notifications: "토",
 os_notify_label: "시스템 알림Comment",
 os_notify_hint: "앱 내 알림 (전송 완료, 오류 등) 을 운영 체제의 알림 센터로 미러링하지만 앱이 백그라운드에 있는 경우에만 미러링하므로 두 번 알림을 받지 않습니다. 알림 권한을 부여하라는 메시지가 표시될 수 있습니다.",
+
+// 패키지 라이브러리 (Install Package 화면 — DPI 전용)
+"pkglib.install": "설치",
+"pkglib.reinstall": "재설치",
+"pkglib.delete": "삭제",
+"pkglib.installing": "설치 중…",
+"pkglib.uploading": "PS5로 업로드 중…",
+"pkglib.badge.installed": "설치됨",
+"pkglib.install.busyHint": "현재 진행 중인 업로드/설치가 끝날 때까지 기다리세요",
+"pkglib.add.installingHint": "현재 진행 중인 설치가 끝날 때까지 기다리세요",
+"pkglib.note.title": "설치는 DPI 데몬을 통해 진행됩니다",
+"pkglib.note.body": "게임 pkg에 가장 깔끔한 경로입니다. 설치 시 ps5upload 페이로드를 잠시 DPI 로더로 교체했다가 완료되면 복원하므로, 연결이 몇 초간 끊길 수 있습니다. 게임 pkg에서 가장 잘 작동합니다. 일부 시스템(NPXS) pkg는 여전히 PS5 자체의 Settings → Package Installer가 필요할 수 있습니다.",
+"pkglib.error": "문제가 발생했습니다",
+"pkglib.empty.title": "아직 업로드된 패키지 없음",
+"pkglib.empty.drop": "놓아서 업로드",
+"pkglib.empty.body": ".pkg를 추가하여 PS5로 업로드한 다음 여기서 설치하세요. 창에 .pkg 파일을 드래그할 수도 있습니다.",
+"pkglib.delete.confirmTitle": "{name}을(를) 삭제하시겠습니까?",
+"pkglib.delete.confirmBody": "업로드된 .pkg({size})를 PS5에서 영구적으로 제거합니다. 이미 설치된 게임 복사본은 그대로 유지되며, 다시 설치하려면 .pkg를 다시 업로드하기만 하면 됩니다.",
+"pkglib.footer.count": "패키지 {n}개",
+"pkglib.footer.size": "PS5에서 {size}",
+
+// 설치된 앱 화면
+installed_apps: "설치된 앱",
+installed_apps_title: "설치된 앱",
+installed_apps_subtitle:
+  "PS5에 설치된 모든 항목을 설치 경로별로 그룹화하여 표시합니다. 제거하면 타이틀이 삭제되며, 마운트된 타이틀의 경우 마운트도 해제됩니다.",
+installed_error_title: "설치된 앱을 읽을 수 없습니다",
+installed_no_host_title: "연결되지 않음",
+installed_no_host_body: "설치된 앱을 보려면 Connection 탭에서 PS5에 연결하세요.",
+installed_loading: "설치된 타이틀을 읽는 중…",
+installed_loading_hint: "PS5의 /user/appmeta를 열거하는 중입니다.",
+installed_empty_title: "설치된 타이틀이 없습니다",
+installed_empty_body:
+  "/user/appmeta에 아무것도 없습니다. 먼저 패키지를 설치하거나 게임을 등록하세요.",
+installed_registered_unavailable:
+  "페이로드에서 마운트/등록된 목록을 읽을 수 없습니다 — 모든 항목이 '패키지에서 설치됨' 아래에 표시됩니다. 그룹화를 복구하려면 페이로드를 다시 로드하세요.",
+installed_section_pkg: "패키지에서 설치됨",
+installed_section_pkg_hint:
+  "Sony의 설치 프로그램이 .pkg에서 설치했거나 콘솔에 기본 포함된 항목입니다.",
+installed_section_registered: "PS5Upload가 마운트하고 등록함",
+installed_section_registered_hint:
+  "게임 폴더, .exfat/.ffpkg 디스크 이미지 또는 업로드에서 등록된 항목입니다. 제거하면 마운트가 해제되며, 원본 파일은 유지됩니다.",
+installed_badge_system: "시스템",
+installed_badge_image: "디스크 이미지",
+installed_badge_folder: "폴더",
+installed_badge_pkg: "패키지",
+installed_uninstall: "제거",
+installed_uninstalling: "제거 중…",
+installed_uninstall_confirm_title: "{name}을(를) 제거하시겠습니까?",
+installed_uninstall_confirm_system:
+  "{id}은(는) 시스템 앱입니다. 제거하면 콘솔이 불안정해질 수 있으며 복구하려면 재설치가 필요할 수 있습니다. 이 패키지가 정확히 무엇인지 알고 있을 때만 계속하세요.",
+installed_uninstall_confirm_registered:
+  "타이틀의 마운트를 해제하고 홈 화면에서 제거합니다. 디스크의 원본 파일/이미지는 삭제되지 않습니다.",
+installed_uninstall_confirm_pkg:
+  "PS5에서 설치된 타이틀을 제거합니다. 나중에 패키지에서 다시 설치할 수 있습니다.",
+
+// 사람이 읽기 쉽게 정리한 오류 문구 — lib/humanizeError.ts에서 표시됩니다. {placeholders}는
+// 런타임에 치환되므로 번역 시 그대로 유지하세요.
+err_unmount_busy:
+  "마운트를 해제할 수 없습니다: 이 이미지 안의 게임이 현재 PS5에서 실행 중입니다. 게임을 종료한 뒤(PS Home → 게임 닫기) 다시 시도하세요.",
+err_unmount_permission:
+  "마운트를 해제할 수 없습니다: 커널이 EACCES/EPERM으로 거부했습니다. 페이로드가 root 권한을 잃었을 수 있습니다 — Connection → 페이로드 전송에서 다시 로드하세요.",
+err_npxs_mgmt_disconnect:
+  "설치 도중 PS5 관리 서비스가 응답을 멈췄습니다. 이것은 알려진 NPXS 시스템 pkg 실패 양상입니다: Sony는 등록은 받아들이지만 `sceAppInstUtilInstallByPackage`는 시스템 패치(스토어 업데이트, Settings 등)용으로 설계되지 않았습니다. PS5는 보통 1~2분 안에 또는 재부팅 후 스스로 복구되지만, ps5upload로는 이 pkg를 설치할 수 없습니다. 시스템 pkg는 PS5 본체의 Settings → Debug Settings → Game → Package Installer를 사용하세요.",
+err_network_drop:
+  "PS5가 응답을 멈췄습니다. 충돌했거나 절전 모드에 들어갔을 수 있습니다. 페이로드를 다시 로드한 뒤(Connection → 페이로드 전송) 다시 시도하세요.",
+err_connect_mgmt:
+  "PS5의 관리 서비스에 연결할 수 없습니다. 페이로드가 로드되어 있는지 확인하세요(Connection → 페이로드 전송).",
+err_connect_transfer:
+  "파일 전송을 위해 PS5에 연결할 수 없습니다. 페이로드가 로드되어 있는지 확인하세요(Connection → 페이로드 전송).",
+err_manifest_invalid:
+  "PS5가 업로드할 파일 목록을 거부했습니다. 보통 파일이나 폴더 이름에 특이한 문자(주로 } )가 있거나 경로가 너무 길 때 발생합니다. 최신 페이로드를 다시 로드하거나(Connection → 페이로드 전송) — 해당 문자 문제를 해결합니다 — 문제가 되는 파일이나 폴더의 이름을 바꾸거나 줄인 뒤 다시 시도하세요.",
+err_dest_write_refused:
+  "PS5가 이 대상에 쓰기를 거부했습니다. 다른 스토리지 볼륨이나 대상 폴더를 시도하세요.",
+err_dest_full:
+  "해당 대상의 PS5 스토리지가 가득 찼습니다. 다른 볼륨을 선택하거나 공간을 확보하세요.",
+err_volumes_unavailable:
+  "이번에는 PS5가 볼륨 목록을 반환하지 않았습니다 — 잠시 후 다시 시도하세요. 계속 실패하면 Connection → 페이로드 전송에서 페이로드를 다시 로드하세요.",
+err_sqlite_unavailable:
+  "이 PS5 펌웨어에서는 타이틀 등록 조회를 사용할 수 없습니다. 라이브러리 보기의 나머지 기능은 정상 작동합니다.",
+err_service_unavailable:
+  "이 작업에는 현재 펌웨어에서 제공되지 않는 Sony 서비스가 필요합니다. 나머지 모든 기능은 정상 작동합니다.",
+err_launch_no_profile:
+  "PS5에 선택된 프로필이 없습니다. PS5 홈 화면에서 사용자 프로필을 선택한 뒤 다시 실행해 보세요.",
+err_launch_not_registered:
+  "PS5에서 타이틀이 등록되지 않았다고 합니다. 먼저 등록을 클릭하거나, 이미 추가되어 있었다면 등록 해제 후 다시 등록하세요.",
+err_launch_busy:
+  "PS5 런처가 다른 타이틀로 사용 중입니다. PS5에서 실행 중인 게임을 닫고 다시 실행해 보세요.",
+err_launch_corrupt:
+  "PS5에서 이 타이틀의 데이터가 손상되었다고 합니다. eboot.bin 또는 sce_sys 폴더가 불완전할 수 있습니다 — 게임을 다시 업로드하세요.",
+err_launch_unknown:
+  "PS5 런처가 0x{code}를 반환했습니다. 타이틀이 제거되었거나 설치가 완료되지 않았을 수 있습니다 — Library 탭에서 다시 등록을 시도하세요.",
+err_launch_title_id_invalid:
+  "Title ID가 올바르지 않은 것 같습니다. 게임의 PARAM.SFO에 CUSA12345 또는 PPSA01234 같은 title_id가 있는지 확인하세요.",
+err_mount_not_a_file:
+  "PS5가 대상에서 해당 파일을 찾을 수 없습니다. 업로드가 완료되지 않았을 수 있습니다 — 잠시 기다린 뒤 다시 시도하세요.",
+err_mount_unsupported_format:
+  "PS5가 이 파일을 마운트 가능한 디스크 이미지로 인식하지 못합니다. .ffpkg(UFS), .exfat, .ffpfs만 지원됩니다.",
+err_mount_source_unstable:
+  "PS5가 파일이 아직 기록 중인 것을 감지했습니다. 업로드가 끝날 때까지 5초 정도 기다린 뒤 다시 마운트를 클릭하세요.",
+err_mount_path_not_allowed:
+  "PS5가 해당 경로에서의 마운트를 허용하지 않습니다. /data, /user, /mnt/ext*, /mnt/usb*, 또는 /mnt/ps5upload를 사용하세요.",
+err_mount_attach_failed:
+  "PS5가 이미지를 블록 디바이스(LVD 또는 md)에 연결하지 못했습니다. 이미지가 손상되었을 수 있습니다 — 다시 업로드하거나 이미지를 다시 만드세요.",
+err_mount_dev_node_missing:
+  "PS5가 이미지를 연결했지만 디바이스 노드가 나타나지 않았습니다. PS5를 재부팅하고 페이로드를 다시 로드한 뒤 다시 시도하세요.",
+err_mount_nmount_eperm:
+  "PS5 커널이 이 마운트 지점을 거부했습니다(작업이 허용되지 않음). 여기서는 .exfat 파일의 위치가 중요하지 않습니다 — /data/homebrew/<name> 또는 /mnt/ps5upload/<name> 아래에 마운트해 보세요. 일부 펌웨어에서는 USB/ext 하위 경로가 커널 정책으로 차단됩니다.",
+err_mount_nmount_other:
+  "PS5 커널이 마운트를 거부했습니다: {reason}. 다른 마운트 지점을 시도하세요(예: /data 또는 /mnt/ps5upload 아래) — 이미지 자체에는 문제가 없습니다.",
+err_unknown_reason: "알 수 없는 이유",
+err_appinst_not_initialized:
+  "Sony의 설치 서브시스템이 아직 초기화되지 않았습니다 — 최신 번들 페이로드를 전송하여(Connection → 페이로드 전송) 2.2.46+의 지연 초기화가 실행되도록 하세요. 오류가 계속되면 이 펌웨어에서는 우리 프로세스 컨텍스트에서 설치 API에 접근할 수 없습니다. FTP 업로드 + Library → 등록이 대안입니다.",
+err_appinst_nospace:
+  "이 설치에 필요한 여유 공간이 PS5에 부족합니다. Settings → Storage → 공간 확보 후 다시 시도하세요.",
+err_appinst_drm_type:
+  "Sony의 설치 프로그램이 이 PKG의 DRM 유형을 거부했습니다. 대신 Library → 'DRM 패치' 등록 흐름을 시도하세요 — 설치 전에 applicationDrmType을 'standard'로 다시 작성합니다.",
+err_appinst_content_type:
+  "Sony의 설치 프로그램이 현재 펌웨어에서 이 PKG의 콘텐츠 유형을 받아들이지 않습니다(예: 일부 패치 pkg / DLC 형식). 보유하고 있다면 기본 게임의 PKG는 정상 설치될 것입니다.",
+err_appinst_busy:
+  "Sony의 설치 프로그램이 다른 설치나 완료되지 않은 BGFT 작업으로 사용 중입니다. 잠시 기다리거나, PS5의 알림에서 멈춘 다운로드를 정리한 뒤 다시 시도하세요.",
+err_already_installed:
+  "이 타이틀은 이미 설치되어 있습니다. 다시 설치하려면 먼저 제거하세요.",
+err_appinst_oom:
+  "Sony의 설치 프로그램이 설치 도중 메모리가 부족했습니다. PS5를 재부팅하고 페이로드를 다시 로드한 뒤 다시 시도하세요.",
+err_install_eagain:
+  "Sony의 설치 프로그램이 사용 중입니다 — 오류 0x80020023(EAGAIN). 동일한 content_id의 이전 설치가 아직 PS5에 대기 중입니다. PS5에서 Settings → Notifications를 열고 보류 중인 스토어 관련 항목을 모두 해제하거나, PS5를 재부팅하여 오래된 설치 상태를 정리하세요. 그런 다음 다시 시도하세요.",
+err_install_dup_register:
+  "Sony의 설치 프로그램이 이 등록을 0x80B21106으로 거부했습니다 — 동일한 content_id의 이전 설치가 아직 PS5에서 대기/실행 중일 가능성이 높습니다. PS5에서 Settings → Notifications → Downloads를 확인하여 이미 설치 중인지 확인하세요. 정말로 다시 등록하려면(예: 이전 시도가 조용히 실패한 경우) 먼저 PS5를 재부팅하세요. 시작을 반복해서 클릭하지 마세요 — 재시도할 때마다 Sony의 응답만 확인할 뿐입니다.",
+err_install_http_fetch:
+  "PS5가 설치를 위한 HTTP 가져오기 시도를 거부했습니다(0x80B22404). 이것은 pkg 형식의 문제가 아닙니다 — Sony의 설치 프로그램이 파일의 바이트를 전혀 읽지 않았습니다. 프로세스 컨텍스트 문제입니다: Sony의 PlayGo는 설치 측 HTTP 가져오기에 대해 ShellUI 프로세스만 허용하고 우리 것은 거부합니다. 2.2.52 빌드에는 ShellUI 프로세스를 통해 라우팅되는 새로운 ShellUI-RPC 설치 경로가 있어 동일한 가져오기가 성공합니다. 이 오류가 계속 보인다면 실행 중인 페이로드가 이전 버전입니다 — Connection → 페이로드 전송으로 최신 페이로드를 전송하고 설치를 다시 시작하면 진단 패널에 register_path=shellui-rpc가 표시될 것입니다.",
+err_install_116f_npxs:
+  "PS5 설치 프로그램이 이 시스템 pkg를 거부했습니다(0x80B2116F). Sony의 설치 프로그램은 시스템 패치(스토어 업데이트, Settings)를 완료할 수 없습니다 — 이런 경우 PS5 본체의 Settings → Debug Settings → Game → Package Installer를 사용하세요.",
+err_install_116f_game:
+  "PS5 설치 프로그램이 pkg를 거부했습니다(0x80B2116F). FW 9.60에서는 이 펌웨어 포인트에 우리 페이로드가 사용하는 BGFT 레지스터가 없습니다. 최신 페이로드를 전송해 보고(Connection → 페이로드 전송), 그래도 실패하면 PS5 자체의 Debug Settings → Game → Package Installer로 설치해야 할 수 있습니다.",
+err_install_1401:
+  "PS5의 ShellUI 설치 경로가 요청을 거부했습니다(0x80B21401). 보통 펌웨어 포인트에 우리가 의존하는 BGFT 레지스터가 없는 FW 9.60에서 다른 계층 실패와 함께 나타납니다. Connection → 페이로드 전송에서 최신 페이로드를 시도하거나 PS5 자체의 Debug Settings 패널로 설치하세요.",
+err_install_2101:
+  "동일한 콘텐츠에 대한 이전 다운로드가 아직 PS5에 대기 중입니다. PS5의 알림 패널을 열어 정리한 뒤 설치를 다시 시도하세요.",
+err_install_80b2_generic:
+  "PS5의 PlayGo 서브시스템이 0x80B2_xxxx 오류로 설치를 거부했습니다. 이것은 설치 가져오기 경로이며 pkg 파서가 아니므로 파일 자체에는 문제가 없을 것입니다. 최신 페이로드를 전송해 보세요(Connection → 페이로드 전송). 새로운 ShellUI-RPC 설치 경로는 가장 흔한 0x80B2 거부 유형을 우회합니다.",
+err_bgft_not_loadable:
+  "이 PS5 펌웨어는 ps5upload가 사용할 수 있는 방식으로 Sony의 BGFT 설치 프로그램을 제공하지 않습니다. 최신 번들 페이로드를 전송하세요(Connection → 페이로드 전송) — 더 많은 라이브러리 경로와 심볼 변형을 시도합니다. 그래도 실패하면 FTP + Library → 등록으로 설치하세요. 이 펌웨어에서는 BGFT를 통한 .pkg 설치를 사용할 수 없습니다.",
+err_install_enoent_dlc:
+  "이것은 DLC pkg(content_id {contentId})로 보입니다. Sony의 설치 프로그램은 DLC 설치 시 기본 게임의 app_home에서 메타데이터를 읽기 때문에, DLC보다 먼저 기본 게임({baseTitle})이 설치되어 있어야 합니다. 먼저 {baseTitle}을(를) 설치한 뒤 이 DLC를 다시 시도하세요. 0x80020002는 기본 게임 참조를 따라가려 할 때 커널이 \"해당 파일 없음\"을 보고한 것이며, DLC pkg의 문제가 아닙니다.",
+err_install_enoent_generic:
+  "Sony의 설치 프로그램이 설치 중 필요한 파일을 열 수 없었습니다(커널 오류 0x80020002 = ENOENT). DLC pkg라면 기본 게임이 아직 설치되지 않은 것입니다 — 먼저 기본 게임을 설치하세요. 그렇지 않다면 업로드와 설치 사이에 스테이징 파일이 삭제되었을 수 있습니다. 설치를 한 번 다시 시도하세요. 계속 실패하면 pkg를 /user/data/ps5upload/pkg_temp/에 수동으로 FTP 업로드한 뒤 Library → 등록으로 설치하세요.",
+err_install_defrag:
+  "PS5에 조각 모음이 된 여유 공간이 필요합니다. Settings → Storage → 공간 확보 후 다시 시도하세요.",
+err_install_leftover_download:
+  "PS5 알림에 남아 있는 다운로드가 있습니다. PS5의 알림 패널(PS 버튼 → 알림 → 다운로드)을 열어 멈춰 있는 항목을 정리한 뒤 설치를 다시 시도하세요.",
+err_install_drm_mismatch:
+  "DRM 불일치 — 이 PKG는 이 콘솔에 유효하지 않습니다. 이 pkg는 다른 계정이나 지역용으로 만들어졌습니다.",
+err_install_entitlement:
+  "PKG 엔타이틀먼트 검사에 실패했습니다. 로그인된 PSN 계정이 이 타이틀을 소유하고 있지 않거나 지역이 일치하지 않습니다.",
+err_install_no_free_space:
+  "PS5의 여유 공간이 부족합니다. Settings → Storage → 공간 확보 후 다시 시도하세요.",
+err_install_parental:
+  "PS5 자녀 보호 / 콘텐츠 제어로 타이틀이 차단되었습니다. 다시 시도하기 전에 PS5 Settings → Users and Accounts → Family Management에서 사용자 제한을 조정하세요.",
+err_install_esrch:
+  "PS5 설치 데몬이 우리 프로세스에 도달하지 못했습니다(ESRCH = 해당 프로세스 없음). 보통 페이로드가 아직 권한을 상승시키지 못했다는 뜻입니다 — kstuff/etaHEN이 로드되지 않았을 수 있습니다. Connection → 페이로드 전송에서 페이로드를 다시 보낸 뒤 다시 시도하세요.",
+err_install_bgft_generic:
+  "Sony의 설치 서비스가 {code}(으)로 요청을 거부했습니다. 흔한 원인: 멈춰 있는 이전 설치(PS5 알림 → Downloads → 정리), 잘못된 계정/지역, 또는 공간 부족. 해당하는 것이 없으면 진단 패널을 캡처하여 버그를 신고하세요.",
+err_payload_rejected: "PS5가 요청을 거부했습니다: {reason}",
 };
 
 export default ko;

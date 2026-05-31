@@ -48,6 +48,23 @@ describe("humanizePs5Error", () => {
     });
   });
 
+  describe("manifest_invalid (multi-file BEGIN_TX rejection)", () => {
+    it("maps the raw BeginTx rejection to an actionable hint", () => {
+      const raw = "BeginTx rejected (Error): manifest_invalid";
+      const out = humanizePs5Error(raw);
+      expect(out).not.toBe(raw);
+      expect(out).toMatch(/rejected the list of files/i);
+      expect(out).toMatch(/Send payload|rename/i);
+    });
+    it("passes the engine's pre-flight length error through verbatim", () => {
+      // The engine names the offending file; that copy is already
+      // readable, so the humanizer must not swallow it.
+      const raw =
+        "destination path is too long for the PS5 (640 bytes, limit 511): /data/game/very/long/path";
+      expect(humanizePs5Error(raw)).toBe(raw);
+    });
+  });
+
   describe("filesystem errors", () => {
     it("maps EACCES → destination-write hint", () => {
       expect(humanizePs5Error("EACCES: permission denied on /data")).toMatch(
