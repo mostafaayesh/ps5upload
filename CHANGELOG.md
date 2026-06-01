@@ -4,6 +4,20 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.23.7
+
+- **Queued uploads are more reliable.** Before running a queue, the app now
+  makes sure your PS5 is on the matching helper, and it paces jobs so a long
+  list no longer crashes the helper partway through.
+- **Install and upload now take turns instead of colliding.** Starting an
+  install (or adding a .pkg) while something is uploading no longer drops the
+  connection — it waits in line and starts automatically when the current
+  transfer finishes, and the screen tells you it's waiting (with a Cancel
+  option). The transfer also no longer needlessly blips during a package
+  install.
+
+---
+
 ## 2.23.6
 
 - **No more phantom crash reports during uploads.** A harmless browser-engine

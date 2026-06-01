@@ -48,6 +48,7 @@ import FfpkgInspectorPanel from "./FfpkgInspectorPanel";
 import FolderDiffPanel from "./FolderDiffPanel";
 import { useUploadSettingsStore } from "../../state/uploadSettings";
 import { useUploadQueueStore } from "../../state/uploadQueue";
+import { usePkgLibrary } from "../../state/pkgLibrary";
 import { useRecentHostMetricsStore } from "../../state/recentHostMetrics";
 import {
   computeUploadEta,
@@ -587,8 +588,19 @@ function Step2Options(props: {
   // buttons while the queue runs; QueuePanel does the symmetric
   // disable of its Start button while a one-shot is in flight.
   const queueRunning = useUploadQueueStore((s) => s.running);
+  // An install streams the DPI loader to the single-payload loader, which
+  // replaces the payload that owns the transfer port — so starting an upload
+  // mid-install would just fail (or race the payload swap). Disable while an
+  // install is running, symmetric to InstallPackage disabling install during
+  // an upload.
+  const installing = usePkgLibrary((s) => s.installing);
   const uploadDisabled =
-    detecting || inFlight || preflightBusy || queueRunning || !!detectError;
+    detecting ||
+    inFlight ||
+    preflightBusy ||
+    queueRunning ||
+    installing ||
+    !!detectError;
 
   return (
     <>

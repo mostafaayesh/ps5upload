@@ -74,7 +74,8 @@ function PkgRow({
   const tr = useTr();
   const uploading = entry.status === "uploading";
   const installingThis = entry.status === "installing";
-  const busy = uploading || installingThis;
+  const queued = entry.status === "queued";
+  const busy = uploading || installingThis || queued;
   const pct =
     uploading && entry.totalBytes
       ? Math.min(100, Math.round(((entry.bytes ?? 0) / entry.totalBytes) * 100))
@@ -120,7 +121,7 @@ function PkgRow({
                 installDisabled
                   ? tr(
                       "pkglib.install.busyHint",
-                      "Wait for the current upload/install to finish",
+                      "Installing replaces the PS5 payload, which would interrupt an active upload. Wait for the current upload (or install) to finish first.",
                     )
                   : undefined
               }
@@ -145,6 +146,16 @@ function PkgRow({
           <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--color-accent)]">
             <Loader2 size={14} className="animate-spin" />
             {tr("pkglib.installing", "Installing…")}
+          </div>
+        )}
+        {queued && (
+          <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--color-muted)]">
+            <Loader2 size={14} className="animate-spin" />
+            {tr(
+              "pkglib.queued",
+              undefined,
+              "Queued — waiting for the current transfer",
+            )}
           </div>
         )}
       </div>
@@ -198,9 +209,11 @@ export default function InstallPackageScreen() {
   const loading = usePkgLibrary((s) => s.loading);
   const error = usePkgLibrary((s) => s.error);
   const installing = usePkgLibrary((s) => s.installing);
+  const busyNotice = usePkgLibrary((s) => s.busyNotice);
   const refresh = usePkgLibrary((s) => s.refresh);
   const addAndUpload = usePkgLibrary((s) => s.addAndUpload);
   const install = usePkgLibrary((s) => s.install);
+  const cancelPendingInstall = usePkgLibrary((s) => s.cancelPendingInstall);
   const remove = usePkgLibrary((s) => s.remove);
   const { confirm, dialog } = useConfirm();
 
@@ -353,13 +366,13 @@ export default function InstallPackageScreen() {
     [entries],
   );
   const sorted = entries; // store already sorts by title
-  // Installing swaps the main payload for the DPI loader, which owns the
-  // transfer port — so an install MUST NOT run while a package is still
-  // uploading (it would tear down the in-flight transfer), and Add is
-  // blocked while installing for the same reason. Uploads themselves can
-  // run concurrently.
-  const anyUploading = entries.some((e) => e.status === "uploading");
-  const installBlocked = installing || anyUploading;
+  // Installing swaps the payload out (it owns the transfer port :9113), so it
+  // can't run concurrently with an upload. Rather than block the button, the
+  // store QUEUES an install behind any active transfer and surfaces a notice
+  // (see `busyNotice` / `install()` in pkgLibrary). So the only thing that
+  // disables the Install button here is another install already in progress
+  // (or queued) — clicking during an upload is allowed and just waits.
+  const installBlocked = installing;
 
   return (
     <div className="p-6">
@@ -435,6 +448,21 @@ export default function InstallPackageScreen() {
       {error && (
         <div className="mb-4">
           <WarningCard title={tr("pkglib.error", "Something went wrong")} detail={error} />
+        </div>
+      )}
+
+      {busyNotice && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-4 py-3 text-sm">
+          <div className="flex items-start gap-2">
+            <Loader2
+              size={14}
+              className="mt-0.5 shrink-0 animate-spin text-[var(--color-accent)]"
+            />
+            <span>{busyNotice}</span>
+          </div>
+          <Button variant="secondary" size="sm" onClick={cancelPendingInstall}>
+            {tr("cancel", undefined, "Cancel")}
+          </Button>
         </div>
       )}
 

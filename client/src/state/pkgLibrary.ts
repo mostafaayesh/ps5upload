@@ -5,6 +5,8 @@ import { fsListDir, fsDelete } from "../api/ps5";
 import { hostOf, mgmtAddr, transferAddr } from "../lib/addr";
 import { humanizePs5Error } from "../lib/humanizeError";
 import { stagingBasename } from "../lib/pkgStagingPath";
+import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
+import { transferScreenBusy } from "../lib/ps5Transfers";
 
 /**
  * Package Library — the model behind the redesigned Install Package screen.
@@ -27,7 +29,7 @@ import { stagingBasename } from "../lib/pkgStagingPath";
  */
 export const PKG_LIBRARY_DIR = "/user/data/ps5upload/pkg_library";
 
-export type PkgStatus = "idle" | "uploading" | "installing";
+export type PkgStatus = "idle" | "queued" | "uploading" | "installing";
 
 export interface PkgEntry {
   /** Filename on the PS5, e.g. `CUSA00207.pkg`. Unique within the dir. */
@@ -114,13 +116,20 @@ interface PkgLibraryState {
   entries: PkgEntry[];
   loading: boolean;
   error: string | null;
-  /** True while an install is mid-flight. Installs swap the payload in/out,
-   *  so the UI blocks refresh/other installs until it settles. */
+  /** True while an install is mid-flight (including the time it spends queued
+   *  behind an active upload). Installs swap the payload in/out, so the UI
+   *  blocks refresh/other installs until it settles. */
   installing: boolean;
+  /** Human-readable "what's happening" line shown while an install or .pkg
+   *  upload is QUEUED behind an active transfer (the PS5 can only do one at a
+   *  time). Null when nothing is waiting. */
+  busyNotice: string | null;
 
   refresh: (host: string) => Promise<void>;
   addAndUpload: (localPath: string, host: string) => Promise<void>;
   install: (path: string, host: string) => Promise<void>;
+  /** Abandon an install that's still waiting its turn behind an upload. */
+  cancelPendingInstall: () => void;
   remove: (path: string, host: string) => Promise<void>;
 }
 
@@ -154,6 +163,7 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
   loading: false,
   error: null,
   installing: false,
+  busyNotice: null,
 
   async refresh(host) {
     if (!host?.trim() || get().installing) return;
@@ -250,7 +260,18 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
       return;
     }
 
-    // 3. Optimistic uploading row.
+    // The transfer port (:9113) is single-client: another upload (from the
+    // Upload screen or another .pkg here) must finish before this one starts,
+    // or they collide on the port. `othersBusy` is true while any such
+    // transfer holds it.
+    const othersBusy = () =>
+      transferScreenBusy() ||
+      get().entries.some(
+        (e) => e.path !== destPath && e.status === "uploading",
+      );
+
+    // 3. Optimistic row — "queued" if it has to wait for the port, else
+    //    straight to "uploading".
     const optimistic: PkgEntry = {
       name: basename,
       path: destPath,
@@ -258,7 +279,7 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
       contentId,
       title,
       titleId: titleIdFromContentId(contentId) ?? undefined,
-      status: "uploading",
+      status: othersBusy() ? "queued" : "uploading",
       bytes: 0,
       totalBytes,
     };
@@ -278,6 +299,16 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
 
     // 4. Upload over the bulk-transfer port, polling job_status for progress.
     try {
+      // Wait our turn on the single-client port instead of colliding. Bail if
+      // the user removed this queued row in the meantime.
+      while (othersBusy()) {
+        if (!get().entries.some((e) => e.path === destPath)) return;
+        await sleep(400);
+      }
+      patch({ status: "uploading" });
+      // Make sure the console is on the matching (hardened) payload before we
+      // stream — same guard the upload queue uses.
+      await ensurePayloadCurrent(hostOf(host));
       const tx = (await invoke("transfer_file", {
         req: {
           src: localPath,
@@ -343,12 +374,33 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
   async install(path, host) {
     if (!host?.trim() || get().installing) return;
     const ip = hostOf(host);
-    set({ installing: true });
+    set({ installing: true, busyNotice: null });
+    // Any transfer that the payload swap would interrupt: an Upload-screen
+    // transfer, or a .pkg upload/queued here. Installing must wait for all of
+    // them so it doesn't tear the payload out mid-upload.
+    const transfersActive = () =>
+      transferScreenBusy() ||
+      get().entries.some(
+        (e) => e.status === "uploading" || e.status === "queued",
+      );
     const patch = (p: Partial<PkgEntry>) =>
       set({
         entries: get().entries.map((e) => (e.path === path ? { ...e, ...p } : e)),
       });
     try {
+      // Queue behind any active transfer instead of crashing it. Cancellable
+      // via cancelPendingInstall (which flips `installing` off mid-wait).
+      if (transfersActive()) {
+        set({
+          busyNotice:
+            "Waiting for the current upload to finish before installing…",
+        });
+        while (transfersActive()) {
+          if (!get().installing) return; // user cancelled the pending install
+          await sleep(400);
+        }
+        set({ busyNotice: null });
+      }
       // Inside the try so any throw still hits `finally` and clears the
       // `installing` flag — otherwise a wedged flag would lock the screen.
       patch({ status: "installing", lastResult: undefined });
@@ -401,7 +453,15 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
     } catch (e) {
       patch({ status: "idle", lastResult: { ok: false, message: pkgError(e) } });
     } finally {
-      set({ installing: false });
+      set({ installing: false, busyNotice: null });
+    }
+  },
+
+  cancelPendingInstall() {
+    // Only abandon an install still WAITING its turn (busyNotice set) — never
+    // yank a real install mid-swap, which would leave the payload half-loaded.
+    if (get().busyNotice) {
+      set({ installing: false, busyNotice: null });
     }
   },
 

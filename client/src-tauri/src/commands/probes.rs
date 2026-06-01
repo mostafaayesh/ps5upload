@@ -133,19 +133,34 @@ async fn do_payload_send(ip: &str, path: &str, target_port: u16) -> Result<u64, 
             "payload is too large ({size} bytes > {PAYLOAD_SEND_MAX_BYTES} cap)"
         ));
     }
+    // Does the ELF we're about to load identify as a ps5upload payload?
+    // Only ps5upload payloads bind :9114/:9113, so only they contend with a
+    // running ps5upload — and only they warrant evicting it (below). Other
+    // ELFs (the DPI install daemon on :9040, scene tools) bind different
+    // ports and can load ALONGSIDE ps5upload, so they must NOT knock it
+    // offline. Determined here while the file is already open.
+    let mut sending_ps5upload = false;
     if target_port == PS5_LOADER_PORT {
         if size < 4 {
             return Err(format!("not an ELF file: {path} (only {size} bytes)"));
         }
-        let mut magic = [0u8; 4];
-        file.read_exact(&mut magic)
+        // Read a window big enough to verify the ELF magic AND spot the
+        // "ps5upload" ASCII signature in the section headers (mirrors
+        // payload_probe's 512 KiB window). Capped so we stay off disk for
+        // large ELFs.
+        const PROBE_WINDOW: usize = 512 * 1024;
+        let want = PROBE_WINDOW.min(size as usize);
+        let mut window = vec![0u8; want];
+        file.read_exact(&mut window)
             .await
             .map_err(|e| format!("read {path}: {e}"))?;
-        if &magic != b"\x7FELF" {
+        if &window[..4] != b"\x7FELF" {
             return Err(format!(
-                "not an ELF file: {path} (first 4 bytes {magic:02x?})"
+                "not an ELF file: {path} (first 4 bytes {:02x?})",
+                &window[..4]
             ));
         }
+        sending_ps5upload = is_ps5upload_payload(path, &window);
         // Rewind so the magic bytes ship as part of the file body.
         file.seek(std::io::SeekFrom::Start(0))
             .await
@@ -164,10 +179,14 @@ async fn do_payload_send(ip: &str, path: &str, target_port: u16) -> Result<u64, 
     // rebooted, etc) — shutdown_running_payload returns Ok(false)
     // and we proceed normally.
     //
-    // Only relevant for the ELF loader path. On other ports (.jar
-    // BD-JB loader, .js webkit stages, etc) we don't own the
-    // protocol on :9114 and the shutdown handshake doesn't apply.
-    if target_port == PS5_LOADER_PORT {
+    // GATED on `sending_ps5upload`: we ONLY evict when the incoming ELF is
+    // itself a ps5upload payload (the only thing that contends for :9114).
+    // Loading a different-port daemon — e.g. the DPI installer (:9040) —
+    // leaves ps5upload running, so an install no longer drops the transfer
+    // connection. (On a single-payload loader the loader itself may still
+    // clobber ps5upload; that's outside our control, and the post-install
+    // payload restore — which IS a ps5upload send — cleans up the ports.)
+    if target_port == PS5_LOADER_PORT && sending_ps5upload {
         let mgmt_addr = format!("{ip}:9114");
         // Off the async runtime — Connection is blocking I/O.
         let _ = tokio::task::spawn_blocking(move || {
@@ -679,6 +698,18 @@ fn memmem_ascii(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
+/// True when the file we're about to send is a ps5upload payload — by
+/// filename (`ps5upload.elf`) or by the ASCII signature embedded in its
+/// section headers. This is the only kind of ELF that binds :9114/:9113
+/// and thus contends with a running ps5upload, so it's the only kind that
+/// should trigger eviction of the current payload. `head` is the leading
+/// chunk of the file (payload_probe / do_payload_send both pass 512 KiB).
+fn is_ps5upload_payload(path: &str, head: &[u8]) -> bool {
+    path.to_ascii_lowercase().contains("ps5upload")
+        || memmem_ascii(head, b"ps5upload")
+        || memmem_ascii(head, b"PS5UPLOAD")
+}
+
 #[cfg(test)]
 mod payload_send_tests {
     //! Pin the `do_payload_send` flow: ELF magic check fires only
@@ -854,5 +885,28 @@ mod payload_send_tests {
             .await
             .unwrap_err();
         assert!(err.contains("too large"), "expected size cap, got: {err}");
+    }
+
+    #[test]
+    fn ps5upload_detection_gates_eviction() {
+        // ps5upload payload — by filename...
+        assert!(is_ps5upload_payload(
+            "/x/ps5upload.elf",
+            b"\x7FELF\x00garbage"
+        ));
+        // ...or by embedded signature (case-insensitive) even with a
+        // neutral filename (e.g. a user-renamed copy).
+        assert!(is_ps5upload_payload(
+            "/x/helper.elf",
+            b"\x7FELF .... ps5upload v2 ...."
+        ));
+        assert!(is_ps5upload_payload("/x/HELPER.ELF", b"\x7FELF PS5UPLOAD"));
+        // The DPI daemon and other scene ELFs must NOT match — loading
+        // them leaves a running ps5upload untouched.
+        assert!(!is_ps5upload_payload(
+            "/x/ezremote-dpi.elf",
+            b"\x7FELF some other daemon"
+        ));
+        assert!(!is_ps5upload_payload("/x/exploit.elf", b"\x7FELF\x00\x00"));
     }
 }

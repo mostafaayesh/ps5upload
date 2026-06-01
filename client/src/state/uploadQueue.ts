@@ -35,6 +35,17 @@ import { useUploadSettingsStore } from "./uploadSettings";
 import { useRecentHostMetricsStore } from "./recentHostMetrics";
 import { pushNotification } from "./notifications";
 import { createRunGen } from "../lib/runGen";
+import { hostOf } from "../lib/addr";
+import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
+
+/**
+ * Pause between queued jobs so the PS5 payload can drain the detached
+ * mgmt-port threads + TIME_WAIT sockets that a folder reconcile leaves
+ * behind. Without it, job N+1's reconcile fires its own connection burst
+ * while the payload is still cleaning up after job N — the cumulative
+ * pressure is what tipped the payload over and killed the rest of the queue.
+ */
+const INTER_JOB_SETTLE_MS = 1500;
 
 /**
  * Sequential upload queue. Lives in its own Zustand store separate
@@ -596,9 +607,33 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
       const isLive = () => gen.isLive(myRun);
       set({ running: true });
       try {
+        // Make sure the console is on the payload that matches this build
+        // BEFORE running any jobs. Older payloads lack the mgmt-port
+        // hardening (backlog 8→128 + reconcile storm mitigations from
+        // v2.23.1), and the upload queue — unlike the install queue — never
+        // pushed it, so a queue run could hammer a fragile payload and kill
+        // it after the first job. Done once per run; never throws.
+        const head = nextPending(get().items);
+        if (head) {
+          try {
+            await ensurePayloadCurrent(hostOf(head.addr));
+          } catch (e) {
+            console.warn("ensurePayloadCurrent threw:", e);
+          }
+          if (!isLive()) return;
+        }
+
+        let jobsRun = 0;
         while (isLive()) {
           const next = nextPending(get().items);
           if (!next) break;
+
+          // Let the payload settle between jobs (see INTER_JOB_SETTLE_MS).
+          if (jobsRun > 0) {
+            await sleep(INTER_JOB_SETTLE_MS);
+            if (!isLive()) return;
+          }
+          jobsRun += 1;
 
           const startedAt = Date.now();
           set((s) => ({

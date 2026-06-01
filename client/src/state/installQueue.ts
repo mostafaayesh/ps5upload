@@ -1,8 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import { getVersion } from "@tauri-apps/api/app";
-import { bundledPayloadPath, payloadCheck, sendPayload } from "../api/ps5";
-import { compareVersions } from "../lib/semver";
+import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
 import { isNpxsContentId } from "../lib/npxs";
 import { stagingBasename } from "../lib/pkgStagingPath";
 import {
@@ -374,92 +372,6 @@ function newId(): string {
 // answer.
 import { hostOf as bareIp } from "../lib/addr";
 
-/** Ensure the PS5 is running the same payload version that the
- *  desktop app bundles. Auto-pushes via the loader (port 9021) if
- *  the running payload is older or unreachable. Returns once the
- *  payload reports the expected version, or after a max-attempt
- *  poll budget — whichever comes first.
- *
- *  Why this lives in the install worker: the OLD UX required the
- *  user to manually click Connection → Send payload before every
- *  install, and forgetting that resulted in 0x80B22404 against the
- *  old payload no matter what install path the engine picked. The
- *  install screen has no way to know "user has the latest payload
- *  loaded" without probing, so we just probe + push as needed.
- *
- *  Returns:
- *    "current"   — already on the right version, no push needed.
- *    "pushed"    — push succeeded + payload booted with the new ver.
- *    "stale-ok"  — push succeeded but new version didn't appear in
- *                  poll window; install proceeds (payload may still
- *                  be a new-enough build that lacks the version
- *                  bump for some reason).
- *    "no-push"   — couldn't probe AND couldn't push (no PS5
- *                  reachable). Install will fail with its native
- *                  error; we don't synthesize a different one. */
-async function ensurePayloadCurrent(
-  host: string,
-): Promise<"current" | "pushed" | "stale-ok" | "no-push"> {
-  let appVersion: string;
-  try {
-    appVersion = await getVersion();
-  } catch {
-    // Can't read our own version — abort the auto-push entirely so
-    // we don't accidentally push the wrong file. Install proceeds
-    // with whatever the running payload is.
-    return "no-push";
-  }
-  // Probe what's running.
-  let running: string | null = null;
-  try {
-    const probe = await payloadCheck(host);
-    if (probe.reachable) {
-      running = probe.payloadVersion;
-    }
-  } catch {
-    // payloadCheck threw — fall through to push attempt.
-  }
-  if (running && compareVersions(running, appVersion) === 0) {
-    return "current";
-  }
-  // Need to push. Locate the bundled ELF + send it.
-  let elfPath: string;
-  try {
-    elfPath = await bundledPayloadPath();
-  } catch {
-    return "no-push";
-  }
-  try {
-    await sendPayload(host, elfPath);
-  } catch {
-    return "no-push";
-  }
-  // Poll up to ~30 s for the new payload to come up + report
-  // matching version. ps5-payload-sdk's loader takes a few seconds
-  // to gunzip + execute; the elevateUcred step takes a few more.
-  // 1.5s initial + 1s × 28 = 29.5s budget total.
-  await sleep(1500);
-  for (let i = 0; i < 28; i++) {
-    try {
-      const probe = await payloadCheck(host);
-      if (
-        probe.reachable &&
-        probe.payloadVersion &&
-        compareVersions(probe.payloadVersion, appVersion) === 0
-      ) {
-        return "pushed";
-      }
-    } catch {
-      // ignore; keep polling
-    }
-    await sleep(1000);
-  }
-  // Push went through, but the new version never showed up in the
-  // poll window. Continue with the install — the new payload may
-  // be running but reporting an unexpected version (e.g. user
-  // sideloaded a different build during the wait).
-  return "stale-ok";
-}
 
 export const useInstallQueue = create<InstallQueueState>((set, get) => ({
   items: [],
