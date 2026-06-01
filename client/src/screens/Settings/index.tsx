@@ -986,12 +986,35 @@ function CrashReportsButton() {
   }
 
   async function clearAll() {
+    setError(null);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("crash_reports_clear");
       void refresh();
-    } catch {
-      // ignore
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // Open the reports folder in the OS file manager. Resolves the path fresh
+  // (creating the dir if needed) so it works even before `stats` loads, and
+  // surfaces the path on failure (e.g. the OS handoff is blocked, or on
+  // mobile where the folder is app-private and not browsable) instead of
+  // doing nothing.
+  async function openFolder() {
+    setError(null);
+    let dir = stats?.dir ?? "";
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      if (!dir) dir = await invoke<string>("crash_reports_dir_resolved");
+      const { open } = await import("@tauri-apps/plugin-shell");
+      await open(dir);
+    } catch (e) {
+      setError(
+        `Couldn't open the folder automatically${dir ? ` — it's at: ${dir}` : ""}. ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
     }
   }
 
@@ -1015,6 +1038,11 @@ function CrashReportsButton() {
           `${count} report(s) collected automatically`,
         )}
       </div>
+      {stats?.dir && (
+        <div className="mt-0.5 break-all font-mono text-[10px] text-[var(--color-muted)]">
+          {stats.dir}
+        </div>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -1031,21 +1059,20 @@ function CrashReportsButton() {
         </button>
         <button
           type="button"
-          onClick={() => stats?.dir && void openExternal(stats.dir)}
-          disabled={!stats?.dir}
+          onClick={openFolder}
+          disabled={busy}
           className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs disabled:opacity-50"
         >
           {tr("crash_reports_open_folder", undefined, "Open folder")}
         </button>
-        {count > 0 && (
-          <button
-            type="button"
-            onClick={clearAll}
-            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs"
-          >
-            {tr("crash_reports_clear", undefined, "Clear")}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={clearAll}
+          disabled={busy || count === 0}
+          className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs disabled:opacity-50"
+        >
+          {tr("crash_reports_clear", undefined, "Clear")}
+        </button>
       </div>
       {zipPath && (
         <div className="mt-2 rounded-md border border-[var(--color-good)] bg-[var(--color-surface)] p-2 text-[11px]">
