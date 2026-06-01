@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { ScrollText, Trash2, Copy, ChevronRight, Download } from "lucide-react";
+import {
+  ScrollText,
+  Trash2,
+  Copy,
+  Check,
+  ChevronRight,
+  Download,
+} from "lucide-react";
 
 import {
   useLogsStore,
@@ -8,6 +15,7 @@ import {
 } from "../../state/logs";
 import { EmptyState, Button } from "../../components";
 import { useTr } from "../../state/lang";
+import { writeClipboard } from "../../lib/clipboard";
 
 const LEVEL_ORDER: LogLevel[] = ["error", "warn", "info", "debug"];
 
@@ -59,6 +67,11 @@ export default function AppLogsPanel() {
   const setFilter = useLogsStore((s) => s.setFilter);
   const clearLogs = useLogsStore((s) => s.clear);
 
+  // Transient button feedback. A silent success looked identical to a silent
+  // failure, which is why Copy/Download read as "not working".
+  const [copyState, setCopyState] = useState<"idle" | "done" | "fail">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "done" | "fail">("idle");
+
   const visible = useMemo(() => {
     if (filter === "all") return entries;
     return entries.filter((e) => e.level === filter);
@@ -84,11 +97,9 @@ export default function AppLogsPanel() {
           }`,
       )
       .join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Clipboard API can fail in some embed contexts — non-fatal.
-    }
+    const ok = await writeClipboard(text);
+    setCopyState(ok ? "done" : "fail");
+    setTimeout(() => setCopyState("idle"), 1600);
   };
 
   const downloadAll = async () => {
@@ -117,11 +128,15 @@ export default function AppLogsPanel() {
       });
       if (!dest) return; // user cancelled
       await writeTextFileToPath(dest, text);
+      setSaveState("done");
+      setTimeout(() => setSaveState("idle"), 1600);
     } catch (e) {
       // Surface to the in-app log so a save failure isn't silent.
       console.error(
         `Saving logs failed: ${e instanceof Error ? e.message : String(e)}`,
       );
+      setSaveState("fail");
+      setTimeout(() => setSaveState("idle"), 2400);
     }
   };
 
@@ -134,20 +149,32 @@ export default function AppLogsPanel() {
         <Button
           variant="secondary"
           size="sm"
-          leftIcon={<Copy size={12} />}
+          leftIcon={
+            copyState === "done" ? <Check size={12} /> : <Copy size={12} />
+          }
           onClick={copyAll}
           disabled={visible.length === 0}
         >
-          {tr("copy", undefined, "Copy")}
+          {copyState === "done"
+            ? tr("copied", undefined, "Copied")
+            : copyState === "fail"
+              ? tr("copy_failed", undefined, "Copy failed")
+              : tr("copy", undefined, "Copy")}
         </Button>
         <Button
           variant="secondary"
           size="sm"
-          leftIcon={<Download size={12} />}
+          leftIcon={
+            saveState === "done" ? <Check size={12} /> : <Download size={12} />
+          }
           onClick={downloadAll}
           disabled={visible.length === 0}
         >
-          {tr("download", undefined, "Download")}
+          {saveState === "done"
+            ? tr("saved", undefined, "Saved")
+            : saveState === "fail"
+              ? tr("save_failed", undefined, "Save failed")
+              : tr("download", undefined, "Download")}
         </Button>
         <Button
           variant="danger"

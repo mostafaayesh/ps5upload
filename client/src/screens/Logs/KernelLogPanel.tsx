@@ -13,6 +13,7 @@ import { useConnectionStore } from "../../state/connection";
 import { Button, EmptyState } from "../../components";
 import { useTr } from "../../state/lang";
 import { pushNotification } from "../../state/notifications";
+import { writeClipboard } from "../../lib/clipboard";
 
 /**
  * Live kernel log viewer with noise filtering.
@@ -217,14 +218,14 @@ export default function KernelLogPanel() {
 
   async function copyVisible() {
     if (visible.length === 0) return;
-    try {
-      await navigator.clipboard.writeText(visible.map((v) => v.text).join("\n"));
+    const ok = await writeClipboard(visible.map((v) => v.text).join("\n"));
+    if (ok) {
       pushNotification("success", "Kernel log copied", {
         body: `${visible.length} visible line${visible.length === 1 ? "" : "s"} on the clipboard. (${entries.length - visible.length} filtered.)`,
       });
-    } catch (e) {
+    } else {
       pushNotification("warning", "Copy failed", {
-        body: e instanceof Error ? e.message : "Clipboard access denied.",
+        body: "Clipboard access denied.",
       });
     }
   }

@@ -7,9 +7,14 @@ What's new in ps5upload, written for humans.
 ## 2.23.5
 
 - **Android build restored.** The 2.23.4 window-placement fix didn't compile
-  for Android, so that release shipped desktop-only (no APK). This build
-  brings the same fixes — a centered, on-screen window, a working "Open
-  folder", and the crash-report tweaks — to Android as well.
+  for Android, so that release shipped desktop-only (no APK). The same fixes
+  — a centered, on-screen window and a working "Open folder" — are back on
+  Android too.
+- **Logs: Copy and Download work again.** "Copy" now reliably puts the log on
+  your clipboard, and both buttons confirm when they're done.
+- **Removed the experimental Date & Time settings** from the Hardware screen.
+- **Fewer phantom crash reports.** A harmless internal hiccup is no longer
+  recorded as a crash.
 
 ---
 

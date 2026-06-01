@@ -73,6 +73,24 @@ export async function captureCrashReport(
   }
 }
 
+/**
+ * Known-benign error signatures that must NOT trigger an auto-capture.
+ *
+ * The Tauri JS event layer throws a TypeError when a listener is torn down
+ * twice — e.g. an unmount/`unlisten` race or a StrictMode double-invoke. It
+ * reads as `Cannot read properties of undefined (reading 'handlerId')` and
+ * bubbles up as an unhandledrejection, but nothing actually failed: the event
+ * is already gone. Capturing it produced phantom crash reports.
+ */
+const BENIGN_SIGNATURES = [
+  "handlerId", // Tauri unlisten race: listeners[eventId].handlerId
+  "ResizeObserver loop", // browser-internal, never actionable
+];
+
+function isBenignNoise(msg: string): boolean {
+  return BENIGN_SIGNATURES.some((sig) => msg.includes(sig));
+}
+
 let wired = false;
 
 /**
@@ -103,11 +121,13 @@ export function initCrashReporter(): void {
   if (typeof window !== "undefined") {
     window.addEventListener("error", (e) => {
       const msg = e?.error?.message ?? e?.message ?? "uncaught error";
+      if (isBenignNoise(msg)) return;
       void captureCrashReport(`uncaught-error: ${msg}`);
     });
     window.addEventListener("unhandledrejection", (e) => {
       const r: any = (e as PromiseRejectionEvent).reason;
       const msg = r?.message ?? (typeof r === "string" ? r : "unhandled rejection");
+      if (isBenignNoise(msg)) return;
       void captureCrashReport(`unhandled-rejection: ${msg}`);
     });
   }

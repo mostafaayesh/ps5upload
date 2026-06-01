@@ -1,6 +1,8 @@
 {
   "ar": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -10,12 +12,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "bn": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -25,12 +31,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "de": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -40,12 +50,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "es": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -55,12 +69,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "fr": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -70,12 +88,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "hi": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -85,12 +107,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "id": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -100,12 +126,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "it": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -115,12 +145,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "ja": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -130,12 +164,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "ko": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -145,12 +183,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "pt-BR": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -160,12 +202,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "ru": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -175,12 +221,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "th": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -190,12 +240,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "tr": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -205,12 +259,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "vi": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -220,12 +278,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "zh-CN": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -235,12 +297,16 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   },
   "zh-TW": {
     "missing": [
+      "copied",
+      "copy_failed",
       "crash_reports_clear",
       "crash_reports_count",
       "crash_reports_hint",
@@ -250,7 +316,9 @@
       "crash_reports_post",
       "crash_reports_saved",
       "crash_reports_title",
-      "errorboundary_report_crash"
+      "errorboundary_report_crash",
+      "save_failed",
+      "saved"
     ],
     "stale": []
   }
