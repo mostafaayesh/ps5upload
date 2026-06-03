@@ -100,6 +100,15 @@ typedef struct {
     int      direct_fd_open;        /* 1 = direct_fd refers to an open tmp */
     void    *direct_writer;         /* heap-owned writer handle (see runtime.c) */
     int      direct_slot;           /* next producer slot (0 or 1) across shards */
+    /* Per-tx shared 4 MiB shard I/O buffers for the MULTI-FILE direct path
+     * (runtime_write_shard_to_path). Allocated lazily on the first non-packed
+     * shard and reused for every subsequent shard in this tx, then freed in
+     * runtime_release_tx_resources. Replaces the old malloc(SHARD_IO_BUF)x2 +
+     * free PER shard, which fragmented the heap and crashed large multi-file
+     * folders (see config.h history) — and which 4-way multi-stream would
+     * otherwise multiply (4 x 2 x 4 MiB of concurrent churn). NULL until first
+     * use. Accessed only under the per-slot g_entry_mtx, so single-writer. */
+    void    *shard_io_buf[2];
     /* Packed-shard worker pool state. Lazily created on the first packed
      * STREAM_SHARD, persists across subsequent packed shards in the same tx,
      * torn down through runtime_release_tx_resources on any terminal

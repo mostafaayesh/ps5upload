@@ -844,6 +844,23 @@ impl<'a> PipelinedSender<'a> {
         record_count: u32,
         flags: u32,
     ) -> Result<()> {
+        let digest = hash_shard(data);
+        self.send_prehashed_with(shard_seq, data, digest, record_count, flags)
+    }
+
+    /// Send a shard whose BLAKE3 digest was computed by the caller (e.g. a
+    /// read-ahead producer thread that hashes off the send path so hashing
+    /// overlaps the network write instead of serializing before it). `digest`
+    /// MUST be `hash_shard(data)` — the payload re-hashes and rejects a
+    /// mismatch, so a wrong digest fails the shard rather than corrupting data.
+    fn send_prehashed_with(
+        &mut self,
+        shard_seq: u64,
+        data: &[u8],
+        digest: [u8; 32],
+        record_count: u32,
+        flags: u32,
+    ) -> Result<()> {
         // Abort at the shard boundary if cancellation was requested. Bailing
         // before sending the next shard leaves the transaction un-committed; the
         // payload marks it interrupted on disconnect, so a later resume can pick
@@ -857,7 +874,6 @@ impl<'a> PipelinedSender<'a> {
         {
             self.await_one_ack()?;
         }
-        let digest = hash_shard(data);
         let hdr_bytes = ShardHeader {
             tx_id: self.tx_id,
             shard_seq,
@@ -877,6 +893,11 @@ impl<'a> PipelinedSender<'a> {
             t.account_and_pace(data.len());
         }
         Ok(())
+    }
+
+    /// Pre-hashed single-shard send (record_count=1, flags=0).
+    fn send_prehashed(&mut self, shard_seq: u64, data: &[u8], digest: [u8; 32]) -> Result<()> {
+        self.send_prehashed_with(shard_seq, data, digest, 1, 0)
     }
 
     /// Receive and validate the ACK at the head of the queue.
@@ -1244,27 +1265,101 @@ fn transfer_file_path_with_flags(
             .with_context(|| format!("seek {}", src.display()))?;
         }
         let mut sender = PipelinedSender::new(&mut c, cfg, tx_id, total_shards);
-        let mut shard_seq = last_acked_shard + 1;
-        // One shard-sized buffer reused across iterations. `send` writes to
-        // the socket synchronously and the inflight queue stores only
-        // `(shard_seq, len)`, so the buffer is free to reuse on the next
-        // pass. Avoids ~1,600 × 64 MiB allocate/free cycles on a 100 GiB
-        // upload.
-        let mut buf = vec![0u8; cfg.shard_size];
-        while shard_seq <= total_shards {
-            let remaining = total_bytes.saturating_sub((shard_seq - 1) * cfg.shard_size as u64);
-            let len = std::cmp::min(cfg.shard_size as u64, remaining) as usize;
-            let chunk = &mut buf[..len];
-            file.read_exact(chunk)
-                .with_context(|| format!("read {} shard {}", src.display(), shard_seq))?;
-            sender.send(shard_seq, chunk)?;
-            shards_sent += 1;
-            if let Some(p) = &cfg.progress_bytes {
-                p.fetch_add(len as u64, std::sync::atomic::Ordering::Relaxed);
-            }
-            shard_seq += 1;
+        let first_seq = last_acked_shard + 1;
+        let shard_size = cfg.shard_size;
+
+        // Overlapped read+hash: a producer thread reads each shard from disk and
+        // BLAKE3-hashes it while the main thread is busy writing the PREVIOUS
+        // shard to the socket. Measured motivation: on a fast-disk PS5 (Pro) the
+        // payload is recv-bound (it waits ~89% of the time for our bytes), and on
+        // a slow source (NAS/exFAT) the wire would otherwise idle during every
+        // disk read. Without overlap the loop is read → hash → send in series, so
+        // the link sits idle during read+hash. See docs/throughput-analysis.md.
+        //
+        // Buffers are recycled between the two threads via an `empty` channel so
+        // we don't allocate per shard (the single-buffer reuse this replaces
+        // avoided "~1,600 × 64 MiB allocate/free cycles"); READAHEAD buffers cap
+        // the extra RAM at READAHEAD × shard_size.
+        const READAHEAD: usize = 3;
+        struct Prepared {
+            seq: u64,
+            buf: Vec<u8>,
+            len: usize,
+            digest: [u8; 32],
         }
-        sender.drain()?;
+        let (empty_tx, empty_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let (full_tx, full_rx) = std::sync::mpsc::sync_channel::<Result<Prepared>>(READAHEAD);
+        for _ in 0..READAHEAD {
+            let _ = empty_tx.send(vec![0u8; shard_size]);
+        }
+        let cancel = cfg.cancel.clone();
+        let src_disp = src.display().to_string();
+
+        std::thread::scope(|scope| -> Result<()> {
+            // Producer: read + hash ahead, hand prepared shards to the sender.
+            scope.spawn(move || {
+                let mut seq = first_seq;
+                while seq <= total_shards {
+                    if cancel
+                        .as_ref()
+                        .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+                    {
+                        break; // consumer will see the closed channel and stop
+                    }
+                    // Wait for a recycled buffer; Err means the consumer is gone.
+                    let mut buf = match empty_rx.recv() {
+                        Ok(b) => b,
+                        Err(_) => break,
+                    };
+                    let remaining = total_bytes.saturating_sub((seq - 1) * shard_size as u64);
+                    let len = std::cmp::min(shard_size as u64, remaining) as usize;
+                    if let Err(e) = file.read_exact(&mut buf[..len]) {
+                        let _ = full_tx
+                            .send(Err(anyhow::Error::from(e)
+                                .context(format!("read {src_disp} shard {seq}"))));
+                        break;
+                    }
+                    let digest = hash_shard(&buf[..len]);
+                    if full_tx
+                        .send(Ok(Prepared {
+                            seq,
+                            buf,
+                            len,
+                            digest,
+                        }))
+                        .is_err()
+                    {
+                        break; // consumer dropped (error/cancel) — stop cleanly
+                    }
+                    seq += 1;
+                }
+                // Dropping full_tx closes the channel so the consumer's recv ends.
+            });
+
+            // Consumer (this thread): send prepared shards in order, recycle bufs.
+            let mut next = first_seq;
+            while next <= total_shards {
+                let prepared = match full_rx.recv() {
+                    Ok(Ok(p)) => p,
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => break, // producer ended early (cancel handled below)
+                };
+                debug_assert_eq!(prepared.seq, next);
+                sender.send_prehashed(
+                    prepared.seq,
+                    &prepared.buf[..prepared.len],
+                    prepared.digest,
+                )?;
+                shards_sent += 1;
+                if let Some(p) = &cfg.progress_bytes {
+                    p.fetch_add(prepared.len as u64, std::sync::atomic::Ordering::Relaxed);
+                }
+                let _ = empty_tx.send(prepared.buf); // recycle
+                next += 1;
+            }
+            sender.drain()?;
+            Ok(())
+        })?;
     }
 
     let commit_ack = send_commit_and_expect_ack(&mut c, &tx_meta_buf(tx_id, 0, b""), cfg)?;

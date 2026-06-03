@@ -4,6 +4,20 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.23.10
+
+- **Faster uploads from network drives / NAS.** The app now reads the next chunk
+  from your source while the current one is still going out over the network, so
+  the connection no longer sits idle waiting on a slow disk read. No change if
+  your files are on a fast local drive (there the PS5 or the network is the
+  limit) — this specifically helps slow or network sources.
+- **More stable uploads of huge multi-file folders.** Removed per-file memory
+  churn in the PS5 payload's write path that could fragment the console's memory
+  on very large folders — especially now that uploads use several parallel
+  streams. (Requires sending the updated payload to your PS5.)
+
+---
+
 ## 2.23.9
 
 - **Faster uploads — large folders now send over several connections at once.**

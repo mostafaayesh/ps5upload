@@ -2488,6 +2488,7 @@ static int runtime_write_shard_to_path(runtime_tx_entry_t *entry,
                                         uint64_t data_len,
                                         unsigned char *out_digest /* BLAKE3_OUT_LEN */) {
     unsigned char *bufs[2] = {NULL, NULL};
+    int owns_bufs = 0; /* 1 = locally malloc'd (free here); 0 = borrowed from entry */
     int fd = -1;
     int flags;
     uint64_t remaining = data_len;
@@ -2514,11 +2515,30 @@ static int runtime_write_shard_to_path(runtime_tx_entry_t *entry,
         return 0;
     }
 
-    bufs[0] = (unsigned char *)malloc(PS5UPLOAD2_SHARD_IO_BUF);
-    bufs[1] = (unsigned char *)malloc(PS5UPLOAD2_SHARD_IO_BUF);
+    /* Borrow the per-tx shared buffers (alloc-once, reuse across shards) when we
+     * have an entry; otherwise fall back to a local alloc. This removes the
+     * per-shard malloc/free that fragmented the heap on big multi-file folders
+     * and that 4-way multi-stream would multiply. The entry's slot mutex is held
+     * across this whole call, so a tx's two buffers have at most one user. */
+    if (entry) {
+        if (!entry->shard_io_buf[0])
+            entry->shard_io_buf[0] = malloc(PS5UPLOAD2_SHARD_IO_BUF);
+        if (!entry->shard_io_buf[1])
+            entry->shard_io_buf[1] = malloc(PS5UPLOAD2_SHARD_IO_BUF);
+        bufs[0] = (unsigned char *)entry->shard_io_buf[0];
+        bufs[1] = (unsigned char *)entry->shard_io_buf[1];
+    } else {
+        bufs[0] = (unsigned char *)malloc(PS5UPLOAD2_SHARD_IO_BUF);
+        bufs[1] = (unsigned char *)malloc(PS5UPLOAD2_SHARD_IO_BUF);
+        owns_bufs = 1;
+    }
     if (!bufs[0] || !bufs[1]) {
-        free(bufs[0]);
-        free(bufs[1]);
+        if (owns_bufs) {
+            free(bufs[0]);
+            free(bufs[1]);
+        }
+        /* Borrowed buffers (if one allocated, one failed) stay on the entry and
+         * are freed at tx release — don't free them here. */
         /* (2.9.0) Drain-then-FAIL — was return drain_shard_data(...) which
          * returns 0 on successful drain. Dispatcher treats 0 as "shard
          * persisted," ACKs the host, advances last_acked_shard, never
@@ -2690,8 +2710,10 @@ static int runtime_write_shard_to_path(runtime_tx_entry_t *entry,
             remaining -= (uint64_t)take;
         }
         close(fd);
-        free(bufs[0]);
-        free(bufs[1]);
+        if (owns_bufs) {
+            free(bufs[0]);
+            free(bufs[1]);
+        }
         if (hash_enabled) blake3_hasher_finalize(&hasher, out_digest, BLAKE3_OUT_LEN);
         return rc_ret;
     }
@@ -2765,8 +2787,10 @@ static int runtime_write_shard_to_path(runtime_tx_entry_t *entry,
     pthread_cond_destroy(&pw.cv_full[1]);
     pthread_cond_destroy(&pw.cv_empty[0]);
     pthread_cond_destroy(&pw.cv_empty[1]);
-    free(bufs[0]);
-    free(bufs[1]);
+    if (owns_bufs) {
+        free(bufs[0]);
+        free(bufs[1]);
+    }
     if (hash_enabled) blake3_hasher_finalize(&hasher, out_digest, BLAKE3_OUT_LEN);
     if (entry && rc_ret == 0) {
         entry->recv_us       += t_recv;
@@ -3439,6 +3463,12 @@ static void runtime_release_tx_resources(runtime_tx_entry_t *entry) {
         fclose((FILE *)entry->shard_log_fp);
         entry->shard_log_fp = NULL;
     }
+    /* Free the per-tx shared multi-file shard buffers (see runtime.h). NULLed so
+     * a reused slot re-allocs lazily. free(NULL) is a no-op. */
+    free(entry->shard_io_buf[0]);
+    free(entry->shard_io_buf[1]);
+    entry->shard_io_buf[0] = NULL;
+    entry->shard_io_buf[1] = NULL;
     entry->last_parent_dir[0] = '\0';
 }
 
@@ -3465,6 +3495,12 @@ static void runtime_release_tx_resources_ephemeral(runtime_tx_entry_t *entry) {
         fclose((FILE *)entry->shard_log_fp);
         entry->shard_log_fp = NULL;
     }
+    /* Free the shared shard buffers on interrupt too — a resume re-allocs them
+     * lazily on its first non-packed shard. Reclaims 8 MiB/tx promptly. */
+    free(entry->shard_io_buf[0]);
+    free(entry->shard_io_buf[1]);
+    entry->shard_io_buf[0] = NULL;
+    entry->shard_io_buf[1] = NULL;
     entry->last_parent_dir[0] = '\0';
 }
 
