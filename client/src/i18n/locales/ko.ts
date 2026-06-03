@@ -1411,6 +1411,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Sony의 설치 서비스가 {code}(으)로 요청을 거부했습니다. 흔한 원인: 멈춰 있는 이전 설치(PS5 알림 → Downloads → 정리), 잘못된 계정/지역, 또는 공간 부족. 해당하는 것이 없으면 진단 패널을 캡처하여 버그를 신고하세요.",
 err_payload_rejected: "PS5가 요청을 거부했습니다: {reason}",
+  "pkglib.clearFinished": "완료된 항목 지우기 ({n})",
+  "pkglib.clearAll": "모두 지우기",
+  "pkglib.clearAll.confirmTitle": "준비된 모든 패키지를 삭제할까요?",
+  "pkglib.clearAll.confirmBody": "PS5에서 준비된 .pkg 파일 {n}개를 모두 영구적으로 삭제합니다. 설치된 게임에는 영향이 없습니다.",
+  "pkglib.autoRemove": "설치 후 각 패키지를 PS5에서 자동으로 삭제",
+  "pkglib.badge.update": "업데이트",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "여러 콘솔에 동시에 업로드",
+  upload_parallel_consoles_hint: "대기열에 서로 다른 콘솔용 게임이 있으면 한 번에 한 콘솔씩이 아니라 병렬로 전송합니다. 각 콘솔은 여전히 한 번에 하나의 게임만 업로드합니다. 기본값은 꺼짐 — PC의 디스크와 네트워크 부하가 늘어납니다.",
+  payloads_version: "버전",
+  payloads_version_tooltip: "버전을 선택하세요. 최신 버전이 불안정하면 이전 버전으로 다운그레이드할 수 있습니다.",
+  payloads_latest: "최신",
+  payloads_prerelease: "사전 릴리스",
+  payloads_prerelease_warn: "사전 릴리스 — 불안정할 수 있음",
 };
 
 export default ko;

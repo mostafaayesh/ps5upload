@@ -1350,6 +1350,20 @@ err_install_parental: "Titolo bloccato dai controlli parentali / dei contenuti d
 err_install_esrch: "Il daemon di installazione della PS5 non è riuscito a raggiungere il nostro processo (ESRCH = nessun processo). Di solito significa che il payload non ha ancora elevato i privilegi — kstuff/etaHEN potrebbe non essere caricato. Reinvia il payload da Connection → Send payload, poi riprova.",
 err_install_bgft_generic: "Il servizio di installazione di Sony ha rifiutato la richiesta con {code}. Cause comuni: installazione precedente bloccata (apri le notifiche della PS5 → Downloads → rimuovi), account/regione errati, o spazio esaurito. Se nessuna di queste si applica, cattura il pannello diagnostico e segnala un bug.",
 err_payload_rejected: "La PS5 ha rifiutato la richiesta: {reason}",
+  "pkglib.clearFinished": "Cancella completati ({n})",
+  "pkglib.clearAll": "Cancella tutto",
+  "pkglib.clearAll.confirmTitle": "Eliminare tutti i pacchetti preparati?",
+  "pkglib.clearAll.confirmBody": "Questo elimina definitivamente tutti i {n} file .pkg preparati dalla PS5. I giochi installati non sono interessati.",
+  "pkglib.autoRemove": "Elimina automaticamente ogni pacchetto dalla PS5 dopo l'installazione",
+  "pkglib.badge.update": "aggiornamento",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "Carica su più console contemporaneamente",
+  upload_parallel_consoles_hint: "Quando la coda contiene giochi per console diverse, vengono inviati in parallelo anziché una console alla volta. Ogni console carica comunque un gioco alla volta. Disattivato per impostazione predefinita: aumenta il carico su disco e rete del PC.",
+  payloads_version: "Versione",
+  payloads_version_tooltip: "Scegli una versione. Le versioni precedenti permettono di tornare indietro se l'ultima è instabile.",
+  payloads_latest: "ultima",
+  payloads_prerelease: "versione preliminare",
+  payloads_prerelease_warn: "versione preliminare – potrebbe essere instabile",
 };
 
 export default it;

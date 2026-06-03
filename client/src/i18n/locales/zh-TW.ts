@@ -1351,6 +1351,20 @@ err_install_parental: "標題被 PS5 家長/內容控制封鎖。請先在 PS5 S
 err_install_esrch: "PS5 安裝服務無法連接到我們的程序(ESRCH = 找不到此程序)。這通常表示 payload 尚未提權 — kstuff/etaHEN 可能未載入。請從「連線 → 傳送 payload」重新傳送 payload,然後重試。",
 err_install_bgft_generic: "Sony 的安裝服務以 {code} 拒絕了此請求。常見原因:先前的安裝卡住(開啟 PS5 通知 → Downloads → 清除)、帳戶/地區錯誤,或空間不足。如果以上皆不適用,請擷取診斷面板並回報錯誤。",
 err_payload_rejected: "PS5 拒絕了此請求:{reason}",
+  "pkglib.clearFinished": "清除已完成（{n}）",
+  "pkglib.clearAll": "全部清除",
+  "pkglib.clearAll.confirmTitle": "刪除所有已暫存的安裝包？",
+  "pkglib.clearAll.confirmBody": "這將從 PS5 永久刪除全部 {n} 個已暫存的 .pkg 檔案。已安裝的遊戲不受影響。",
+  "pkglib.autoRemove": "安裝後自動從 PS5 刪除每個安裝包",
+  "pkglib.badge.update": "更新",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "同時上傳到多台主機",
+  upload_parallel_consoles_hint: "當佇列中有面向不同主機的遊戲時，會並行傳送而不是一次只傳一台。每台主機仍然一次只上傳一個遊戲。預設關閉——它會增加電腦磁碟與網路的負載。",
+  payloads_version: "版本",
+  payloads_version_tooltip: "選擇一個版本。如果最新版不穩定，舊版本可以讓你降級。",
+  payloads_latest: "最新",
+  payloads_prerelease: "預發布",
+  payloads_prerelease_warn: "預發布 — 可能不穩定",
 };
 
 export default zh_TW;

@@ -1403,6 +1403,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "บริการติดตั้งของ Sony ปฏิเสธคำขอด้วย {code} สาเหตุที่พบบ่อย: การติดตั้งก่อนหน้าค้าง (เปิดการแจ้งเตือน PS5 → Downloads → ล้าง) บัญชี/ภูมิภาคผิด หรือพื้นที่ไม่พอ หากไม่ใช่กรณีเหล่านั้น ให้จับภาพแผง diag แล้วรายงานบั๊ก",
 err_payload_rejected: "PS5 ปฏิเสธคำขอ: {reason}",
+  "pkglib.clearFinished": "ล้างที่เสร็จแล้ว ({n})",
+  "pkglib.clearAll": "ล้างทั้งหมด",
+  "pkglib.clearAll.confirmTitle": "ลบแพ็กเกจที่เตรียมไว้ทั้งหมด?",
+  "pkglib.clearAll.confirmBody": "การทำเช่นนี้จะลบไฟล์ .pkg ที่เตรียมไว้ทั้งหมด {n} ไฟล์ออกจาก PS5 อย่างถาวร เกมที่ติดตั้งแล้วจะไม่ได้รับผลกระทบ",
+  "pkglib.autoRemove": "ลบแต่ละแพ็กเกจออกจาก PS5 โดยอัตโนมัติหลังติดตั้ง",
+  "pkglib.badge.update": "อัปเดต",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "อัปโหลดไปยังหลายเครื่องพร้อมกัน",
+  upload_parallel_consoles_hint: "เมื่อคิวของคุณมีเกมสำหรับหลายเครื่อง ระบบจะส่งแบบขนานแทนที่จะทีละเครื่อง แต่ละเครื่องยังคงอัปโหลดทีละเกม ปิดไว้โดยค่าเริ่มต้น — เพราะเพิ่มภาระต่อดิสก์และเครือข่ายของพีซี",
+  payloads_version: "เวอร์ชัน",
+  payloads_version_tooltip: "เลือกเวอร์ชัน เวอร์ชันเก่ากว่าช่วยให้คุณดาวน์เกรดได้หากเวอร์ชันล่าสุดไม่เสถียร",
+  payloads_latest: "ล่าสุด",
+  payloads_prerelease: "พรีรีลีส",
+  payloads_prerelease_warn: "พรีรีลีส — อาจไม่เสถียร",
 };
 
 export default th;

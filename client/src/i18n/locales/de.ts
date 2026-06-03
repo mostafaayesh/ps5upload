@@ -1411,6 +1411,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Sonys Installationsdienst hat die Anfrage mit {code} abgelehnt. Häufige Ursachen: eine hängende vorherige Installation (PS5-Benachrichtigungen → Downloads → löschen), falsches Konto/falsche Region oder kein Speicherplatz mehr. Trifft nichts davon zu, erfasse das Diagnose-Panel und melde einen Fehler.",
 err_payload_rejected: "Die PS5 hat die Anfrage abgelehnt: {reason}",
+  "pkglib.clearFinished": "Erledigte löschen ({n})",
+  "pkglib.clearAll": "Alle löschen",
+  "pkglib.clearAll.confirmTitle": "Alle bereitgestellten Pakete löschen?",
+  "pkglib.clearAll.confirmBody": "Dadurch werden alle {n} bereitgestellten .pkg-Dateien dauerhaft von der PS5 gelöscht. Installierte Spiele sind nicht betroffen.",
+  "pkglib.autoRemove": "Jedes Paket nach der Installation automatisch von der PS5 löschen",
+  "pkglib.badge.update": "Update",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "Auf mehrere Konsolen gleichzeitig hochladen",
+  upload_parallel_consoles_hint: "Wenn deine Warteschlange Spiele für verschiedene Konsolen enthält, werden sie parallel statt nacheinander gesendet. Jede Konsole lädt weiterhin ein Spiel nach dem anderen. Standardmäßig aus – es erhöht die Last auf Datenträger und Netzwerk deines PCs.",
+  payloads_version: "Version",
+  payloads_version_tooltip: "Wähle eine Version. Mit älteren Versionen kannst du herabstufen, falls die neueste instabil ist.",
+  payloads_latest: "neueste",
+  payloads_prerelease: "Vorabversion",
+  payloads_prerelease_warn: "Vorabversion – möglicherweise instabil",
 };
 
 export default de;

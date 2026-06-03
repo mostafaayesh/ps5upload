@@ -1403,6 +1403,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "رفضت خدمة التثبيت من Sony الطلب بالرمز {code}. الأسباب الشائعة: تثبيت سابق عالق (افتح إشعارات PS5 → Downloads → امسح)، أو حساب/منطقة خاطئة، أو نفاد المساحة. إذا لم ينطبق أي منها، فالتقط لوحة التشخيص وأبلِغ عن المشكلة.",
 err_payload_rejected: "رفض PS5 الطلب: {reason}",
+  "pkglib.clearFinished": "مسح المكتمل ({n})",
+  "pkglib.clearAll": "مسح الكل",
+  "pkglib.clearAll.confirmTitle": "حذف جميع الحزم المُجهَّزة؟",
+  "pkglib.clearAll.confirmBody": "سيؤدي هذا إلى حذف جميع ملفات .pkg المُجهَّزة البالغ عددها {n} نهائيًا من PS5. الألعاب المثبَّتة لن تتأثر.",
+  "pkglib.autoRemove": "حذف كل حزمة من PS5 تلقائيًا بعد تثبيتها",
+  "pkglib.badge.update": "تحديث",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "الرفع إلى عدة أجهزة في وقت واحد",
+  upload_parallel_consoles_hint: "عندما يحتوي قائمة الانتظار على ألعاب لأجهزة مختلفة، تُرسَل بالتوازي بدلًا من جهاز واحد في كل مرة. لا يزال كل جهاز يرفع لعبة واحدة في كل مرة. مُعطَّل افتراضيًا — فهو يزيد الحمل على قرص وشبكة حاسوبك.",
+  payloads_version: "الإصدار",
+  payloads_version_tooltip: "اختر إصدارًا. تتيح لك الإصدارات الأقدم الرجوع إذا كان الأحدث غير مستقر.",
+  payloads_latest: "الأحدث",
+  payloads_prerelease: "إصدار تجريبي",
+  payloads_prerelease_warn: "إصدار تجريبي — قد يكون غير مستقر",
 };
 
 export default ar;

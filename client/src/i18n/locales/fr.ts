@@ -1410,6 +1410,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Le service d'installation de Sony a rejeté la requête avec {code}. Causes fréquentes : installation précédente bloquée (ouvrez les notifications PS5 → Downloads → effacez), mauvais compte/région, ou manque d'espace. Si aucune ne s'applique, capturez le panneau de diag et signalez un bug.",
 err_payload_rejected: "La PS5 a rejeté la requête : {reason}",
+  "pkglib.clearFinished": "Effacer les terminés ({n})",
+  "pkglib.clearAll": "Tout effacer",
+  "pkglib.clearAll.confirmTitle": "Supprimer tous les paquets préparés ?",
+  "pkglib.clearAll.confirmBody": "Cela supprime définitivement les {n} fichiers .pkg préparés de la PS5. Les jeux installés ne sont pas affectés.",
+  "pkglib.autoRemove": "Supprimer automatiquement chaque paquet de la PS5 après son installation",
+  "pkglib.badge.update": "mise à jour",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "Téléverser vers plusieurs consoles à la fois",
+  upload_parallel_consoles_hint: "Quand votre file contient des jeux pour différentes consoles, ils sont envoyés en parallèle au lieu d'une console à la fois. Chaque console téléverse toujours un jeu à la fois. Désactivé par défaut – cela augmente la charge sur le disque et le réseau de votre PC.",
+  payloads_version: "Version",
+  payloads_version_tooltip: "Choisissez une version. Les versions plus anciennes permettent de revenir en arrière si la dernière est instable.",
+  payloads_latest: "dernière",
+  payloads_prerelease: "préversion",
+  payloads_prerelease_warn: "préversion – peut être instable",
 };
 
 export default fr;

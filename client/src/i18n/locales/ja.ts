@@ -1411,6 +1411,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Sony のインストールサービスがリクエストを {code} で拒否しました。よくある原因: 止まっている以前のインストール（PS5 の通知 → Downloads → 消去）、アカウント/リージョンの不一致、空き容量不足など。いずれにも該当しない場合は、診断パネルを取得してバグを報告してください。",
 err_payload_rejected: "PS5 がリクエストを拒否しました: {reason}",
+  "pkglib.clearFinished": "完了済みを消去（{n}）",
+  "pkglib.clearAll": "すべて消去",
+  "pkglib.clearAll.confirmTitle": "準備済みのパッケージをすべて削除しますか？",
+  "pkglib.clearAll.confirmBody": "PS5 から準備済みの .pkg ファイル {n} 個をすべて完全に削除します。インストール済みのゲームには影響しません。",
+  "pkglib.autoRemove": "インストール後、各パッケージを PS5 から自動的に削除する",
+  "pkglib.badge.update": "アップデート",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "複数の本体に同時にアップロード",
+  upload_parallel_consoles_hint: "キューに別々の本体向けのゲームがある場合、1台ずつではなく並行して送信します。各本体は引き続き1本ずつアップロードします。既定はオフ — PC のディスクとネットワークの負荷が増えます。",
+  payloads_version: "バージョン",
+  payloads_version_tooltip: "バージョンを選択します。最新が不安定な場合は、古いバージョンでダウングレードできます。",
+  payloads_latest: "最新",
+  payloads_prerelease: "プレリリース",
+  payloads_prerelease_warn: "プレリリース — 不安定な場合があります",
 };
 
 export default ja;

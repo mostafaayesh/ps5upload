@@ -1410,6 +1410,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "O serviço de instalação da Sony rejeitou a solicitação com {code}. Causas comuns: instalação anterior travada (abra as notificações do PS5 → Downloads → limpe), conta/região errada, ou falta de espaço. Se nada disso se aplicar, capture o painel de diagnóstico e abra um bug.",
 err_payload_rejected: "O PS5 rejeitou a solicitação: {reason}",
+  "pkglib.clearFinished": "Limpar concluídos ({n})",
+  "pkglib.clearAll": "Limpar tudo",
+  "pkglib.clearAll.confirmTitle": "Excluir todos os pacotes preparados?",
+  "pkglib.clearAll.confirmBody": "Isto exclui permanentemente todos os {n} arquivos .pkg preparados da PS5. Jogos instalados não são afetados.",
+  "pkglib.autoRemove": "Excluir cada pacote da PS5 automaticamente após a instalação",
+  "pkglib.badge.update": "atualização",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "Enviar para vários consoles ao mesmo tempo",
+  upload_parallel_consoles_hint: "Quando sua fila tem jogos para consoles diferentes, eles são enviados em paralelo em vez de um console por vez. Cada console ainda envia um jogo por vez. Desativado por padrão — aumenta a carga no disco e na rede do seu PC.",
+  payloads_version: "Versão",
+  payloads_version_tooltip: "Escolha uma versão. Versões mais antigas permitem voltar se a mais recente estiver instável.",
+  payloads_latest: "mais recente",
+  payloads_prerelease: "pré-lançamento",
+  payloads_prerelease_warn: "pré-lançamento — pode estar instável",
 };
 
 export default pt_BR;

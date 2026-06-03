@@ -1405,6 +1405,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Dịch vụ cài đặt của Sony đã từ chối yêu cầu với {code}. Nguyên nhân thường gặp: bản cài trước bị kẹt (mở thông báo PS5 → Downloads → xóa), sai tài khoản/khu vực, hoặc hết dung lượng. Nếu không phải các nguyên nhân đó, hãy chụp bảng chẩn đoán và báo lỗi.",
 err_payload_rejected: "PS5 đã từ chối yêu cầu: {reason}",
+  "pkglib.clearFinished": "Xóa mục đã xong ({n})",
+  "pkglib.clearAll": "Xóa tất cả",
+  "pkglib.clearAll.confirmTitle": "Xóa tất cả gói đã chuẩn bị?",
+  "pkglib.clearAll.confirmBody": "Thao tác này xóa vĩnh viễn tất cả {n} tệp .pkg đã chuẩn bị khỏi PS5. Các game đã cài đặt không bị ảnh hưởng.",
+  "pkglib.autoRemove": "Tự động xóa từng gói khỏi PS5 sau khi cài đặt",
+  "pkglib.badge.update": "cập nhật",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "Tải lên nhiều máy cùng lúc",
+  upload_parallel_consoles_hint: "Khi hàng đợi có game cho các máy khác nhau, chúng được gửi song song thay vì lần lượt từng máy. Mỗi máy vẫn chỉ tải lên một game tại một thời điểm. Mặc định tắt — vì nó tăng tải cho ổ đĩa và mạng của PC.",
+  payloads_version: "Phiên bản",
+  payloads_version_tooltip: "Chọn một phiên bản. Các phiên bản cũ cho phép bạn hạ cấp nếu bản mới nhất không ổn định.",
+  payloads_latest: "mới nhất",
+  payloads_prerelease: "bản phát hành trước",
+  payloads_prerelease_warn: "bản phát hành trước — có thể không ổn định",
 };
 
 export default vi;

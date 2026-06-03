@@ -1410,6 +1410,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Sony'nin kurulum servisi isteği {code} ile reddetti. Yaygın nedenler: takılı önceki kurulum (PS5 bildirimleri → Downloads → temizleyin), yanlış hesap/bölge veya yer yetersizliği. Bunların hiçbiri geçerli değilse, tanı panelini kaydedin ve bir hata bildirin.",
 err_payload_rejected: "PS5 isteği reddetti: {reason}",
+  "pkglib.clearFinished": "Bitenleri temizle ({n})",
+  "pkglib.clearAll": "Tümünü temizle",
+  "pkglib.clearAll.confirmTitle": "Hazırlanan tüm paketler silinsin mi?",
+  "pkglib.clearAll.confirmBody": "Bu, hazırlanan {n} .pkg dosyasının tümünü PS5'ten kalıcı olarak siler. Yüklü oyunlar etkilenmez.",
+  "pkglib.autoRemove": "Her paketi kurulduktan sonra PS5'ten otomatik sil",
+  "pkglib.badge.update": "güncelleme",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "Aynı anda birden çok konsola yükle",
+  upload_parallel_consoles_hint: "Kuyruğunuzda farklı konsollar için oyunlar olduğunda, tek tek yerine paralel gönderilir. Her konsol yine de aynı anda tek oyun yükler. Varsayılan olarak kapalı — PC'nizin diski ve ağı üzerindeki yükü artırır.",
+  payloads_version: "Sürüm",
+  payloads_version_tooltip: "Bir sürüm seçin. En yenisi kararsızsa eski sürümler düşürmenize olanak tanır.",
+  payloads_latest: "en son",
+  payloads_prerelease: "ön sürüm",
+  payloads_prerelease_warn: "ön sürüm — kararsız olabilir",
 };
 
 export default tr;

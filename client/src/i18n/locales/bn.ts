@@ -1403,6 +1403,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Sony-র ইনস্টল সেবা অনুরোধটি {code} দিয়ে প্রত্যাখ্যান করেছে। সাধারণ কারণ: আটকে থাকা আগের ইনস্টল (PS5 নোটিফিকেশন → Downloads → সাফ করুন), ভুল অ্যাকাউন্ট/অঞ্চল, বা জায়গার অভাব। এগুলোর কোনোটি প্রযোজ্য না হলে, diag প্যানেল ক্যাপচার করে একটি বাগ রিপোর্ট করুন।",
 err_payload_rejected: "PS5 অনুরোধ প্রত্যাখ্যান করেছে: {reason}",
+  "pkglib.clearFinished": "সম্পন্ন মুছুন ({n})",
+  "pkglib.clearAll": "সব মুছুন",
+  "pkglib.clearAll.confirmTitle": "সব স্টেজ করা প্যাকেজ মুছবেন?",
+  "pkglib.clearAll.confirmBody": "এটি PS5 থেকে সব {n}টি স্টেজ করা .pkg ফাইল স্থায়ীভাবে মুছে দেবে। ইনস্টল করা গেমগুলো প্রভাবিত হবে না।",
+  "pkglib.autoRemove": "ইনস্টল হওয়ার পর প্রতিটি প্যাকেজ PS5 থেকে স্বয়ংক্রিয়ভাবে মুছুন",
+  "pkglib.badge.update": "আপডেট",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "একসাথে একাধিক কনসোলে আপলোড করুন",
+  upload_parallel_consoles_hint: "আপনার সারিতে যখন বিভিন্ন কনসোলের জন্য গেম থাকে, তখন একবারে একটি কনসোলের পরিবর্তে সেগুলো সমান্তরালে পাঠানো হয়। প্রতিটি কনসোল এখনও একবারে একটি গেমই আপলোড করে। ডিফল্টভাবে বন্ধ — এটি আপনার PC-র ডিস্ক ও নেটওয়ার্কে চাপ বাড়ায়।",
+  payloads_version: "সংস্করণ",
+  payloads_version_tooltip: "একটি সংস্করণ বেছে নিন। সর্বশেষটি অস্থির হলে পুরোনো সংস্করণ আপনাকে ডাউনগ্রেড করতে দেয়।",
+  payloads_latest: "সর্বশেষ",
+  payloads_prerelease: "প্রি-রিলিজ",
+  payloads_prerelease_warn: "প্রি-রিলিজ — অস্থির হতে পারে",
 };
 
 export default bn;

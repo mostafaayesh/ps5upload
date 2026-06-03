@@ -1410,6 +1410,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Layanan pemasangan Sony menolak permintaan dengan {code}. Penyebab umum: pemasangan sebelumnya yang macet (buka notifikasi PS5 → Downloads → bersihkan), akun/wilayah salah, atau kehabisan ruang. Jika tidak satu pun berlaku, tangkap panel diag dan laporkan bug.",
 err_payload_rejected: "PS5 menolak permintaan: {reason}",
+  "pkglib.clearFinished": "Hapus yang selesai ({n})",
+  "pkglib.clearAll": "Hapus semua",
+  "pkglib.clearAll.confirmTitle": "Hapus semua paket yang sudah disiapkan?",
+  "pkglib.clearAll.confirmBody": "Ini menghapus permanen semua {n} berkas .pkg yang disiapkan dari PS5. Game yang sudah terpasang tidak terpengaruh.",
+  "pkglib.autoRemove": "Hapus otomatis setiap paket dari PS5 setelah terpasang",
+  "pkglib.badge.update": "pembaruan",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "Unggah ke beberapa konsol sekaligus",
+  upload_parallel_consoles_hint: "Saat antrean Anda berisi game untuk konsol berbeda, semuanya dikirim paralel alih-alih satu konsol per waktu. Setiap konsol tetap mengunggah satu game per waktu. Mati secara bawaan — ini menambah beban pada disk dan jaringan PC Anda.",
+  payloads_version: "Versi",
+  payloads_version_tooltip: "Pilih versi. Versi lama memungkinkan Anda menurunkan versi jika yang terbaru tidak stabil.",
+  payloads_latest: "terbaru",
+  payloads_prerelease: "pra-rilis",
+  payloads_prerelease_warn: "pra-rilis — mungkin tidak stabil",
 };
 
 export default id;

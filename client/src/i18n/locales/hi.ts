@@ -1404,6 +1404,20 @@ err_install_esrch:
 err_install_bgft_generic:
   "Sony की इंस्टॉल सेवा ने अनुरोध को {code} के साथ अस्वीकार किया। आम कारण: अटका हुआ पिछला इंस्टॉल (PS5 नोटिफ़िकेशन → Downloads → साफ़ करें), ग़लत खाता/क्षेत्र, या जगह की कमी। अगर इनमें से कोई लागू न हो, तो diag पैनल कैप्चर करें और बग रिपोर्ट करें।",
 err_payload_rejected: "PS5 ने अनुरोध अस्वीकार किया: {reason}",
+  "pkglib.clearFinished": "पूर्ण हटाएँ ({n})",
+  "pkglib.clearAll": "सभी हटाएँ",
+  "pkglib.clearAll.confirmTitle": "सभी तैयार पैकेज हटाएँ?",
+  "pkglib.clearAll.confirmBody": "यह PS5 से सभी {n} तैयार .pkg फ़ाइलें स्थायी रूप से हटा देगा। इंस्टॉल किए गए गेम प्रभावित नहीं होंगे।",
+  "pkglib.autoRemove": "इंस्टॉल होने के बाद हर पैकेज को PS5 से अपने आप हटाएँ",
+  "pkglib.badge.update": "अपडेट",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "एक साथ कई कंसोल पर अपलोड करें",
+  upload_parallel_consoles_hint: "जब आपकी कतार में अलग-अलग कंसोल के लिए गेम हों, तो उन्हें एक बार में एक कंसोल के बजाय समानांतर भेजा जाता है। हर कंसोल अब भी एक बार में एक ही गेम अपलोड करता है। डिफ़ॉल्ट रूप से बंद — यह आपके PC की डिस्क और नेटवर्क पर भार बढ़ाता है।",
+  payloads_version: "संस्करण",
+  payloads_version_tooltip: "एक संस्करण चुनें। यदि नवीनतम अस्थिर हो तो पुराने संस्करण आपको डाउनग्रेड करने देते हैं।",
+  payloads_latest: "नवीनतम",
+  payloads_prerelease: "प्री-रिलीज़",
+  payloads_prerelease_warn: "प्री-रिलीज़ — अस्थिर हो सकता है",
 };
 
 export default hi;

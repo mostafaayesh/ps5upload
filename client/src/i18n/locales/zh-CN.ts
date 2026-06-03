@@ -1356,6 +1356,20 @@ err_install_parental: "标题被 PS5 家长/内容控制阻止。请在重试前
 err_install_esrch: "PS5 安装守护进程无法连接到我们的进程（ESRCH = 无此进程）。通常意味着载荷尚未提权 — kstuff/etaHEN 可能未加载。请通过 连接 → 发送 payload 重新发送载荷后重试。",
 err_install_bgft_generic: "Sony 的安装服务以 {code} 拒绝了该请求。常见原因：卡住的先前安装（打开 PS5 通知 → Downloads → 清除）、账户/地区错误，或空间不足。如果均不适用，请截取诊断面板并提交错误报告。",
 err_payload_rejected: "PS5 拒绝了该请求：{reason}",
+  "pkglib.clearFinished": "清除已完成（{n}）",
+  "pkglib.clearAll": "全部清除",
+  "pkglib.clearAll.confirmTitle": "删除所有已暂存的安装包？",
+  "pkglib.clearAll.confirmBody": "这将从 PS5 永久删除全部 {n} 个已暂存的 .pkg 文件。已安装的游戏不受影响。",
+  "pkglib.autoRemove": "安装后自动从 PS5 删除每个安装包",
+  "pkglib.badge.update": "更新",
+  "pkglib.badge.dlc": "DLC",
+  upload_parallel_consoles: "同时上传到多台主机",
+  upload_parallel_consoles_hint: "当队列中有面向不同主机的游戏时，会并行发送而不是一次只发一台。每台主机仍然一次只上传一个游戏。默认关闭——它会增加电脑磁盘和网络的负载。",
+  payloads_version: "版本",
+  payloads_version_tooltip: "选择一个版本。如果最新版不稳定，旧版本可以让你降级。",
+  payloads_latest: "最新",
+  payloads_prerelease: "预发布",
+  payloads_prerelease_warn: "预发布 — 可能不稳定",
 };
 
 export default zh_CN;
