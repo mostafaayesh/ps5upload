@@ -378,7 +378,7 @@ pub fn is_retryable_transfer_error(err: &anyhow::Error) -> bool {
     // sleep/wake cycle (NotConnected).
     for cause in err.chain() {
         if let Some(ioerr) = cause.downcast_ref::<std::io::Error>() {
-            return matches!(
+            if matches!(
                 ioerr.kind(),
                 std::io::ErrorKind::ConnectionReset
                     | std::io::ErrorKind::ConnectionAborted
@@ -387,7 +387,19 @@ pub fn is_retryable_transfer_error(err: &anyhow::Error) -> bool {
                     | std::io::ErrorKind::UnexpectedEof
                     | std::io::ErrorKind::Interrupted
                     | std::io::ErrorKind::NotConnected
-            );
+            ) {
+                return true;
+            }
+            // Backstop for transient *local* network-stack resource
+            // exhaustion (Windows WSAENOBUFS 10055 under multi-stream
+            // churn). `Connection::connect` already retries these inline
+            // with a short backoff; if the host is so starved that even
+            // those retries are exhausted, let `resumable_retry`'s longer
+            // (up to 16 s) backoff give the stack more time to recover
+            // rather than aborting the whole upload. These map to
+            // `ErrorKind::Other`, so they must be matched by OS code, not
+            // kind.
+            return crate::connection::is_transient_local_resource_error(ioerr);
         }
     }
     false

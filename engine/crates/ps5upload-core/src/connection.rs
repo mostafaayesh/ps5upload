@@ -19,6 +19,63 @@ const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_BUFFERED_BODY: usize = 4 * 1024 * 1024; // 4 MiB — refuse to buffer more
 const DRAIN_CHUNK: usize = 64 * 1024;
 
+/// Number of times `connect` re-tries a connect that failed with a transient
+/// local resource error before giving up. With the 100 ms→3.2 s backoff below
+/// this rides out ~6 s of host-side socket-buffer / ephemeral-port pressure,
+/// which is far longer than a WSAENOBUFS spike lasts in practice (TIME_WAIT
+/// sockets drain in well under a second once the connect rate drops).
+const MAX_CONNECT_RESOURCE_RETRIES: u32 = 6;
+
+/// True when an `io::Error` is a *transient local* network-stack resource
+/// exhaustion — the host kernel momentarily lacked socket-buffer space or a
+/// free ephemeral port — as opposed to a problem with the peer.
+///
+/// The motivating case is Windows `WSAENOBUFS` (os error 10055) under
+/// multi-stream upload churn: 4 concurrent transfer connections plus
+/// resume-driven reconnects accumulate sockets in TIME_WAIT, exhausting the
+/// nonpaged pool / dynamic-port range, and a fresh `connect()` (or a
+/// mid-upload reconnect) fails. It is fully recoverable: the resource frees
+/// within a few hundred ms, so the right response is a short backoff-and-retry,
+/// never failing the whole transfer. Pre-fix this surfaced as
+/// `ErrorKind::Other`, which `is_retryable_transfer_error` treats as fatal, so
+/// one spike aborted the upload ("too much buffer error middle of upload").
+///
+/// Exposed `pub(crate)` so `transfer::is_retryable_transfer_error` can use the
+/// same classification as a backstop to the in-`connect` retry below.
+pub(crate) fn is_transient_local_resource_error(e: &io::Error) -> bool {
+    match e.raw_os_error() {
+        Some(code) => transient_resource_code(code),
+        None => false,
+    }
+}
+
+/// Windows variant: classify WSA error codes. `raw_os_error()` on Windows
+/// sockets carries the `WSAGetLastError` value (e.g. the 10055 the user sees in
+/// `(os error 10055)`), so we match the WSA code space directly.
+#[cfg(windows)]
+fn transient_resource_code(code: i32) -> bool {
+    matches!(
+        code,
+        10055 /* WSAENOBUFS  — no buffer space available */
+            | 10048 /* WSAEADDRINUSE — ephemeral port exhaustion under churn */
+    )
+}
+
+/// POSIX variant: ENOBUFS / EADDRNOTAVAIL / EADDRINUSE map to the same
+/// "host stack momentarily out of resources" condition (rare on Unix at our
+/// connection rate, but the retry is harmless and keeps the two platforms'
+/// behaviour aligned). Uses `libc` constants rather than hard-coded numbers
+/// because ENOBUFS differs across Unixes (macOS/BSD 55, Linux 105).
+#[cfg(unix)]
+fn transient_resource_code(code: i32) -> bool {
+    code == libc::ENOBUFS || code == libc::EADDRINUSE || code == libc::EADDRNOTAVAIL
+}
+
+#[cfg(not(any(windows, unix)))]
+fn transient_resource_code(_code: i32) -> bool {
+    false
+}
+
 /// Saturating buffer-size calculation for `drain_body`. Extracted as a
 /// free function so it can be unit-tested without a TCP stream.
 ///
@@ -157,8 +214,37 @@ impl Connection {
         let sock_addr = addr
             .parse()
             .with_context(|| format!("parse addr: {addr}"))?;
-        let stream = TcpStream::connect_timeout(&sock_addr, DEFAULT_CONNECT_TIMEOUT)
-            .with_context(|| format!("connect to {addr}"))?;
+        // Retry transient *local* resource-exhaustion failures (Windows
+        // WSAENOBUFS 10055 under multi-stream churn) with a short backoff.
+        // These are not a dead peer — the host stack is momentarily out of
+        // socket buffers / ephemeral ports and recovers within a few hundred
+        // ms. A genuinely unreachable PS5 fails with ConnectionRefused/TimedOut
+        // (not a transient-resource code), so it still fast-fails here.
+        let mut attempt = 0u32;
+        let stream = loop {
+            match TcpStream::connect_timeout(&sock_addr, DEFAULT_CONNECT_TIMEOUT) {
+                Ok(s) => break s,
+                Err(e)
+                    if is_transient_local_resource_error(&e)
+                        && attempt < MAX_CONNECT_RESOURCE_RETRIES =>
+                {
+                    // 100, 200, 400, 800, 1600, 3200 ms.
+                    let backoff = Duration::from_millis(100u64 << attempt.min(5));
+                    crate::core_log!(
+                        "connection: connect to {} hit transient local resource error \
+                         ({}); retry {}/{} after {} ms",
+                        addr,
+                        e,
+                        attempt + 1,
+                        MAX_CONNECT_RESOURCE_RETRIES,
+                        backoff.as_millis(),
+                    );
+                    std::thread::sleep(backoff);
+                    attempt += 1;
+                }
+                Err(e) => return Err(e).with_context(|| format!("connect to {addr}")),
+            }
+        };
         stream.set_read_timeout(Some(DEFAULT_IO_TIMEOUT))?;
         stream.set_write_timeout(Some(DEFAULT_IO_TIMEOUT))?;
         stream.set_nodelay(true).context("set TCP_NODELAY")?;
@@ -368,6 +454,63 @@ mod drain_chunk_size_tests {
         for &len in &[1u64, 2, DRAIN_CHUNK as u64 - 1, u64::MAX / 2, u64::MAX] {
             assert!(drain_chunk_size(len) > 0, "zero buffer for len={len}");
         }
+    }
+}
+
+#[cfg(test)]
+mod transient_resource_error_tests {
+    //! Pin the WSAENOBUFS-class classification. The bug this guards against:
+    //! a Windows host under multi-stream upload churn returns WSAENOBUFS
+    //! (os error 10055) from `connect()`, which maps to `ErrorKind::Other`.
+    //! Before the fix `is_retryable_transfer_error` treated `Other` as fatal,
+    //! so one transient buffer spike aborted the whole upload. These tests
+    //! lock in that the OS-code classifier recognises the transient codes and
+    //! ignores unrelated ones.
+    use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn wsaenobufs_is_transient() {
+        let e = io::Error::from_raw_os_error(10055);
+        assert!(is_transient_local_resource_error(&e));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn wsaeaddrinuse_is_transient() {
+        let e = io::Error::from_raw_os_error(10048);
+        assert!(is_transient_local_resource_error(&e));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn connection_refused_is_not_transient() {
+        // WSAECONNREFUSED (10061) is a dead/closed peer — must fast-fail,
+        // not retry, so a genuinely offline PS5 surfaces immediately.
+        let e = io::Error::from_raw_os_error(10061);
+        assert!(!is_transient_local_resource_error(&e));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn enobufs_is_transient() {
+        let e = io::Error::from_raw_os_error(libc::ENOBUFS);
+        assert!(is_transient_local_resource_error(&e));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn connection_refused_is_not_transient() {
+        let e = io::Error::from_raw_os_error(libc::ECONNREFUSED);
+        assert!(!is_transient_local_resource_error(&e));
+    }
+
+    #[test]
+    fn non_os_error_is_not_transient() {
+        // An error with no raw OS code (e.g. a synthesised ErrorKind) must
+        // not be misclassified as a recoverable resource spike.
+        let e = io::Error::new(io::ErrorKind::Other, "synthetic");
+        assert!(!is_transient_local_resource_error(&e));
     }
 }
 

@@ -4,6 +4,17 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.23.11
+
+- **Uploads no longer abort with a "buffer space" error on Windows.** During a
+  fast multi-stream upload, Windows could briefly run out of network buffers
+  (`os error 10055`), and the app treated that as fatal — stopping the whole
+  transfer partway through. It now waits a moment and retries the connection
+  automatically, so a temporary hiccup no longer ends your upload. Engine-only
+  fix; no need to re-send the payload to your PS5.
+
+---
+
 ## 2.23.10
 
 - **Faster uploads from network drives / NAS.** The app now reads the next chunk
