@@ -47,3 +47,62 @@ export function stagingBasename(
   if (isSafeContentId(contentId)) return `${contentId}.pkg`;
   return `${queueId}_${nowMs}.pkg`;
 }
+
+// A PS5 base game (PARAM.SFO CATEGORY "gd") and its update ("gp") and DLC
+// ("ac") all SHARE the same ContentID. Since the staging basename must stay
+// `<ContentID>.pkg` (Sony's installer keys on the basename — see the header
+// comment), the only way base/update/DLC can coexist in the library without
+// overwriting each other is to put them in DIFFERENT directories. The
+// basename is unchanged, only the parent dir differs, so the installer's
+// basename cross-check still passes.
+
+/** Staging sub-directory (relative to the library root) for a package of the
+ *  given PARAM.SFO category. Base + unknown stay at the root (unchanged
+ *  behaviour, back-compat with already-staged files); updates and DLC get
+ *  their own dir so they don't collide with the base's `<ContentID>.pkg`. */
+export function stagingSubdirForCategory(
+  category: string | null | undefined,
+): string {
+  switch (category) {
+    case "gp":
+      return "updates";
+    case "ac":
+      return "dlc";
+    default:
+      return "";
+  }
+}
+
+/** Reverse of `stagingSubdirForCategory`: the category a library file's parent
+ *  sub-directory implies. Used by refresh to badge files listed from disk
+ *  (the filename alone can't distinguish base from update — they share a
+ *  ContentID — but the directory can). Root → undefined (base or unknown;
+ *  we don't claim "Base" for a file that might just be an oddly-categorised
+ *  pkg). */
+export function categoryForSubdir(subdir: string): string | undefined {
+  switch (subdir) {
+    case "updates":
+      return "gp";
+    case "dlc":
+      return "ac";
+    default:
+      return undefined;
+  }
+}
+
+/** Short human label for a package category, or null when it shouldn't get a
+ *  badge. Drives the "Update" / "DLC" chip in the library UI. */
+export function pkgCategoryLabel(
+  category: string | null | undefined,
+): "Base" | "Update" | "DLC" | null {
+  switch (category) {
+    case "gd":
+      return "Base";
+    case "gp":
+      return "Update";
+    case "ac":
+      return "DLC";
+    default:
+      return null;
+  }
+}

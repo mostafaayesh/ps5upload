@@ -1,10 +1,14 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 
-import { fsListDir, fsDelete } from "../api/ps5";
+import { fsListDir, fsDelete, fsMkdir } from "../api/ps5";
 import { hostOf, mgmtAddr, transferAddr } from "../lib/addr";
 import { humanizePs5Error } from "../lib/humanizeError";
-import { stagingBasename } from "../lib/pkgStagingPath";
+import {
+  stagingBasename,
+  stagingSubdirForCategory,
+  categoryForSubdir,
+} from "../lib/pkgStagingPath";
 import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
 import { transferScreenBusy } from "../lib/ps5Transfers";
 import { useInstallSettingsStore } from "./installSettings";
@@ -47,6 +51,12 @@ export interface PkgEntry {
   /** Title id (PPSA/CUSA…) derived from the ContentID. Drives cover art and
    *  the "installed" badge. Undefined when it can't be derived. */
   titleId?: string;
+  /** PARAM.SFO category — `gd` (base game), `gp` (update/patch), `ac` (DLC).
+   *  A base and its update share a ContentID, so this is the only thing that
+   *  tells them apart. On upload it comes from the parsed header; on refresh
+   *  it's inferred from the staging sub-directory the file lives in. Undefined
+   *  for root-level files of unknown category. Drives the Update/DLC badge. */
+  category?: string;
   /** Transient per-row state (never persisted; recomputed each session). */
   status: PkgStatus;
   /** Bytes transferred so far (upload) — drives the row progress bar. */
@@ -105,7 +115,15 @@ function cacheTitle(contentId: string, title: string): void {
 interface SplitParseResponse {
   parts?: string[];
   total_size?: number;
-  head?: { content_id?: string; title?: string; warnings?: string[] };
+  head?: {
+    content_id?: string;
+    title?: string;
+    /** PARAM.SFO CATEGORY ("gd"/"gp"/"ac"). Already present in the
+     *  engine's parse-split response (it serialises the full PkgMetadata);
+     *  we just hadn't been reading it. */
+    category?: string;
+    warnings?: string[];
+  };
 }
 
 function pkgError(e: unknown): string {
@@ -185,34 +203,47 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
     const addr = mgmtAddr(host);
     const titles = loadTitleCache();
     try {
-      let listed: Awaited<ReturnType<typeof fsListDir>> = [];
-      try {
-        listed = await fsListDir(addr, PKG_LIBRARY_DIR);
-      } catch (err) {
-        // ONLY ENOENT (errno 2 — the library dir doesn't exist yet because
-        // nothing has been uploaded) is "empty library, not an error". Any
-        // other failure (PS5 offline, connection refused, permission denied)
-        // must surface — otherwise an unreachable console looks like an empty
-        // library and silently wipes the displayed list. Re-throw to the
-        // outer catch, which sets `error` and keeps the existing entries.
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!/fs_list_dir_opendir_errno_2\b/.test(msg)) throw err;
-        listed = [];
-      }
-      const entries: PkgEntry[] = listed
-        .filter((e) => e.kind === "file" && e.name.toLowerCase().endsWith(".pkg"))
-        .map((e) => {
+      // List one dir, tolerating ENOENT (errno 2 — dir not created yet =
+      // empty, not an error). `strict` re-throws any OTHER error so an
+      // offline/refused console surfaces instead of silently wiping the
+      // list; we use it only for the root dir. Sub-dir scans are
+      // best-effort — a successful root list already proved reachability,
+      // so a stray sub-dir error shouldn't blank the whole library.
+      const listOne = async (dir: string, strict: boolean) => {
+        try {
+          return await fsListDir(addr, dir);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (/fs_list_dir_opendir_errno_2\b/.test(msg)) return [];
+          if (strict) throw err;
+          return [];
+        }
+      };
+      // Base/unknown live at the library root; updates + DLC in their own
+      // sub-dirs (see lib/pkgStagingPath). Scan all three so a base and its
+      // update both show, each badged by the dir it came from.
+      const SCAN = ["", "updates", "dlc"];
+      const entries: PkgEntry[] = [];
+      for (const subdir of SCAN) {
+        const dir = subdir ? `${PKG_LIBRARY_DIR}/${subdir}` : PKG_LIBRARY_DIR;
+        const listed = await listOne(dir, subdir === "");
+        for (const e of listed) {
+          if (e.kind !== "file" || !e.name.toLowerCase().endsWith(".pkg")) {
+            continue;
+          }
           const contentId = contentIdFromName(e.name);
-          return {
+          entries.push({
             name: e.name,
-            path: `${PKG_LIBRARY_DIR}/${e.name}`,
+            path: `${dir}/${e.name}`,
             size: e.size,
             contentId,
             title: titles[contentId],
             titleId: titleIdFromContentId(contentId) ?? undefined,
+            category: categoryForSubdir(subdir),
             status: "idle" as PkgStatus,
-          };
-        });
+          });
+        }
+      }
       set({ entries: mergeListing(get().entries, entries), loading: false });
     } catch (e) {
       set({ error: pkgError(e), loading: false });
@@ -248,17 +279,24 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
     }
     const contentId = meta.head?.content_id ?? "";
     const title = meta.head?.title;
+    const category = meta.head?.category;
     const totalBytes = meta.total_size ?? 0;
     if (title) cacheTitle(contentId, title);
 
     // 2. Name the on-PS5 file `<ContentID>.pkg` (Sony's installer keys on the
-    //    basename matching the ContentID — see lib/pkgStagingPath).
+    //    basename matching the ContentID — see lib/pkgStagingPath). A base
+    //    game and its update/DLC share that ContentID, so they're routed to
+    //    distinct sub-directories (basename unchanged) to keep them from
+    //    overwriting each other in the library.
     const basename = stagingBasename(
       contentId,
       Math.random().toString(36).slice(2),
       Date.now(),
     );
-    const destPath = `${PKG_LIBRARY_DIR}/${basename}`;
+    const subdir = stagingSubdirForCategory(category);
+    const destPath = subdir
+      ? `${PKG_LIBRARY_DIR}/${subdir}/${basename}`
+      : `${PKG_LIBRARY_DIR}/${basename}`;
 
     // Refuse to re-add a pkg that's already uploading to the same path:
     // two concurrent transfers to one file would corrupt it, and the two
@@ -293,6 +331,7 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
       contentId,
       title,
       titleId: titleIdFromContentId(contentId) ?? undefined,
+      category,
       status: othersBusy() ? "queued" : "uploading",
       bytes: 0,
       totalBytes,
@@ -323,6 +362,24 @@ export const usePkgLibrary = create<PkgLibraryState>((set, get) => ({
       // Make sure the console is on the matching (hardened) payload before we
       // stream — same guard the upload queue uses.
       await ensurePayloadCurrent(hostOf(host));
+      // Updates/DLC stage into a sub-dir; create it first (mkdir -p,
+      // EEXIST-tolerant) so the single-file transfer's open() doesn't fail
+      // with ENOENT on a parent that doesn't exist yet.
+      if (subdir) {
+        try {
+          await fsMkdir(transferAddr(host), `${PKG_LIBRARY_DIR}/${subdir}`);
+        } catch (e) {
+          patch({
+            status: "idle",
+            bytes: undefined,
+            lastResult: {
+              ok: false,
+              message: `Couldn't create the ${subdir} folder on the PS5: ${pkgError(e)}`,
+            },
+          });
+          return;
+        }
+      }
       const tx = (await invoke("transfer_file", {
         req: {
           src: localPath,

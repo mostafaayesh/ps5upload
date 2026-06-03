@@ -29,6 +29,7 @@ import {
   type PkgEntry,
 } from "../../state/pkgLibrary";
 import { useInstallSettingsStore } from "../../state/installSettings";
+import { pkgCategoryLabel } from "../../lib/pkgStagingPath";
 import { appsInstalled, appIconUrl } from "../../api/ps5";
 import { transferAddr } from "../../lib/addr";
 import { formatBytes } from "../../lib/format";
@@ -103,6 +104,16 @@ function PkgRow({
                 {tr("pkglib.badge.installed", "installed")}
               </span>
             )}
+            {/* Update / DLC badge — a base game and its update share a
+                ContentID, so without this they look identical. */}
+            {pkgCategoryLabel(entry.category) &&
+              pkgCategoryLabel(entry.category) !== "Base" && (
+                <span className="inline-flex shrink-0 items-center rounded-full border border-[var(--color-accent)] bg-[var(--color-accent-soft,transparent)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-accent)]">
+                  {pkgCategoryLabel(entry.category) === "Update"
+                    ? tr("pkglib.badge.update", "update")
+                    : tr("pkglib.badge.dlc", "DLC")}
+                </span>
+              )}
           </div>
           <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--color-muted)]">
             {entry.contentId || entry.name}

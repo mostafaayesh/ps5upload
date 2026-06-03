@@ -8,9 +8,10 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../api/ps5", () => ({
   fsListDir: vi.fn(async () => []),
   fsDelete: vi.fn(async () => {}),
+  fsMkdir: vi.fn(async () => {}),
 }));
 
-import { fsDelete } from "../api/ps5";
+import { fsDelete, fsListDir } from "../api/ps5";
 import {
   titleIdFromContentId,
   usePkgLibrary,
@@ -180,5 +181,92 @@ describe("clearAll", () => {
       .sort();
     expect(names).toEqual(["installing.pkg", "queued.pkg", "uploading.pkg"]);
     expect(mockedDelete).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── Base + update coexistence (the #3 bug fix) ──────────────────────────────
+
+describe("refresh — base + update coexistence and badging", () => {
+  const mockedList = vi.mocked(fsListDir);
+  const CID = "EP9000-CUSA00207_00-BLOODBORNE000000";
+  const file = (name: string, size: number) =>
+    ({ name, kind: "file", size }) as Awaited<
+      ReturnType<typeof fsListDir>
+    >[number];
+  const dir = (name: string) =>
+    ({ name, kind: "dir", size: 0 }) as Awaited<
+      ReturnType<typeof fsListDir>
+    >[number];
+
+  beforeEach(() => {
+    mockedList.mockReset();
+    usePkgLibrary.setState({ entries: [], error: null, loading: false });
+  });
+  afterEach(() => {
+    usePkgLibrary.setState({ entries: [], error: null });
+  });
+
+  it("lists a base and its same-ContentID update as two distinct, badged rows", async () => {
+    mockedList.mockImplementation(async (_addr: string, d: string) => {
+      if (d.endsWith("/updates")) return [file(`${CID}.pkg`, 200)];
+      if (d.endsWith("/dlc")) return [];
+      // library root: the base + the two sub-dirs (which we must NOT treat
+      // as packages).
+      return [file(`${CID}.pkg`, 100), dir("updates"), dir("dlc")];
+    });
+
+    await usePkgLibrary.getState().refresh("192.168.1.50");
+
+    const entries = usePkgLibrary.getState().entries;
+    expect(entries).toHaveLength(2);
+    const base = entries.find((e) => e.category === undefined);
+    const update = entries.find((e) => e.category === "gp");
+    // Same ContentID...
+    expect(base?.contentId).toBe(CID);
+    expect(update?.contentId).toBe(CID);
+    // ...but DIFFERENT paths — neither overwrites the other (the bug fix).
+    expect(base?.path).not.toBe(update?.path);
+    expect(base?.path.endsWith(`/${CID}.pkg`)).toBe(true);
+    expect(update?.path).toContain("/updates/");
+    expect(usePkgLibrary.getState().error).toBeNull();
+  });
+
+  it("tolerates missing updates/ + dlc/ sub-dirs (ENOENT), still lists the base", async () => {
+    mockedList.mockImplementation(async (_addr: string, d: string) => {
+      if (d.endsWith("/updates") || d.endsWith("/dlc")) {
+        throw new Error("fs_list_dir_opendir_errno_2");
+      }
+      return [file(`${CID}.pkg`, 100)];
+    });
+
+    await usePkgLibrary.getState().refresh("192.168.1.50");
+
+    const entries = usePkgLibrary.getState().entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].category).toBeUndefined();
+    expect(usePkgLibrary.getState().error).toBeNull();
+  });
+
+  it("surfaces a real (non-ENOENT) error on the ROOT list without wiping the list", async () => {
+    usePkgLibrary.setState({
+      entries: [
+        {
+          name: "x.pkg",
+          path: "/lib/x.pkg",
+          size: 1,
+          contentId: "x",
+          status: "idle",
+        },
+      ],
+    });
+    mockedList.mockImplementation(async (_addr: string, _d: string) => {
+      throw new Error("connection refused");
+    });
+
+    await usePkgLibrary.getState().refresh("192.168.1.50");
+
+    // existing list preserved, error surfaced
+    expect(usePkgLibrary.getState().entries).toHaveLength(1);
+    expect(usePkgLibrary.getState().error).toBeTruthy();
   });
 });

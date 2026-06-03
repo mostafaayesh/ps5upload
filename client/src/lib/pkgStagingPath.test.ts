@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { isSafeContentId, stagingBasename } from "./pkgStagingPath";
+import {
+  isSafeContentId,
+  stagingBasename,
+  stagingSubdirForCategory,
+  categoryForSubdir,
+  pkgCategoryLabel,
+} from "./pkgStagingPath";
 
 describe("isSafeContentId", () => {
   it("accepts realistic Sony ContentIDs", () => {
@@ -92,5 +98,51 @@ describe("stagingBasename", () => {
     // Both reduce to the same path because ContentID is the
     // identity for retries.
     expect(a).toBe(b);
+  });
+});
+
+describe("stagingSubdirForCategory", () => {
+  it("routes updates and DLC to their own dirs, base/unknown to root", () => {
+    expect(stagingSubdirForCategory("gd")).toBe(""); // base
+    expect(stagingSubdirForCategory("gp")).toBe("updates"); // patch
+    expect(stagingSubdirForCategory("ac")).toBe("dlc"); // add-on
+    expect(stagingSubdirForCategory("")).toBe("");
+    expect(stagingSubdirForCategory(null)).toBe("");
+    expect(stagingSubdirForCategory(undefined)).toBe("");
+    expect(stagingSubdirForCategory("weird")).toBe("");
+  });
+
+  it("gives a base and its update DIFFERENT staging paths (the bug fix)", () => {
+    // Same ContentID, different category → must not collide.
+    const cid = "EP9000-CUSA00207_00-BLOODBORNE000000";
+    const base = `lib/${stagingSubdirForCategory("gd")}/${cid}.pkg`.replace(
+      "//",
+      "/",
+    );
+    const update = `lib/${stagingSubdirForCategory("gp")}/${cid}.pkg`;
+    expect(base).not.toBe(update);
+    // basename is identical (installer keys on it); only the dir differs.
+    expect(base.endsWith(`${cid}.pkg`)).toBe(true);
+    expect(update.endsWith(`${cid}.pkg`)).toBe(true);
+  });
+});
+
+describe("categoryForSubdir", () => {
+  it("is the inverse mapping used by refresh", () => {
+    expect(categoryForSubdir("updates")).toBe("gp");
+    expect(categoryForSubdir("dlc")).toBe("ac");
+    expect(categoryForSubdir("")).toBeUndefined();
+    expect(categoryForSubdir("anything-else")).toBeUndefined();
+  });
+});
+
+describe("pkgCategoryLabel", () => {
+  it("labels the badge-worthy categories", () => {
+    expect(pkgCategoryLabel("gd")).toBe("Base");
+    expect(pkgCategoryLabel("gp")).toBe("Update");
+    expect(pkgCategoryLabel("ac")).toBe("DLC");
+    expect(pkgCategoryLabel("")).toBeNull();
+    expect(pkgCategoryLabel(undefined)).toBeNull();
+    expect(pkgCategoryLabel("misc")).toBeNull();
   });
 });
