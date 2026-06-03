@@ -50,7 +50,10 @@ use ftx2_proto::FrameType;
 use ps5upload_core::{
     cleanup::{cleanup_path, CleanupResult},
     connection::Connection,
-    download::{download_to_local, enumerate_download_set, DownloadKind},
+    download::{
+        download_to_local_multistream, enumerate_download_set, DownloadKind,
+        MAX_DOWNLOAD_STREAMS,
+    },
     fs_ops::{
         app_launch, app_list_registered, app_register, app_unregister, fs_copy_with_op_id,
         fs_delete_with_op_id, fs_mkdir, fs_mount, fs_move_with_timeout, fs_op_cancel, fs_op_status,
@@ -3359,6 +3362,11 @@ struct TransferDownloadReq {
     /// (Library/FileSystem row) so we trust the hint and skip a
     /// stat round-trip just to classify.
     kind: String,
+    /// Parallel download streams for a FOLDER pull (one connection per
+    /// disjoint file subset). None / <=1 = single stream. Capped at
+    /// `MAX_DOWNLOAD_STREAMS`. Ignored for single-file downloads.
+    #[serde(default)]
+    streams: Option<usize>,
 }
 
 /// POST /api/transfer/download — PS5 → host file/folder pull.
@@ -3371,6 +3379,10 @@ async fn transfer_download_handler(
     State(state): State<AppState>,
     Json(req): Json<TransferDownloadReq>,
 ) -> impl IntoResponse {
+    // Default to the max parallel streams so folder dumps parallelise across
+    // files automatically (single-file pulls fall back to one stream inside
+    // download_to_local_multistream). Capture before req.addr is moved below.
+    let download_streams = req.streams.unwrap_or(MAX_DOWNLOAD_STREAMS);
     let mgmt_addr = mgmt_addr_or_default(req.addr, &state.default_ps5_addr);
     crate::log_info!(
         "transfer_download: addr={mgmt_addr} src_path={} dest_dir={} kind={}",
@@ -3555,8 +3567,15 @@ async fn transfer_download_handler(
         let mut fail_guard =
             JobFailOnDropGuard::new(Arc::clone(&jobs), events_tx.clone(), job_id, started_at_ms);
         // Write root is `dest_dir` (NOT dest_root) — rel_paths already carry
-        // the basename prefix; see the dest_root comment above.
-        let result = download_to_local(&mgmt_addr, &dest_dir, &manifest, Some(&progress));
+        // the basename prefix; see the dest_root comment above. Multi-stream
+        // for folders (parallel files); single-file falls back internally.
+        let result = download_to_local_multistream(
+            &mgmt_addr,
+            &dest_dir,
+            &manifest,
+            download_streams,
+            Some(&progress),
+        );
         match result {
             Ok(bytes_written) => {
                 let completed_at_ms = now_ms();

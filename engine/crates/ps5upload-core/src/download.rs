@@ -46,6 +46,14 @@ pub const DOWNLOAD_CHUNK_SIZE: u64 = 2 * 1024 * 1024;
 /// LAN without unbounded host buffering.
 const DOWNLOAD_PIPELINE_DEPTH: usize = 4;
 
+/// Hard ceiling on parallel download streams. Mirrors the upload path's
+/// `MAX_TRANSFER_STREAMS`. Download streams are independent mgmt-port
+/// connections, each pulling a disjoint subset of the files — so a
+/// many-small-file folder (round-trip-bound per file) parallelises across
+/// connections instead of serialising on one. Beyond ~4 the host disk +
+/// gigabit NIC are the wall.
+pub const MAX_DOWNLOAD_STREAMS: usize = 4;
+
 /// Per-read I/O deadline on the reused connection. Matches the transfer
 /// path's default; a stalled payload surfaces instead of hanging forever.
 const DOWNLOAD_IO_TIMEOUT: Duration = Duration::from_secs(30);
@@ -598,6 +606,72 @@ pub fn download_to_local(
     Ok(total_written)
 }
 
+/// Multi-stream sibling of `download_to_local`: split `manifest` into
+/// `streams` byte-balanced, disjoint buckets and pull them concurrently,
+/// each on its own connection. The single-stream path is already at wire
+/// speed for one big file; this is the lever for FOLDER dumps — especially
+/// many-small-file game folders, where one connection is round-trip-bound
+/// (one FS_READ per tiny file) and N connections parallelise that.
+///
+/// Falls back to `download_to_local` verbatim for ≤1 stream or ≤1 file, so
+/// callers can always route through here. Streams write disjoint files into
+/// the same `dest_dir`, share the progress counter, and a failed stream
+/// surfaces (after all join) as the overall error — re-running re-pulls.
+pub fn download_to_local_multistream(
+    addr: &str,
+    dest_dir: &Path,
+    manifest: &[DownloadEntry],
+    streams: usize,
+    progress_bytes: Option<&Arc<AtomicU64>>,
+) -> Result<u64> {
+    let effective = streams.clamp(1, MAX_DOWNLOAD_STREAMS);
+    if effective <= 1 || manifest.len() <= 1 {
+        return download_to_local(addr, dest_dir, manifest, progress_bytes);
+    }
+    let weights: Vec<u64> = manifest.iter().map(|e| e.size).collect();
+    let buckets = crate::transfer::distribute_balanced(&weights, effective);
+
+    let results: Vec<Result<u64>> = std::thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for idxs in buckets.iter() {
+            if idxs.is_empty() {
+                continue; // fewer files than streams
+            }
+            let sub: Vec<DownloadEntry> = idxs.iter().map(|&i| manifest[i].clone()).collect();
+            let addr = addr.to_string();
+            let dest = dest_dir.to_path_buf();
+            let prog = progress_bytes.cloned();
+            handles.push(scope.spawn(move || {
+                download_to_local(&addr, &dest, &sub, prog.as_ref())
+            }));
+        }
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err(anyhow::anyhow!("download stream panicked")))
+            })
+            .collect()
+    });
+
+    let mut total = 0u64;
+    let mut first_err: Option<anyhow::Error> = None;
+    for r in results {
+        match r {
+            Ok(n) => total += n,
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+        }
+    }
+    if let Some(e) = first_err {
+        return Err(e);
+    }
+    Ok(total)
+}
+
 fn remote_basename(path: &str) -> String {
     path.trim_end_matches('/')
         .rsplit('/')
@@ -921,5 +995,87 @@ mod pipeline_tests {
         assert_eq!(res.unwrap(), size);
         assert_pattern(&path, size);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+    /// Path-seeded deterministic content so a file downloaded into the wrong
+    /// path (stream mis-routing) is caught, not just a size mismatch.
+    fn seeded_byte(path: &str, o: u64) -> u8 {
+        let mut h: u64 = 5381;
+        for b in path.bytes() {
+            h = h.wrapping_mul(33).wrapping_add(b as u64);
+        }
+        (h.wrapping_add(o) % 251) as u8
+    }
+
+    /// Concurrent fake payload: a thread per accepted connection, so N
+    /// download streams are served in parallel. Content is path-seeded.
+    fn spawn_fake_payload_concurrent() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut s) = stream else { break };
+                std::thread::spawn(move || loop {
+                    let mut hbuf = [0u8; FRAME_HEADER_LEN];
+                    if s.read_exact(&mut hbuf).is_err() {
+                        break;
+                    }
+                    let hdr = FrameHeader::decode(&hbuf).unwrap();
+                    let mut body = vec![0u8; hdr.body_len as usize];
+                    if hdr.body_len > 0 {
+                        s.read_exact(&mut body).unwrap();
+                    }
+                    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                    let path = v["path"].as_str().unwrap().to_string();
+                    let offset = v["offset"].as_u64().unwrap();
+                    let limit = v["limit"].as_u64().unwrap();
+                    let data: Vec<u8> =
+                        (offset..offset + limit).map(|o| seeded_byte(&path, o)).collect();
+                    let rh = FrameHeader::new(FrameType::FsReadAck, 0, limit, 0);
+                    if s.write_all(&rh.encode()).is_err() || s.write_all(&data).is_err() {
+                        break;
+                    }
+                });
+            }
+        });
+        addr
+    }
+
+    #[test]
+    fn multistream_download_splits_and_reassembles_correctly() {
+        let addr = spawn_fake_payload_concurrent();
+        // Mixed sizes so the byte-balanced split is non-trivial.
+        let sizes = [10u64, 1_000_000, 50, DOWNLOAD_CHUNK_SIZE + 3, 4096, 7, 999, 123_456];
+        let dir = std::env::temp_dir().join(format!("ps5dl-ms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let manifest: Vec<DownloadEntry> = sizes
+            .iter()
+            .enumerate()
+            .map(|(i, &sz)| DownloadEntry {
+                remote_path: format!("/data/game/f{i}.bin"),
+                rel_path: format!("game/f{i}.bin"),
+                size: sz,
+            })
+            .collect();
+        let total: u64 = sizes.iter().sum();
+
+        let got = download_to_local_multistream(&addr, &dir, &manifest, 4, None).unwrap();
+        assert_eq!(got, total, "multistream total bytes");
+
+        for entry in &manifest {
+            let path = dir.join(&entry.rel_path);
+            let bytes = std::fs::read(&path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+            assert_eq!(bytes.len() as u64, entry.size, "size of {}", entry.rel_path);
+            for (i, b) in bytes.iter().enumerate() {
+                assert_eq!(
+                    *b,
+                    seeded_byte(&entry.remote_path, i as u64),
+                    "byte {i} of {} (mis-routed stream?)",
+                    entry.rel_path
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

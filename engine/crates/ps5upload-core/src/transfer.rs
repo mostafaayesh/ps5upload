@@ -1904,7 +1904,7 @@ pub struct FileListEntry {
 /// exactly once across the returned buckets (disjoint + complete); exactly
 /// `max(buckets, 1)` inner vecs are returned (empty ones kept so callers can map
 /// bucket-index → stream-index directly).
-fn distribute_balanced(weights: &[u64], buckets: usize) -> Vec<Vec<usize>> {
+pub(crate) fn distribute_balanced(weights: &[u64], buckets: usize) -> Vec<Vec<usize>> {
     let buckets = buckets.max(1);
     let mut out: Vec<Vec<usize>> = vec![Vec::new(); buckets];
     if weights.is_empty() {
