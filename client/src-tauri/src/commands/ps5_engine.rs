@@ -565,6 +565,11 @@ pub struct TransferDirReconcileReq {
     /// Outbound bandwidth cap in MB/s. None or 0 means uncapped.
     #[serde(default)]
     pub bandwidth_cap_mbps: Option<f64>,
+    /// Parallel upload streams (resolved by the client as
+    /// min(user setting, payload's max_transfer_streams)). None / <=1 →
+    /// single stream. See docs/multistream-upload.md.
+    #[serde(default)]
+    pub streams: Option<usize>,
 }
 
 // ── Destructive FS ops ──────────────────────────────────────────────────────
@@ -1053,6 +1058,7 @@ pub async fn transfer_dir_reconcile(req: TransferDirReconcileReq) -> Result<Json
         "mode": req.mode,
         "excludes": req.excludes,
         "bandwidth_cap_mbps": req.bandwidth_cap_mbps,
+        "streams": req.streams,
     });
     post_json(&url, &body).await
 }

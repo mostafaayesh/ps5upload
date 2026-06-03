@@ -26,6 +26,7 @@ import {
 import type { SourceKind } from "./upload";
 import { useUploadSettingsStore } from "./uploadSettings";
 import { useRecentHostMetricsStore } from "./recentHostMetrics";
+import { effectiveUploadStreams } from "../lib/uploadStreams";
 
 /** Module-level shortcut to the recent-host-metrics recorder. Pulled
  *  out as a function (not a direct `store.record`) so future call
@@ -254,6 +255,10 @@ export const useTransferStore = create<TransferState>((set) => {
       // it wasn't.
       const bandwidthCap =
         useUploadSettingsStore.getState().bandwidthCapMbps;
+      // Resolve parallel streams once at start (min of user setting +
+      // payload's advertised max). Only the reconcile/resume folder path
+      // is multi-stream today; everything else stays single-stream.
+      const streams = effectiveUploadStreams();
       let jobId: string;
       try {
         if (isFolder && strategy === "resume") {
@@ -265,6 +270,7 @@ export const useTransferStore = create<TransferState>((set) => {
             txId,
             excludes,
             bandwidthCap,
+            streams,
           );
         } else if (isFolder) {
           jobId = await startTransferDir(

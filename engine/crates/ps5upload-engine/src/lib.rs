@@ -66,9 +66,10 @@ use ps5upload_core::{
         humanize_err as sys_time_humanize, ps5_time_get, ps5_time_set, PsTime, PsTimeSetResult,
     },
     transfer::{
-        inspect_zip, transfer_dir_resumable, transfer_file_list_resumable,
-        transfer_file_path_resumable, transfer_zip_resumable, zip_plan_preview, FileListEntry,
-        TransferConfig, DEFAULT_RESUME_RETRIES, DEFAULT_ZIP_ENTRY_RAM_THRESHOLD, TX_FLAG_RESUME,
+        inspect_zip, transfer_dir_resumable, transfer_file_list_multistream,
+        transfer_file_list_resumable, transfer_file_path_resumable, transfer_zip_resumable,
+        zip_plan_preview, FileListEntry, TransferConfig, DEFAULT_RESUME_RETRIES,
+        DEFAULT_ZIP_ENTRY_RAM_THRESHOLD, TX_FLAG_RESUME,
     },
     volumes::{list_volumes, VolumeList},
 };
@@ -873,6 +874,12 @@ struct TransferDirReconcileReq {
     excludes: Vec<String>,
     #[serde(default)]
     bandwidth_cap_mbps: Option<f64>,
+    /// Parallel upload streams. The client resolves this as
+    /// `min(user_setting, payload's max_transfer_streams)` and passes it here;
+    /// the engine just hands it to the multi-stream orchestrator. Absent / <=1
+    /// → single-stream (unchanged behaviour). See docs/multistream-upload.md.
+    #[serde(default)]
+    streams: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -3953,6 +3960,7 @@ async fn transfer_dir_reconcile_handler(
             })
             .collect();
 
+        let streams = req.streams.unwrap_or(1);
         let mut cfg = make_transfer_config(&addr);
         cfg.excludes = req.excludes;
         cfg.progress_bytes = Some(Arc::clone(&progress));
@@ -3965,11 +3973,17 @@ async fn transfer_dir_reconcile_handler(
         // busy draining a dropped connection); if the payload is hard-dead,
         // the reconnect fails fast (ConnectionRefused is non-retryable) and we
         // surface the underlying error.
-        let result = transfer_file_list_resumable(
+        //
+        // Multi-stream: when the client requests >1 stream (having confirmed the
+        // payload advertises support), the orchestrator splits `entries` across
+        // parallel connections. With streams<=1 it delegates to the exact
+        // single-stream path above, so this is a no-op when disabled.
+        let result = transfer_file_list_multistream(
             &cfg,
             tx_id,
             &req.dest_root,
             &entries,
+            streams,
             DEFAULT_RESUME_RETRIES,
             initial_flags,
         );

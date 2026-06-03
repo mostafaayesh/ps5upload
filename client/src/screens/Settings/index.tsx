@@ -24,7 +24,11 @@ import { PageHeader } from "../../components";
 import { useKeepAwakeStore } from "../../state/keepAwake";
 import { useNotificationsStore } from "../../state/notifications";
 import { useLangStore, useTr, LANGUAGES } from "../../state/lang";
-import { useUploadSettingsStore } from "../../state/uploadSettings";
+import {
+  useUploadSettingsStore,
+  MAX_UPLOAD_STREAMS,
+} from "../../state/uploadSettings";
+import { useConnectionStore } from "../../state/connection";
 import { userConfigPath } from "../../state/userConfig";
 import { useUpdateStore, type UpdatePhase } from "../../state/update";
 import type { LanguageCode } from "../../i18n";
@@ -80,9 +84,12 @@ export default function SettingsScreen() {
   const {
     alwaysOverwrite,
     showTransferFiles,
+    uploadStreams,
     setAlwaysOverwrite,
     setShowTransferFiles,
+    setUploadStreams,
   } = useUploadSettingsStore();
+  const payloadMaxStreams = useConnectionStore((s) => s.maxTransferStreams);
 
   const [cfgPath, setCfgPath] = useState<string | null>(null);
 
@@ -242,6 +249,51 @@ export default function SettingsScreen() {
                 </div>
               </div>
             </label>
+
+            <div className="text-sm">
+              <div className="flex items-center gap-3">
+                <label htmlFor="upload-streams" className="font-medium">
+                  {tr(
+                    "upload_streams",
+                    undefined,
+                    "Parallel upload streams",
+                  )}
+                </label>
+                <select
+                  id="upload-streams"
+                  value={uploadStreams}
+                  onChange={(e) => setUploadStreams(Number(e.target.value))}
+                  className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm"
+                >
+                  {Array.from({ length: MAX_UPLOAD_STREAMS }, (_, i) => i + 1).map(
+                    (n) => (
+                      <option key={n} value={n}>
+                        {n === 1
+                          ? tr("upload_streams_off", undefined, "1 (single)")
+                          : `${n}`}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+              <div className="mt-0.5 text-xs text-[var(--color-muted)]">
+                {tr(
+                  "upload_streams_hint",
+                  undefined,
+                  "Upload large folders over several connections at once. A single stream caps around 40 MB/s on non-Pro consoles (a single-thread limit, not your network or SSD); more streams aggregate toward your wired-LAN ceiling. Only the connected payload's supported maximum is used.",
+                )}
+              </div>
+              {uploadStreams > 1 &&
+                (payloadMaxStreams == null || payloadMaxStreams < 2) && (
+                  <div className="mt-1 text-xs text-[var(--color-warn,#b8860b)]">
+                    {tr(
+                      "upload_streams_unsupported",
+                      undefined,
+                      "The connected payload doesn't support multiple streams yet — uploads will use a single stream until it's updated.",
+                    )}
+                  </div>
+                )}
+            </div>
           </div>
         </Section>
 

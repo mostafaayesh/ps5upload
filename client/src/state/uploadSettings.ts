@@ -14,6 +14,12 @@ import type { ReconcileMode } from "../api/ps5";
 const KEY_ALWAYS_OVERWRITE = "ps5upload.always_overwrite";
 const KEY_SHOW_FILES = "ps5upload.show_transfer_files";
 const KEY_BANDWIDTH_CAP = "ps5upload.bandwidth_cap_mbps";
+const KEY_UPLOAD_STREAMS = "ps5upload.upload_streams";
+
+/** Upper bound on the user-selectable stream count, mirroring the engine's
+ *  MAX_TRANSFER_STREAMS. The effective count is further clamped to whatever
+ *  the connected payload advertises. */
+export const MAX_UPLOAD_STREAMS = 4;
 
 function loadAlwaysOverwrite(): boolean {
   if (typeof window === "undefined") return false;
@@ -44,6 +50,18 @@ function loadBandwidthCap(): number {
   return isFinite(n) && n > 0 ? n : 0;
 }
 
+function loadUploadStreams(): number {
+  // Default 1 (single stream = today's behaviour). Multi-stream is opt-in
+  // until it's hardware-validated, and only takes effect against a payload
+  // that advertises support (older payloads cap the effective count at 1).
+  if (typeof window === "undefined") return 1;
+  const v = window.localStorage.getItem(KEY_UPLOAD_STREAMS);
+  if (!v) return 1;
+  const n = parseInt(v, 10);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(Math.max(n, 1), MAX_UPLOAD_STREAMS);
+}
+
 interface UploadSettingsState {
   /** When true, the Upload flow skips the Override/Resume/Cancel
    *  dialog and always overwrites the destination. Useful for
@@ -59,9 +77,15 @@ interface UploadSettingsState {
   /** Outbound bandwidth cap in MB/s. 0 = no cap (use the engine's
    *  env-var default, also typically 0). Persisted to localStorage. */
   bandwidthCapMbps: number;
+  /** Desired parallel upload streams (1 = single stream = default/off).
+   *  The effective count is min(this, the payload's advertised
+   *  max_transfer_streams), resolved at upload start. Breaks the
+   *  single-stream ~40 MB/s write ceiling on non-Pro PS5s. */
+  uploadStreams: number;
   setAlwaysOverwrite: (on: boolean) => void;
   setShowTransferFiles: (on: boolean) => void;
   setBandwidthCapMbps: (n: number) => void;
+  setUploadStreams: (n: number) => void;
 }
 
 export const useUploadSettingsStore = create<UploadSettingsState>((set) => ({
@@ -69,6 +93,7 @@ export const useUploadSettingsStore = create<UploadSettingsState>((set) => ({
   reconcileMode: loadReconcileMode(),
   showTransferFiles: loadShowFiles(),
   bandwidthCapMbps: loadBandwidthCap(),
+  uploadStreams: loadUploadStreams(),
   setAlwaysOverwrite: (alwaysOverwrite) => {
     window.localStorage.setItem(
       KEY_ALWAYS_OVERWRITE,
@@ -93,5 +118,10 @@ export const useUploadSettingsStore = create<UploadSettingsState>((set) => ({
       window.localStorage.removeItem(KEY_BANDWIDTH_CAP);
     }
     set({ bandwidthCapMbps });
+  },
+  setUploadStreams: (n) => {
+    const clamped = Math.min(Math.max(Math.round(n), 1), MAX_UPLOAD_STREAMS);
+    window.localStorage.setItem(KEY_UPLOAD_STREAMS, clamped.toString());
+    set({ uploadStreams: clamped });
   },
 }));

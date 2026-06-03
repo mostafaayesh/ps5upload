@@ -234,6 +234,7 @@ export async function startTransferDirReconcile(
   txId?: string | null,
   excludes?: string[],
   bandwidthCapMbps?: number,
+  streams?: number,
 ): Promise<string> {
   const res = await invoke<{ job_id: string }>("transfer_dir_reconcile", {
     req: {
@@ -245,6 +246,9 @@ export async function startTransferDirReconcile(
       excludes: excludes ?? [],
       bandwidth_cap_mbps:
         bandwidthCapMbps && bandwidthCapMbps > 0 ? bandwidthCapMbps : null,
+      // Resolved upstream as min(user setting, payload max_transfer_streams).
+      // <=1 (or undefined) → single stream, unchanged behaviour.
+      streams: streams && streams > 1 ? streams : null,
     },
   });
   return res.job_id;
@@ -2963,6 +2967,12 @@ export async function payloadCheck(
    *  even with the right symbols resolved. Surfaced on the
    *  Connection screen so the user sees the prerequisite state. */
   ucredElevated: boolean | null;
+  /** Max parallel upload streams this payload will service concurrently
+   *  (from STATUS_ACK `max_transfer_streams`). Absent on payloads that
+   *  predate multi-stream → null, which the caller treats as 1 (single
+   *  stream). The Upload path resolves the actual count as
+   *  min(user setting, this). See docs/multistream-upload.md. */
+  maxTransferStreams: number | null;
   /** Raw error string from the engine when reachable=false. Lets the
    *  Connection screen's wait-for-boot banner surface what actually
    *  went wrong (TCP connect refused, STATUS_ACK timeout, etc.)
@@ -2977,6 +2987,7 @@ export async function payloadCheck(
       version?: string;
       ps5_kernel?: string;
       ucred_elevated?: boolean;
+      max_transfer_streams?: number;
     };
   }>("payload_check", { ip });
   return {
@@ -2987,6 +2998,11 @@ export async function payloadCheck(
     ucredElevated:
       typeof resp?.status?.ucred_elevated === "boolean"
         ? resp.status.ucred_elevated
+        : null,
+    maxTransferStreams:
+      typeof resp?.status?.max_transfer_streams === "number" &&
+      resp.status.max_transfer_streams > 0
+        ? resp.status.max_transfer_streams
         : null,
     error: resp?.reachable ? null : resp?.error ?? null,
   };

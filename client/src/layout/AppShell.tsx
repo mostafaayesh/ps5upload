@@ -79,6 +79,7 @@ function useStatusPolling() {
         payloadVersion: null,
         ps5Kernel: null,
         ucredElevated: null,
+        maxTransferStreams: null,
       });
       return;
     }
@@ -109,6 +110,9 @@ function useStatusPolling() {
             payloadVersion: carryOver ? prev.payloadVersion : s.payloadVersion,
             ps5Kernel: carryOver ? prev.ps5Kernel : s.ps5Kernel,
             ucredElevated: carryOver ? prev.ucredElevated : s.ucredElevated,
+            maxTransferStreams: carryOver
+              ? prev.maxTransferStreams
+              : s.maxTransferStreams,
             // Clear the "rechecking…" indicator any time a tick lands
             // a real result. Connection's handleSend sets probing=true
             // on Replace payload click; this is the safety-net path

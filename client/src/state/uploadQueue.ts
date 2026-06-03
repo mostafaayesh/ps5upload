@@ -37,6 +37,7 @@ import { pushNotification } from "./notifications";
 import { createRunGen } from "../lib/runGen";
 import { hostOf } from "../lib/addr";
 import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
+import { effectiveUploadStreams } from "../lib/uploadStreams";
 
 /**
  * Pause between queued jobs so the PS5 payload can drain the detached
@@ -280,6 +281,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         item.txIdHex,
         item.excludes,
         bandwidthCap,
+        effectiveUploadStreams(),
       );
     } else if (isFolder) {
       const bandwidthCap =

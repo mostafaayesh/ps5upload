@@ -578,9 +578,7 @@ pub async fn dpi_ensure(app: AppHandle, ip: String) -> serde_json::Value {
             Ok(p) => p,
             Err(e) => return serde_json::json!({ "ok": false, "error": e }),
         };
-        if let Err(e) =
-            do_payload_send(&ip, &dpi_path.to_string_lossy(), PS5_LOADER_PORT).await
-        {
+        if let Err(e) = do_payload_send(&ip, &dpi_path.to_string_lossy(), PS5_LOADER_PORT).await {
             return serde_json::json!({ "ok": false, "error": format!("send dpi.elf: {e}") });
         }
         for _ in 0..16 {

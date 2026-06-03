@@ -102,6 +102,11 @@ export interface ConnectionState {
    *          probe hasn't returned yet. Renders as "—" in the UI.
    *  Set by Connection's payload probe + AppShell's polling tick. */
   ucredElevated: boolean | null;
+  /** Max parallel upload streams the payload advertises (STATUS_ACK
+   *  `max_transfer_streams`). null = pre-multi-stream payload (or no probe
+   *  yet); the Upload path treats null as 1. The effective stream count is
+   *  min(this, the user's upload-streams setting). */
+  maxTransferStreams: number | null;
   /** True when a fresh payload-info probe is in flight and the
    *  currently-displayed payloadVersion / ps5Kernel may be stale.
    *  Set by Connection's handleSend on entry (the user just kicked
@@ -131,6 +136,7 @@ export interface ConnectionState {
         | "payloadVersion"
         | "ps5Kernel"
         | "ucredElevated"
+        | "maxTransferStreams"
         | "payloadProbing"
       >
     >
@@ -148,6 +154,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   payloadVersion: null,
   ps5Kernel: null,
   ucredElevated: null,
+  maxTransferStreams: null,
   payloadProbing: false,
   step1: "idle",
   step1Msg: "Enter your PS5's address and check",
