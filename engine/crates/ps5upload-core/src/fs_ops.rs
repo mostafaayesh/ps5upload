@@ -1145,7 +1145,9 @@ pub fn reconcile(
     // multi-minute walks against the same share. The real upload
     // (block_for_gate=true) waits its turn; a preview (false) bails fast.
     let _walk_gate = if block_for_gate {
-        RECONCILE_WALK_GATE.lock().unwrap_or_else(|e| e.into_inner())
+        RECONCILE_WALK_GATE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     } else {
         match RECONCILE_WALK_GATE.try_lock() {
             Ok(g) => g,
@@ -1295,7 +1297,9 @@ mod tests {
         // (1) A best-effort preview (try_lock) must bail while a walk holds
         //     the gate, rather than starting a second concurrent walk.
         {
-            let _held = RECONCILE_WALK_GATE.lock().unwrap_or_else(|e| e.into_inner());
+            let _held = RECONCILE_WALK_GATE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             assert!(
                 RECONCILE_WALK_GATE.try_lock().is_err(),
                 "preview try_lock must fail while a walk holds the gate"
@@ -1316,7 +1320,9 @@ mod tests {
             let max_seen = Arc::clone(&max_seen);
             let in_flight = Arc::clone(&in_flight);
             handles.push(std::thread::spawn(move || {
-                let _g = RECONCILE_WALK_GATE.lock().unwrap_or_else(|e| e.into_inner());
+                let _g = RECONCILE_WALK_GATE
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                 max_seen.fetch_max(now, Ordering::SeqCst);
                 std::thread::sleep(std::time::Duration::from_millis(3));
@@ -1343,7 +1349,9 @@ mod tests {
     /// gate-before-walk ordering.
     #[test]
     fn preview_bails_before_local_walk_when_gate_held() {
-        let _held = RECONCILE_WALK_GATE.lock().unwrap_or_else(|e| e.into_inner());
+        let _held = RECONCILE_WALK_GATE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let missing = std::path::Path::new("/this/path/should/not/exist/ps5upload-test");
         let err = reconcile(
             "127.0.0.1:9114",
