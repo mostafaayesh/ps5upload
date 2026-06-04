@@ -18,11 +18,19 @@ vi.mock("../api/ps5", async (importOriginal) => {
     startTransferDirReconcile: vi.fn(async () => "job"),
     startTransferZip: vi.fn(async () => "job"),
     jobStatus: vi.fn(async () => ({ status: "running" })),
-    fsMount: vi.fn(),
+    fsMount: vi.fn(async () => ({ mount_point: "/mnt/x", layout_valid: true })),
+    smpStatus: vi.fn(async () => ({ running: false })),
+    smpManualInstall: vi.fn(async () => ({ added: true })),
   };
 });
 
-import { jobStatus, startTransferFile } from "../api/ps5";
+import {
+  jobStatus,
+  startTransferFile,
+  fsMount,
+  smpStatus,
+  smpManualInstall,
+} from "../api/ps5";
 import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
 import {
   useUploadQueueStore,
@@ -397,5 +405,99 @@ describe("upload runner auto-resume", () => {
     expect(itemsByStatus("failed")).toHaveLength(1);
     // 1 original + 3 recovery retries = 4 transfer starts.
     expect(mockedStartFile).toHaveBeenCalledTimes(4);
+  });
+});
+
+// ── ShadowMount+ hand-off on image upload + mount-after-upload ────────────────
+
+describe("upload runner — ShadowMount+ hand-off (image + mountAfterUpload)", () => {
+  const ADDR = "192.168.1.10:9113";
+  const mockedFsMount = vi.mocked(fsMount);
+  const mockedSmpStatus = vi.mocked(smpStatus);
+  const mockedSmpInstall = vi.mocked(smpManualInstall);
+
+  function addImageItem(): void {
+    useUploadQueueStore.getState().add({
+      sourceKind: "image",
+      sourcePath: "/src/g.ffpkg",
+      displayName: "g.ffpkg",
+      resolvedDest: "/data/homebrew/g.ffpkg",
+      addr: ADDR,
+      strategy: "overwrite",
+      reconcileMode: "fast",
+      excludes: [],
+      mountAfterUpload: true,
+      mountReadOnly: true,
+    } as AddQueueItem);
+  }
+
+  beforeEach(() => {
+    installLocalStorageStub();
+    vi.useFakeTimers();
+    mockedJobStatus
+      .mockReset()
+      .mockResolvedValue({
+        status: "done",
+        bytes_sent: 100,
+        elapsed_ms: 10,
+        dest: "/data/homebrew/g.ffpkg",
+      } as Awaited<ReturnType<typeof jobStatus>>);
+    mockedStartFile.mockReset().mockResolvedValue("job");
+    mockedFsMount.mockClear();
+    mockedSmpStatus.mockReset();
+    mockedSmpInstall.mockReset().mockResolvedValue({ added: true });
+    useUploadQueueStore.setState({
+      items: [],
+      running: false,
+      runningHosts: {},
+      continueOnFailure: true,
+      loaded: true,
+    });
+  });
+  afterEach(() => {
+    useUploadQueueStore.getState().stop();
+    vi.useRealTimers();
+  });
+
+  it("SMP running → hands off via manual.lst, does NOT mount itself", async () => {
+    mockedSmpStatus.mockResolvedValue({ running: true } as Awaited<
+      ReturnType<typeof smpStatus>
+    >);
+    addImageItem();
+    const p = useUploadQueueStore.getState().start();
+    await vi.advanceTimersByTimeAsync(5000);
+    await p;
+
+    expect(mockedSmpInstall).toHaveBeenCalledWith(
+      expect.any(String),
+      "/data/homebrew/g.ffpkg",
+    );
+    expect(mockedFsMount).not.toHaveBeenCalled();
+    expect(itemsByStatus("done")).toHaveLength(1);
+  });
+
+  it("SMP not running → mounts natively, no hand-off", async () => {
+    mockedSmpStatus.mockResolvedValue({ running: false } as Awaited<
+      ReturnType<typeof smpStatus>
+    >);
+    addImageItem();
+    const p = useUploadQueueStore.getState().start();
+    await vi.advanceTimersByTimeAsync(5000);
+    await p;
+
+    expect(mockedFsMount).toHaveBeenCalledTimes(1);
+    expect(mockedSmpInstall).not.toHaveBeenCalled();
+    expect(itemsByStatus("done")).toHaveLength(1);
+  });
+
+  it("SMP status probe throws → falls back to native mount", async () => {
+    mockedSmpStatus.mockRejectedValue(new Error("unreachable"));
+    addImageItem();
+    const p = useUploadQueueStore.getState().start();
+    await vi.advanceTimersByTimeAsync(5000);
+    await p;
+
+    expect(mockedFsMount).toHaveBeenCalledTimes(1);
+    expect(itemsByStatus("done")).toHaveLength(1);
   });
 });
