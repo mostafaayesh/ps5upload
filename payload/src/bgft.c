@@ -1428,6 +1428,13 @@ int bgft_install_status(int32_t task_id,
          *
          * The UI's "register_path === shellui-rpc" banner explains
          * the hand-off so the user knows where to check. */
+        /* Free the task-table slot now (2.25.1). This synthetic-DONE is
+         * terminal — the engine marks the row done on this response and
+         * never polls again — so holding the slot only leaks it. The 16-
+         * slot table would otherwise saturate after 16 distinct installs
+         * in one session and reject further installs with TASK_TABLE_FULL.
+         * Release is idempotent (strips the flags to find the slot). */
+        appinst_task_release(task_id);
         *out_phase = BGFT_PHASE_DONE;
         *out_downloaded = 0;
         *out_total = 0;
@@ -1442,6 +1449,11 @@ int bgft_install_status(int32_t task_id,
      * Report DONE — Sony finishes promoting the title in the background
      * and the PS5's notification panel confirms. See APPINST_VIA_LOCAL_FLAG. */
     if ((task_id & APPINST_VIA_LOCAL_FLAG) != 0) {
+        /* Free the slot (2.25.1) — same reason as the shellui bypass above:
+         * the row is terminal here, so retaining the slot just leaks one of
+         * the 16. Without this, installing 16+ pkgs in a session exhausts
+         * the table and blocks all further installs. */
+        appinst_task_release(task_id);
         *out_phase = BGFT_PHASE_DONE;
         *out_downloaded = 0;
         *out_total = 0;

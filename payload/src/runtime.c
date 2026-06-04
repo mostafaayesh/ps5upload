@@ -4507,13 +4507,22 @@ static int handle_stream_shard(runtime_state_t *state, int client_fd,
                                                            want_verify ? computed : NULL);
                     if (write_ok == 0 && idx_mut) {
                         idx_mut->bytes_written += data_len;
-                        /* Did this shard finish the file? Shards partition the
-                         * file exactly, so bytes_written hits mf.size only on
-                         * the genuine last shard. Record the paths; the promote
-                         * rename runs past the digest gate below (never promote
-                         * a shard that fails verification). size==0 files ride
-                         * inside packed shards, never here. */
-                        if (mf.size > 0 && idx_mut->bytes_written >= mf.size) {
+                        /* Did this shard finish the file? Gate on the genuine
+                         * LAST shard of the file (shard_start + shard_count - 1)
+                         * AND the full byte count — NOT bytes_written alone. A
+                         * duplicated/retried shard re-adds data_len (the write
+                         * itself is offset-correct + idempotent), so a byte-only
+                         * check could cross mf.size on a non-last shard of a
+                         * small file and promote a still-incomplete tmp. The
+                         * shard_seq gate makes the trigger exact; the rename
+                         * runs past the digest gate below (never promote a shard
+                         * that fails verification). size==0 files ride inside
+                         * packed shards, never here. */
+                        uint64_t mf_last_shard =
+                            mf.shard_start + mf.shard_count - 1;
+                        if (mf.size > 0 && mf.shard_count > 0 &&
+                            shard_seq == mf_last_shard &&
+                            idx_mut->bytes_written >= mf.size) {
                             mf_completed = 1;
                             snprintf(mf_done_tmp, sizeof(mf_done_tmp),
                                      "%s.ps5up2-tmp", mf.path);
@@ -14444,10 +14453,36 @@ static int handle_binary_frame(runtime_state_t *state, int client_fd,
                         entry->manifest_index       = ridx;
                         entry->manifest_index_count = ridx_count;
                         entry->direct_mode          = 1;
-                        /* Persist the adopted (reduced) manifest so a SECOND
-                         * restart rebuilds from it, not the original. */
                         if (from_begin) {
+                            /* Persist the adopted (reduced) manifest so a
+                             * SECOND restart rebuilds from it, not the
+                             * original. */
                             (void)runtime_write_manifest(entry, mbuf, mlen);
+                            /* CRITICAL (2.25.1): reset the cursor to 0 and
+                             * re-send the whole reduced manifest from scratch.
+                             * The engine reconciled before this resume, so
+                             * every file here is one it wants RE-SENT (durably-
+                             * promoted files were excluded). The journaled
+                             * shards_received is a COUNT against the OLD full-
+                             * manifest numbering — meaningless against the
+                             * renumbered reduced set. Worse: each per-file tmp
+                             * was posix_fallocate()'d to its FULL size on its
+                             * first shard, so a half-written in-flight file
+                             * stat()s at exactly its manifest size, and
+                             * reconcile_resume_cursor's "tmp at exact size =
+                             * durable" test FALSELY marks it complete and skips
+                             * it → the in-flight file lands CORRUPT (confirmed
+                             * on hardware: a mid-file crash + resume produced a
+                             * 0%-matching big.bin). Resetting to 0 makes the
+                             * engine re-send all reduced-manifest shards; each
+                             * file's first shard unlinks + re-truncates its
+                             * tmp, so the write is clean. This exactly mirrors
+                             * the single-file resume path below. Cost: re-send
+                             * the one or two not-yet-complete files from their
+                             * start (completed files are already promoted to
+                             * their final path and excluded). */
+                            entry->shards_received = 0;
+                            entry->bytes_received  = 0;
                         }
                     } else {
                         free(mbuf);
