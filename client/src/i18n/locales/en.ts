@@ -1436,6 +1436,40 @@ installed_badge_system: "System",
 installed_badge_image: "Disc image",
 installed_badge_folder: "Folder",
 installed_badge_pkg: "Package",
+installed_badge_installed: "Installed",
+installed_badge_ps4: "PS4",
+installed_badge_ps5: "PS5",
+installed_play: "Play",
+installed_play_tooltip: "Launch this title on the PS5",
+installed_launching: "Launching…",
+installed_launch_sent: "Launch sent — check your PS5",
+installed_disc_needs_smp_row: "Needs ShadowMount+ running to mount + launch.",
+installed_kstuff_off_title: "kstuff isn't active — games won't launch",
+installed_kstuff_off_body:
+  "The payload doesn't have kernel read/write, which means a jailbreak/kstuff entry point isn't loaded. Launching (and installing) fpkg games will fail until you load the console through kstuff and reconnect.",
+installed_kstuff_on:
+  "kstuff active (kernel R/W) — installs and launches are good to go.",
+installed_smp_off_title:
+  "{count} disc image(s) need ShadowMount+ running",
+installed_smp_off_body:
+  "Disc-image titles are mounted from /mnt/shadowmnt by ShadowMount+. It doesn't look like it's running, so those titles won't mount or launch. Send it to the console, wait a few seconds, then Refresh.",
+installed_smp_send: "Send ShadowMount+",
+installed_smp_not_downloaded:
+  "ShadowMount+ isn't downloaded yet — grab it from the Payloads tab, then come back and send it.",
+installed_smp_sent: "Sent ShadowMount+ — give it a few seconds, then Refresh.",
+installed_smp_send_failed: "Couldn't send ShadowMount+.",
+installed_section_installed: "Games & apps",
+installed_section_installed_hint:
+  "Installed via Sony's installer from a .pkg (or shipped with the console). No source path.",
+installed_section_disc: "Disc images",
+installed_section_disc_hint:
+  "Mounted from /mnt/shadowmnt by ShadowMount+. They only mount + launch while ShadowMount+ is running.",
+installed_section_folder: "Folder homebrew",
+installed_section_folder_hint:
+  "Registered from a /data/homebrew/<id>-app folder on the console.",
+installed_section_system: "System",
+installed_section_system_hint:
+  "Sony system apps. Don't remove these unless you know exactly what they are.",
 installed_uninstall: "Uninstall",
 installed_uninstalling: "Removing…",
 installed_uninstall_confirm_title: "Uninstall {name}?",

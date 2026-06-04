@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Gamepad2,
   RefreshCw,
@@ -7,35 +8,123 @@ import {
   FolderOpen,
   Package,
   AlertTriangle,
+  Play,
+  Loader2,
+  CheckCircle2,
+  Download,
+  ShieldCheck,
 } from "lucide-react";
 
 import { useConnectionStore } from "../../state/connection";
 import {
   appsInstalled,
   appUnregister,
+  appLaunch,
   appIconUrl,
+  smpStatus,
   type InstalledTitle,
+  type SmpStatus,
 } from "../../api/ps5";
 import { PageHeader, EmptyState, ErrorCard, WarningCard, Button } from "../../components";
 // Direct import to avoid the barrel's circular-dep warning at build.
 import { useConfirm } from "../../components/ConfirmDialog";
 import { humanizePs5Error } from "../../lib/humanizeError";
 import { useTr } from "../../state/lang";
-import { transferAddr } from "../../lib/addr";
+import { transferAddr, mgmtAddr, hostOf } from "../../lib/addr";
 import { useStaleHostGuard } from "../../lib/staleHostGuard";
 
-/** Cover art for one installed title. Mirrors the Library screen's icon
- *  pattern: render the engine `<img>` (which streams the title's
- *  appmeta/icon0.png), and fall back to a sibling icon on 404 — the icon
- *  may genuinely be missing (common for system apps) so a graceful
- *  placeholder beats a broken-image glyph. */
-function Cover({
-  host,
-  title,
-}: {
-  host: string;
-  title: InstalledTitle;
-}) {
+// ── Classification helpers ───────────────────────────────────────────────────
+
+type Platform = "ps4" | "ps5" | "system" | "other";
+
+/** PS4 vs PS5 from the title id prefix. CUSAxxxxx = PS4, PPSAxxxxx = PS5,
+ *  NPXS = Sony system app. Everything else (IDLE, custom homebrew ids) is
+ *  "other" so we don't mislabel it. */
+function platformOf(t: InstalledTitle): Platform {
+  if (t.system) return "system";
+  const id = (t.titleId || "").toUpperCase();
+  if (id.startsWith("CUSA")) return "ps4";
+  if (id.startsWith("PPSA")) return "ps5";
+  if (id.startsWith("NPXS")) return "system";
+  return "other";
+}
+
+type Kind = "installed" | "disc" | "folder" | "system";
+
+/** How the title got onto the console — the user's mental model:
+ *   - installed: no source path (a .pkg install or a shipped Sony app)
+ *   - disc:      a disc-image mount (/mnt/shadowmnt, needs ShadowMount+)
+ *   - folder:    a /data/homebrew/<id>-app folder registered by us
+ *   - system:    NPXS system title */
+function kindOf(t: InstalledTitle): Kind {
+  if (t.system) return "system";
+  if (t.origin === "registered") {
+    const src = t.source || "";
+    if (t.imageBacked || src.startsWith("/mnt/shadowmnt")) return "disc";
+    if (src.startsWith("/data/homebrew")) return "folder";
+    // Registered but with no (or some other) source path — treat as a
+    // plain installed title rather than inventing a folder.
+    return src ? "folder" : "installed";
+  }
+  // origin "pkg": installed via Sony's installer from a .pkg, no path.
+  return "installed";
+}
+
+function PlatformBadge({ title }: { title: InstalledTitle }) {
+  const tr = useTr();
+  const p = platformOf(title);
+  if (p === "ps4")
+    return (
+      <span className="rounded bg-[#1d4ed822] px-1.5 py-0.5 text-xs font-semibold text-[#60a5fa]">
+        {tr("installed_badge_ps4", undefined, "PS4")}
+      </span>
+    );
+  if (p === "ps5")
+    return (
+      <span className="rounded bg-[#7c3aed22] px-1.5 py-0.5 text-xs font-semibold text-[#a78bfa]">
+        {tr("installed_badge_ps5", undefined, "PS5")}
+      </span>
+    );
+  return null;
+}
+
+function KindBadge({ title }: { title: InstalledTitle }) {
+  const tr = useTr();
+  const k = kindOf(title);
+  const base =
+    "inline-flex items-center gap-1 rounded bg-[var(--color-surface-3)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-muted)]";
+  if (k === "system")
+    return (
+      <span className="inline-flex items-center gap-1 rounded bg-[var(--color-danger-soft,#7f1d1d33)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-danger,#ef4444)]">
+        <AlertTriangle size={11} />
+        {tr("installed_badge_system", undefined, "System")}
+      </span>
+    );
+  if (k === "disc")
+    return (
+      <span className={base}>
+        <Disc3 size={11} />
+        {tr("installed_badge_image", undefined, "Disc image")}
+      </span>
+    );
+  if (k === "folder")
+    return (
+      <span className={base}>
+        <FolderOpen size={11} />
+        {tr("installed_badge_folder", undefined, "Folder")}
+      </span>
+    );
+  return (
+    <span className={base}>
+      <Package size={11} />
+      {tr("installed_badge_installed", undefined, "Installed")}
+    </span>
+  );
+}
+
+// ── Cover art ────────────────────────────────────────────────────────────────
+
+function Cover({ host, title }: { host: string; title: InstalledTitle }) {
   const [failed, setFailed] = useState(false);
   const show = !failed && !!host.trim();
   return (
@@ -55,49 +144,30 @@ function Cover({
   );
 }
 
-function OriginBadge({ title }: { title: InstalledTitle }) {
-  const tr = useTr();
-  if (title.system) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded bg-[var(--color-danger-soft,#7f1d1d33)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-danger,#ef4444)]">
-        <AlertTriangle size={11} />
-        {tr("installed_badge_system", undefined, "System")}
-      </span>
-    );
-  }
-  if (title.origin === "registered") {
-    return title.imageBacked ? (
-      <span className="inline-flex items-center gap-1 rounded bg-[var(--color-surface-3)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-muted)]">
-        <Disc3 size={11} />
-        {tr("installed_badge_image", undefined, "Disc image")}
-      </span>
-    ) : (
-      <span className="inline-flex items-center gap-1 rounded bg-[var(--color-surface-3)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-muted)]">
-        <FolderOpen size={11} />
-        {tr("installed_badge_folder", undefined, "Folder")}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 rounded bg-[var(--color-surface-3)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-muted)]">
-      <Package size={11} />
-      {tr("installed_badge_pkg", undefined, "Package")}
-    </span>
-  );
-}
+// ── App card ─────────────────────────────────────────────────────────────────
 
 function AppCard({
   host,
   title,
   busy,
+  launching,
+  launchResult,
+  discNeedsSmp,
   onUninstall,
+  onLaunch,
 }: {
   host: string;
   title: InstalledTitle;
   busy: boolean;
+  launching: boolean;
+  launchResult?: { ok: boolean; text: string };
+  /** True for a disc-image title while ShadowMount+ isn't running. */
+  discNeedsSmp: boolean;
   onUninstall: (t: InstalledTitle) => void;
+  onLaunch: (t: InstalledTitle) => void;
 }) {
   const tr = useTr();
+  const canPlay = !title.system;
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       <Cover host={host} title={title} />
@@ -109,38 +179,88 @@ function AppCard({
           {title.titleId}
         </div>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <OriginBadge title={title} />
-        <Button
-          variant="danger"
-          size="sm"
-          disabled={busy}
-          onClick={() => onUninstall(title)}
-          title={tr("installed_uninstall", undefined, "Uninstall")}
-        >
-          <Trash2 size={14} />
-          {busy
-            ? tr("installed_uninstalling", undefined, "Removing…")
-            : tr("installed_uninstall", undefined, "Uninstall")}
-        </Button>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <PlatformBadge title={title} />
+        <KindBadge title={title} />
       </div>
-      {title.origin === "registered" && title.source ? (
+
+      {/* Play — the primary action. Launches the title on the PS5. */}
+      {canPlay ? (
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={launching}
+          onClick={() => onLaunch(title)}
+          title={tr("installed_play_tooltip", undefined, "Launch this title on the PS5")}
+        >
+          {launching ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+          {launching
+            ? tr("installed_launching", undefined, "Launching…")
+            : tr("installed_play", undefined, "Play")}
+        </Button>
+      ) : null}
+
+      {launchResult ? (
         <div
-          className="truncate text-xs text-[var(--color-muted)]"
+          className={`flex items-center gap-1 text-xs ${
+            launchResult.ok ? "text-[var(--color-good)]" : "text-[var(--color-bad)]"
+          }`}
+        >
+          {launchResult.ok ? (
+            <CheckCircle2 size={12} className="shrink-0" />
+          ) : (
+            <AlertTriangle size={12} className="shrink-0" />
+          )}
+          <span className="min-w-0">{launchResult.text}</span>
+        </div>
+      ) : null}
+
+      {discNeedsSmp ? (
+        <div className="flex items-start gap-1 text-xs text-[var(--color-warn)]">
+          <Disc3 size={12} className="mt-0.5 shrink-0" />
+          <span>
+            {tr(
+              "installed_disc_needs_smp_row",
+              undefined,
+              "Needs ShadowMount+ running to mount + launch.",
+            )}
+          </span>
+        </div>
+      ) : null}
+
+      {title.source ? (
+        <div
+          className="truncate font-mono text-xs text-[var(--color-muted)]"
           title={title.source}
         >
           {title.source}
         </div>
       ) : null}
+
+      <Button
+        variant="danger"
+        size="sm"
+        disabled={busy}
+        onClick={() => onUninstall(title)}
+        title={tr("installed_uninstall", undefined, "Uninstall")}
+      >
+        <Trash2 size={14} />
+        {busy
+          ? tr("installed_uninstalling", undefined, "Removing…")
+          : tr("installed_uninstall", undefined, "Uninstall")}
+      </Button>
     </div>
   );
 }
 
+// ── Section wrapper ──────────────────────────────────────────────────────────
+
 function Section({
   title,
   hint,
-  children,
   count,
+  children,
 }: {
   title: string;
   hint: string;
@@ -162,15 +282,28 @@ function Section({
   );
 }
 
+// ── Screen ───────────────────────────────────────────────────────────────────
+
 export default function InstalledAppsScreen() {
   const tr = useTr();
   const host = useConnectionStore((s) => s.host);
+  // Kernel R/W = a jailbroken entry point (kstuff) is active. Without it,
+  // installs/launches of fpkg titles fail. null = unknown (old payload / no
+  // probe yet) — we only warn on a definite `false`.
+  const ucredElevated = useConnectionStore((s) => s.ucredElevated);
   const guard = useStaleHostGuard();
   const [titles, setTitles] = useState<InstalledTitle[] | null>(null);
+  const [smp, setSmp] = useState<SmpStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registeredUnavailable, setRegisteredUnavailable] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [launchingId, setLaunchingId] = useState<string | null>(null);
+  const [launchResults, setLaunchResults] = useState<
+    Record<string, { ok: boolean; text: string }>
+  >({});
+  const [smpSending, setSmpSending] = useState(false);
+  const [smpMsg, setSmpMsg] = useState<string | null>(null);
   // Native window.confirm() is a no-op in Tauri's webview; use the in-tree
   // modal instead (see ConfirmDialog.tsx).
   const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirm();
@@ -185,6 +318,13 @@ export default function InstalledAppsScreen() {
       if (probe.isStale()) return;
       setTitles(res.titles);
       setRegisteredUnavailable(res.registeredUnavailable);
+      // ShadowMount+ status — best-effort, never blocks the app list.
+      try {
+        const s = await smpStatus(mgmtAddr(probe.host));
+        if (!probe.isStale()) setSmp(s);
+      } catch {
+        if (!probe.isStale()) setSmp(null);
+      }
     } catch (e) {
       if (probe.isStale()) return;
       const raw = e instanceof Error ? e.message : String(e);
@@ -199,12 +339,47 @@ export default function InstalledAppsScreen() {
     void refresh();
   }, [refresh]);
 
+  const handleLaunch = useCallback(
+    async (t: InstalledTitle) => {
+      if (!host?.trim()) return;
+      const probe = guard.capture();
+      setLaunchingId(t.titleId);
+      setLaunchResults((m) => {
+        const next = { ...m };
+        delete next[t.titleId];
+        return next;
+      });
+      try {
+        await appLaunch(transferAddr(probe.host), t.titleId);
+        if (probe.isStale()) return;
+        setLaunchResults((m) => ({
+          ...m,
+          [t.titleId]: {
+            ok: true,
+            text: tr(
+              "installed_launch_sent",
+              undefined,
+              "Launch sent — check your PS5",
+            ),
+          },
+        }));
+      } catch (e) {
+        if (probe.isStale()) return;
+        const raw = e instanceof Error ? e.message : String(e);
+        setLaunchResults((m) => ({
+          ...m,
+          [t.titleId]: { ok: false, text: humanizePs5Error(raw) },
+        }));
+      } finally {
+        setLaunchingId(null);
+      }
+    },
+    [host, guard, tr],
+  );
+
   const handleUninstall = useCallback(
     async (t: InstalledTitle) => {
       if (!host?.trim()) return;
-      // Capture the target console BEFORE the (possibly long-lived) confirm
-      // dialog so switching the active PS5 mid-dialog can't fire the
-      // uninstall against the wrong console.
       const probe = guard.capture();
       const ok = await confirmDialog({
         title: tr(
@@ -238,7 +413,6 @@ export default function InstalledAppsScreen() {
       try {
         await appUnregister(transferAddr(probe.host), t.titleId);
         if (probe.isStale()) return;
-        // Optimistic remove, then re-sync from the console.
         setTitles((cur) => cur?.filter((x) => x.titleId !== t.titleId) ?? cur);
         void refresh();
       } catch (e) {
@@ -252,14 +426,69 @@ export default function InstalledAppsScreen() {
     [host, guard, confirmDialog, tr, refresh],
   );
 
-  const pkg = useMemo(
-    () => (titles ?? []).filter((t) => t.origin === "pkg"),
-    [titles],
-  );
-  const registered = useMemo(
-    () => (titles ?? []).filter((t) => t.origin === "registered"),
-    [titles],
-  );
+  const handleSendSmp = useCallback(async () => {
+    if (!host?.trim()) return;
+    const ip = hostOf(host);
+    setSmpSending(true);
+    setSmpMsg(null);
+    try {
+      const path = (await invoke("payloads_local_path", {
+        id: "shadowmountplus",
+      })) as string | null;
+      if (!path) {
+        setSmpMsg(
+          tr(
+            "installed_smp_not_downloaded",
+            undefined,
+            "ShadowMount+ isn't downloaded yet — grab it from the Payloads tab, then come back and send it.",
+          ),
+        );
+        return;
+      }
+      const res = (await invoke("payload_send", {
+        ip,
+        path,
+        port: null,
+      })) as { ok?: boolean; error?: string };
+      if (res?.ok) {
+        setSmpMsg(
+          tr(
+            "installed_smp_sent",
+            undefined,
+            "Sent ShadowMount+ — give it a few seconds, then Refresh.",
+          ),
+        );
+      } else {
+        setSmpMsg(res?.error || tr("installed_smp_send_failed", undefined, "Couldn't send ShadowMount+."));
+      }
+    } catch (e) {
+      setSmpMsg(humanizePs5Error(e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSmpSending(false);
+    }
+  }, [host, tr]);
+
+  // Group by kind.
+  const all = useMemo(() => titles ?? [], [titles]);
+  const installed = useMemo(() => all.filter((t) => kindOf(t) === "installed"), [all]);
+  const discs = useMemo(() => all.filter((t) => kindOf(t) === "disc"), [all]);
+  const folders = useMemo(() => all.filter((t) => kindOf(t) === "folder"), [all]);
+  const system = useMemo(() => all.filter((t) => kindOf(t) === "system"), [all]);
+
+  const smpRunning = smp?.running === true;
+  const discNeedsSmp = discs.length > 0 && !smpRunning;
+
+  const cardProps = (t: InstalledTitle) => ({
+    key: t.titleId,
+    host,
+    title: t,
+    busy: busyId === t.titleId,
+    launching: launchingId === t.titleId,
+    launchResult: launchResults[t.titleId],
+    discNeedsSmp: kindOf(t) === "disc" && !smpRunning,
+    onUninstall: handleUninstall,
+    onLaunch: handleLaunch,
+  });
 
   return (
     <div className="flex flex-col gap-5 p-5">
@@ -270,7 +499,7 @@ export default function InstalledAppsScreen() {
         description={tr(
           "installed_apps_subtitle",
           undefined,
-          "Everything installed on the PS5, grouped by how it got there. Uninstall removes a title (and, for mounted titles, unmounts it).",
+          "Everything installed on the PS5, grouped by how it got there. Press Play to launch a title; Uninstall to remove it.",
         )}
         right={
           <Button
@@ -283,6 +512,67 @@ export default function InstalledAppsScreen() {
           </Button>
         }
       />
+
+      {/* kstuff status — games can't install or launch without kernel R/W. */}
+      {host?.trim() && ucredElevated === false ? (
+        <WarningCard
+          title={tr(
+            "installed_kstuff_off_title",
+            undefined,
+            "kstuff isn't active — games won't launch",
+          )}
+          detail={tr(
+            "installed_kstuff_off_body",
+            undefined,
+            "The payload doesn't have kernel read/write, which means a jailbreak/kstuff entry point isn't loaded. Launching (and installing) fpkg games will fail until you load the console through kstuff and reconnect.",
+          )}
+        />
+      ) : host?.trim() && ucredElevated === true ? (
+        <div className="flex items-center gap-2 rounded-lg border border-[var(--color-good)]/40 bg-[var(--color-good)]/5 px-3 py-2 text-xs text-[var(--color-good)]">
+          <ShieldCheck size={14} className="shrink-0" />
+          {tr(
+            "installed_kstuff_on",
+            undefined,
+            "kstuff active (kernel R/W) — installs and launches are good to go.",
+          )}
+        </div>
+      ) : null}
+
+      {/* ShadowMount+ — required for disc-image titles. */}
+      {host?.trim() && discNeedsSmp ? (
+        <WarningCard
+          title={tr(
+            "installed_smp_off_title",
+            { count: discs.length },
+            `${discs.length} disc image${discs.length === 1 ? "" : "s"} need ShadowMount+ running`,
+          )}
+          detail={tr(
+            "installed_smp_off_body",
+            undefined,
+            "Disc-image titles are mounted from /mnt/shadowmnt by ShadowMount+. It doesn't look like it's running, so those titles won't mount or launch. Send it to the console, wait a few seconds, then Refresh.",
+          )}
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={smpSending}
+                onClick={() => void handleSendSmp()}
+              >
+                {smpSending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Download size={14} />
+                )}
+                {tr("installed_smp_send", undefined, "Send ShadowMount+")}
+              </Button>
+              {smpMsg ? (
+                <span className="text-xs text-[var(--color-muted)]">{smpMsg}</span>
+              ) : null}
+            </div>
+          }
+        />
+      ) : null}
 
       {!host?.trim() ? (
         <EmptyState
@@ -328,59 +618,71 @@ export default function InstalledAppsScreen() {
               title={tr(
                 "installed_registered_unavailable",
                 undefined,
-                "Couldn't read the mounted/registered set from the payload — everything is shown under Installed from package. Reload the payload to fix grouping.",
+                "Couldn't read the mounted/registered set from the payload — everything is shown under Installed. Reload the payload to fix grouping.",
               )}
             />
           ) : null}
 
-          {pkg.length > 0 ? (
+          {installed.length > 0 ? (
             <Section
-              title={tr(
-                "installed_section_pkg",
-                undefined,
-                "Installed from package",
-              )}
+              title={tr("installed_section_installed", undefined, "Games & apps")}
               hint={tr(
-                "installed_section_pkg_hint",
+                "installed_section_installed_hint",
                 undefined,
-                "Installed via Sony's installer from a .pkg (or shipped with the console).",
+                "Installed via Sony's installer from a .pkg (or shipped with the console). No source path.",
               )}
-              count={pkg.length}
+              count={installed.length}
             >
-              {pkg.map((t) => (
-                <AppCard
-                  key={t.titleId}
-                  host={host}
-                  title={t}
-                  busy={busyId === t.titleId}
-                  onUninstall={handleUninstall}
-                />
+              {installed.map((t) => (
+                <AppCard {...cardProps(t)} />
               ))}
             </Section>
           ) : null}
 
-          {registered.length > 0 ? (
+          {discs.length > 0 ? (
             <Section
-              title={tr(
-                "installed_section_registered",
-                undefined,
-                "Mounted & registered by PS5Upload",
-              )}
+              title={tr("installed_section_disc", undefined, "Disc images")}
               hint={tr(
-                "installed_section_registered_hint",
+                "installed_section_disc_hint",
                 undefined,
-                "Registered from a game folder, .exfat/.ffpkg disc image, or upload. Uninstalling unmounts them; your source files are kept.",
+                "Mounted from /mnt/shadowmnt by ShadowMount+. They only mount + launch while ShadowMount+ is running.",
               )}
-              count={registered.length}
+              count={discs.length}
             >
-              {registered.map((t) => (
-                <AppCard
-                  key={t.titleId}
-                  host={host}
-                  title={t}
-                  busy={busyId === t.titleId}
-                  onUninstall={handleUninstall}
-                />
+              {discs.map((t) => (
+                <AppCard {...cardProps(t)} />
+              ))}
+            </Section>
+          ) : null}
+
+          {folders.length > 0 ? (
+            <Section
+              title={tr("installed_section_folder", undefined, "Folder homebrew")}
+              hint={tr(
+                "installed_section_folder_hint",
+                undefined,
+                "Registered from a /data/homebrew/<id>-app folder on the console.",
+              )}
+              count={folders.length}
+            >
+              {folders.map((t) => (
+                <AppCard {...cardProps(t)} />
+              ))}
+            </Section>
+          ) : null}
+
+          {system.length > 0 ? (
+            <Section
+              title={tr("installed_section_system", undefined, "System")}
+              hint={tr(
+                "installed_section_system_hint",
+                undefined,
+                "Sony system apps. Don't remove these unless you know exactly what they are.",
+              )}
+              count={system.length}
+            >
+              {system.map((t) => (
+                <AppCard {...cardProps(t)} />
               ))}
             </Section>
           ) : null}
