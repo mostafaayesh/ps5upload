@@ -4,6 +4,22 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.25.1
+
+- **Installed games actually launch now.** Some games installed without any
+  error but wouldn't start ("can't start the game or app"). They now install
+  with their full content and launch normally.
+- **Interrupted uploads resume for real.** If a big folder upload drops partway
+  through, it keeps everything that already made it across and continues from
+  there — instead of re-sending the whole game every time — and it holds onto
+  that progress across several interruptions in a row.
+- **Manage several PS5s at once.** The upload queue is now grouped by console:
+  each PS5 has its own Start and Stop, consoles upload in parallel, and you can
+  reorder one console's games while another console is still uploading.
+- **Translated into every supported language.**
+
+---
+
 ## 2.25.0
 
 - **More reliable uploads by default.** Sending several streams at once could
