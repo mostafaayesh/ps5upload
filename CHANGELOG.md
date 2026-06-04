@@ -4,6 +4,25 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 2.25.4
+
+- **Plays nice with ShadowMount+.** If you run ShadowMount+, ps5upload now hands
+  games off to it instead of doing its own thing and clashing. Uploading or
+  registering a game adds it to ShadowMount+'s install list and lets SMP do the
+  mounting + registering — so trophies, disc images, and nested PFS all work,
+  and the two tools stop fighting over the same title. Falls back to ps5upload's
+  own mount/register when ShadowMount+ isn't running.
+- **nanoDNS support.** Added the nanoDNS payload — a tiny on-console DNS server
+  that blocks PlayStation Network / update domains (and can redirect any domain)
+  — to the Payloads list, plus a new **nanoDNS** screen to edit its config and a
+  guide for pointing your PS5's DNS at it.
+- **More disc-image formats.** You can now upload `.ffpfs` and `.ffpfsc` (PFS and
+  compressed/nested PFS) images, alongside the existing `.exfat` and `.ffpkg`.
+- Refreshed the payload info for ShadowMount+ and kstuff-lite (firmware 12.xx),
+  and fixed a couple of small Installed Apps glitches.
+
+---
+
 ## 2.25.3
 
 - **A much better Installed Apps screen.** Every game now has a **Play** button
