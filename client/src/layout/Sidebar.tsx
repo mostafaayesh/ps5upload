@@ -12,6 +12,7 @@ import {
   FolderTree,
   Cpu,
   Boxes,
+  Globe,
   Save,
   Image as ImageIcon,
   Settings as SettingsIcon,
@@ -107,6 +108,7 @@ const items: NavItem[] = [
   { to: "/dashboard", key: "dashboard", fallback: "Dashboard", icon: LayoutDashboard, section: { key: "nav_section_system", fallback: "System" } },
   { to: "/hardware", key: "hardware", fallback: "Hardware", icon: Cpu },
   { to: "/payloads", key: "payloads", fallback: "Payloads", icon: Boxes },
+  { to: "/nanodns", key: "nanodns", fallback: "nanoDNS", icon: Globe },
   { to: "/shell", key: "shell", fallback: "Shell", icon: TerminalSquare },
 
   // ─ Diagnostics: history, logs, debugging ─

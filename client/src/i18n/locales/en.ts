@@ -809,6 +809,26 @@ notifications_title: "Notifications",
 notifications_unread_only: "Unread",
 notifications_unread_one: "{count} unread notification",
 notifications_unread_many: "{count} unread notifications",
+nanodns: "nanoDNS",
+nanodns_title: "nanoDNS",
+nanodns_subtitle:
+  "On-console DNS server. Blocks PlayStation Network / update domains by default, and can redirect any domain to a LAN IP. Edit its config here, then re-load it from Payloads to apply.",
+nanodns_no_host_title: "Not connected",
+nanodns_no_host_body: "Connect to a PS5 on the Connection tab to edit nanoDNS.",
+nanodns_not_loaded_title: "nanoDNS isn't set up yet",
+nanodns_not_loaded_body:
+  "No /data/nanodns/nanodns.ini on the console — load nanoDNS once from the Payloads tab (it writes a default config on first run), then come back to edit it.",
+nanodns_dns_howto_title: "Point your PS5's DNS at nanoDNS",
+nanodns_dns_howto_body:
+  "On the PS5: Settings \u2192 Network \u2192 Set Up Internet \u2192 (your connection) \u2192 Custom \u2192 DNS Settings \u2192 Manual, and set Primary DNS to {ip}. That requires bind=0.0.0.0 below (default 127.0.0.1 only serves the console locally \u2014 for that, set Primary DNS to 127.0.0.1).",
+nanodns_save_error: "Couldn't save",
+nanodns_saved: "nanoDNS config saved",
+nanodns_saved_body:
+  "Re-load (re-send) nanoDNS from the Payloads tab for the changes to take effect.",
+nanodns_revert: "Revert",
+nanodns_save: "Save",
+nanodns_apply_hint:
+  "Sections: [general] (log/debug/bind) \u00b7 [upstream] (server\u00d7N, timeout_ms) \u00b7 [overrides] (mask=IPv4, 0.0.0.0 = block) \u00b7 [exceptions] (one mask per line). Saving writes the file; re-load nanoDNS from Payloads to apply.",
 notifications_unread_only_tooltip: "Show only entries that were unread when this panel opened",
 ok: "OK",
 oled_mode: "OLED mode",
