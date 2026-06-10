@@ -12,7 +12,12 @@ import { useUpdateStore } from "../state/update";
 import { engineApi } from "../api/engine";
 import { payloadCheck } from "../api/ps5";
 import { installActivityWiring } from "../state/activityWiring";
-import { ensureRosterMigrated, useRosterStore } from "../state/roster";
+import {
+  ensureRosterMigrated,
+  useRosterStore,
+  useActiveProfile,
+  withConsolePrefix,
+} from "../state/roster";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isTauriEnv, safeUnlisten } from "../lib/tauriEnv";
 import { useDocumentVisible } from "../lib/visibility";
@@ -141,7 +146,10 @@ function useStatusPolling() {
         const carryOver = !s.reachable;
         const newStatus = s.reachable ? "up" : "down";
         // Log only on an up<->down TRANSITION (not every poll).
-        if (prev.payloadStatus !== "unknown" && prev.payloadStatus !== newStatus) {
+        if (
+          prev.payloadStatus !== "unknown" &&
+          prev.payloadStatus !== newStatus
+        ) {
           if (newStatus === "down")
             log.warn("connection", `helper went DOWN on ${probedHost}`);
           else log.info("connection", `helper came UP on ${probedHost}`);
@@ -236,24 +244,42 @@ function useUpdateCheckOnMount() {
   }, [ensureChecked]);
 }
 
-/** Keep the PS5 awake while an upload is in flight (default on). The PS5's
- *  auto-standby timer (shortest setting ~20 min) would otherwise drop a long
- *  upload into rest mode mid-transfer — the `spool_apply_failed` failure.
- *  While the upload queue OR the single-shot transfer is active, send a
- *  power-tick (sceSystemServicePowerTick, resets the idle timer) to every
- *  console with a running job, every few minutes. Each tick is one tiny mgmt
- *  frame; failures (payload momentarily down during auto-resume) are ignored.
+/** Keep the PS5 awake by deferring its auto-standby timer
+ *  (sceSystemServicePowerTick — resets the IDLE timer only; manual rest
+ *  from the controller still works). Three policies (Settings → Upload):
+ *
+ *    "transfers" (default) — tick every console with a running upload,
+ *      every few minutes. The PS5's shortest auto-standby setting
+ *      (~20 min) would otherwise drop a long upload into rest mode
+ *      mid-transfer — the `spool_apply_failed` failure.
+ *    "always" — additionally tick EVERY console whose helper is up, for
+ *      as long as the app is open. The console never auto-rests while
+ *      you're working with it.
+ *    "off" — never tick.
+ *
+ *  Each tick is one tiny mgmt frame; failures (helper momentarily down
+ *  during auto-resume) are ignored. The 2-minute cadence gives ten
+ *  chances per shortest-rest-window, so a couple of dropped frames
+ *  can't let the console slip away.
  */
 const KEEP_PS5_AWAKE_TICK_MS = 2 * 60 * 1000;
-function useKeepPs5AwakeDuringUploads() {
-  const enabled = useUploadSettingsStore((s) => s.keepPs5Awake);
+function useKeepPs5Awake() {
+  const mode = useUploadSettingsStore((s) => s.keepPs5AwakeMode);
   const queueRunning = useUploadQueueStore((s) => s.running);
-  const transferActive = useTransferStore((s) =>
-    Object.values(s.phasesByHost).some(
-      (p) => p.kind === "starting" || p.kind === "running",
-    ),
-  );
-  const active = enabled && (queueRunning || transferActive);
+  // Plain loop instead of Object.values().some(): this selector runs on
+  // EVERY transfer-store write (multiple per second during an upload),
+  // and allocating a fresh values array each time is avoidable GC churn
+  // for what boils down to a boolean.
+  const transferActive = useTransferStore((s) => {
+    for (const h in s.phasesByHost) {
+      const p = s.phasesByHost[h];
+      if (p.kind === "starting" || p.kind === "running") return true;
+    }
+    return false;
+  });
+  const active =
+    mode === "always" ||
+    (mode === "transfers" && (queueRunning || transferActive));
   useEffect(() => {
     if (!active) return;
     const tickAll = () => {
@@ -274,13 +300,23 @@ function useKeepPs5AwakeDuringUploads() {
       for (const it of useUploadQueueStore.getState().items) {
         if (it.status === "running") hosts.add(hostOf(it.addr));
       }
+      if (useUploadSettingsStore.getState().keepPs5AwakeMode === "always") {
+        // Every console whose helper currently answers — read live at tick
+        // time (not effect deps) so consoles joining/leaving are picked up
+        // on the next tick without restarting the interval.
+        for (const [h, rt] of Object.entries(
+          useConnectionStore.getState().runtimeByHost,
+        )) {
+          if (rt.payloadStatus === "up" && h && h !== "_") hosts.add(h);
+        }
+      }
       for (const h of hosts) {
         void powerTick(mgmtAddr(h)).catch(() => {
           // best-effort — payload may be momentarily down during recovery
         });
       }
     };
-    tickAll(); // reset the timer immediately when an upload starts
+    tickAll(); // reset the timer immediately when the policy activates
     const id = window.setInterval(tickAll, KEEP_PS5_AWAKE_TICK_MS);
     return () => window.clearInterval(id);
   }, [active]);
@@ -297,6 +333,7 @@ function usePkgAutoRoute() {
   const location = useLocation();
   useEffect(() => {
     if (!isTauriEnv()) return; // browser-only dev/test contexts skip Tauri APIs
+    if (isAndroid()) return; // no drag-and-drop on Android — skip the bridge round-trip
     let unlisten: (() => void) | null = null;
     let cancelled = false;
     const p = getCurrentWebview().onDragDropEvent((e) => {
@@ -320,7 +357,9 @@ function usePkgAutoRoute() {
       // identical and prevents the next regression of forgetting it.
       if (cancelled) safeUnlisten(fn);
       else unlisten = fn;
-    }).catch(() => { /* subscribe-time rejection: nothing to clean */ });
+    }).catch(() => {
+      /* subscribe-time rejection: nothing to clean */
+    });
     return () => {
       cancelled = true;
       if (unlisten) safeUnlisten(unlisten);
@@ -442,7 +481,10 @@ function AndroidStorageAccessBanner() {
           phone because the button group is shrink-0. */}
       <div className="mx-auto flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <Lock size={18} className="mt-0.5 shrink-0 text-[var(--color-warn)]" />
+          <Lock
+            size={18}
+            className="mt-0.5 shrink-0 text-[var(--color-warn)]"
+          />
           <div className="min-w-0">
             <p className="text-sm font-medium">
               {tr(
@@ -501,7 +543,7 @@ function AndroidStorageAccessBanner() {
 export default function AppShell() {
   useStatusPolling();
   useUpdateCheckOnMount();
-  useKeepPs5AwakeDuringUploads();
+  useKeepPs5Awake();
   useRoutePersistence();
   useWindowStatePersistence();
   usePkgAutoRoute();
@@ -513,14 +555,22 @@ export default function AppShell() {
         body: sch.body ?? "Schedule fired.",
       });
     } else if (sch.action === "power_tick") {
-      const host = useConnectionStore.getState().host;
-      if (host?.trim()) {
-        void powerTick(mgmtAddr(host.trim())).catch(() => {
+      // Target the console the schedule was created for (captured at
+      // creation). Fall back to the active console for legacy schedules
+      // that predate the host field.
+      const host =
+        sch.host?.trim() || useConnectionStore.getState().host?.trim() || "";
+      if (host) {
+        void powerTick(mgmtAddr(host)).catch(() => {
           // best-effort
         });
-        pushNotification("info", `Scheduled: ${sch.label}`, {
-          body: `Sent powerTick to ${host.trim()}.`,
-        });
+        pushNotification(
+          "info",
+          withConsolePrefix(host, `Scheduled: ${sch.label}`),
+          {
+            body: `Sent powerTick to ${host}.`,
+          },
+        );
       }
     }
   });
@@ -545,6 +595,24 @@ export default function AppShell() {
     );
     return () => window.clearInterval(pruneTimer);
   }, []);
+  // Window title follows the active console so the macOS Dock / app
+  // switcher / Windows taskbar answer "which PS5 am I looking at?"
+  // without bringing the window forward. Single-console users keep the
+  // plain product name. document.title works in every Tauri webview
+  // (and is a no-op-safe write on Android).
+  const activeProfile = useActiveProfile();
+  const multiConsoleTitle = useRosterStore((s) => s.profiles.length > 1);
+  useEffect(() => {
+    try {
+      document.title =
+        multiConsoleTitle && activeProfile
+          ? `PS5Upload — ${activeProfile.name}`
+          : "PS5Upload";
+    } catch {
+      // non-DOM test environments
+    }
+  }, [activeProfile, multiConsoleTitle]);
+
   // Mobile nav drawer open/closed. Only consulted below the md
   // breakpoint; on desktop the sidebar is always inline.
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -600,9 +668,9 @@ export default function AppShell() {
               type="button"
               aria-label={tr("nav_close_aria", "Close navigation")}
               onClick={() => setMobileNavOpen(false)}
-              className="absolute inset-0 bg-black/50"
+              className="anim-scrim absolute inset-0 bg-[var(--overlay-scrim)]"
             />
-            <div className="absolute inset-y-0 left-0 flex max-w-[85%] shadow-xl">
+            <div className="anim-drawer elev-3 absolute inset-y-0 left-0 flex max-w-[85%]">
               <Sidebar onNavigate={() => setMobileNavOpen(false)} />
             </div>
           </div>
@@ -618,7 +686,16 @@ export default function AppShell() {
               the page can never scroll sideways. Nested blocks that are meant
               to scroll horizontally (tables in overflow-x-auto, code) have
               their own scroll context and are unaffected. */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          {/* `key={pathname}` re-runs the entrance animation on navigation.
+              Route changes already swap the rendered screen component, so
+              re-creating this wrapper adds no extra remount cost — and it
+              guarantees scroll position resets per screen. Same-path query
+              changes (e.g. /payloads?tab=send) keep the node, so tab
+              switches inside a screen don't re-animate. */}
+          <div
+            key={location.pathname}
+            className="anim-screen flex-1 overflow-y-auto overflow-x-hidden"
+          >
             <Outlet />
           </div>
         </main>

@@ -12,8 +12,9 @@ import SendPanel from "./SendPanel";
  *   - **send**: arbitrary ELF/BIN/JS/LUA/JAR picker. Includes
  *     playlists and recent-sends history.
  *
- * Pre-2.12.0 these were two sidebar entries (/payloads and
- * /send-payload). Merged with `?tab=send`.
+ * (Historically split across /payloads and the old /send-payload route;
+ * merged under ?tab=send for a cleaner sidebar. Legacy redirects remain
+ * for old bookmarks.)
  *
  * The shell (URL contract + tablist + a11y + keyboard nav + page
  * header) lives in `layout/TabbedShell`; this file is just tab

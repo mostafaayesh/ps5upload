@@ -1,10 +1,18 @@
 import { useState } from "react";
-import { Camera, Check, Loader2, AlertTriangle } from "lucide-react";
+import { Camera, Check, Loader2, AlertTriangle, Zap } from "lucide-react";
 
-import { useConnectionStore } from "../state/connection";
+import { useConnectionStore, EMPTY_HOST_RUNTIME } from "../state/connection";
 import { parsePS5Firmware } from "../lib/ps5Firmware";
 import { useTr } from "../state/lang";
 import { captureAppScreenshot } from "../lib/captureScreenshot";
+import {
+  useRosterStore,
+  useActiveProfile,
+  profileAccentForHost,
+} from "../state/roster";
+import { useActivityHistoryStore } from "../state/activityHistory";
+import { useUploadSettingsStore } from "../state/uploadSettings";
+import { hostOf } from "../lib/addr";
 
 /**
  * App-footer status strip: engine + payload liveness, plus the versions
@@ -25,15 +33,37 @@ export default function StatusBar() {
   const payloadVersion = useConnectionStore((s) => s.payloadVersion);
   const ps5Kernel = useConnectionStore((s) => s.ps5Kernel);
   const ps5Firmware = parsePS5Firmware(ps5Kernel);
+  // Multi-console awareness. The flat payloadStatus above mirrors only
+  // the ACTIVE tab, so a non-active console dropping mid-upload was
+  // previously invisible until the user happened to switch tabs. Name
+  // the active console on the helper pill and add one mini status dot
+  // per OTHER console (fed by the fan-out poller's runtimeByHost).
+  const profiles = useRosterStore((s) => s.profiles);
+  const activeProfile = useActiveProfile();
+  const runtimeByHost = useConnectionStore((s) => s.runtimeByHost);
+  const multiConsole = profiles.length > 1;
+  const otherConsoles = multiConsole
+    ? profiles.filter((p) => p.id !== activeProfile?.id)
+    : [];
+  // Live "what's running" count — replaces the old hardcoded
+  // "no active transfers" label that never updated.
+  const runningCount = useActivityHistoryStore(
+    (s) => s.entries.filter((e) => e.outcome === "running").length,
+  );
 
   const dot = (status: "up" | "down" | "unknown") => {
     const color =
       status === "up"
         ? "bg-[var(--color-good)]"
         : status === "down"
-        ? "bg-[var(--color-bad)]"
-        : "bg-[var(--color-muted)]";
-    return <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden />;
+          ? "bg-[var(--color-bad)]"
+          : "bg-[var(--color-muted)]";
+    return (
+      <span
+        className={`inline-block h-2 w-2 rounded-full ${color}`}
+        aria-hidden
+      />
+    );
   };
 
   return (
@@ -42,24 +72,64 @@ export default function StatusBar() {
         className="flex items-center gap-2"
         title={
           engineError ??
-          tr("status_engine_tooltip", undefined, "ps5upload-engine sidecar on localhost:19113")
+          tr(
+            "status_engine_tooltip",
+            undefined,
+            "ps5upload-engine sidecar on localhost:19113",
+          )
         }
       >
         {dot(engineStatus)} {tr("status_engine", undefined, "engine")}
       </div>
-      <div className="flex items-center gap-2" title={tr("status_payload_tooltip", undefined, "PS5Upload helper on :9113")}>
-        {dot(payloadStatus)} {tr("status_payload", undefined, "helper")}
+      <div
+        className="flex items-center gap-2"
+        title={tr(
+          "status_payload_tooltip",
+          undefined,
+          "PS5Upload helper on :9113",
+        )}
+      >
+        {dot(payloadStatus)}{" "}
+        {multiConsole && activeProfile
+          ? activeProfile.name
+          : tr("status_payload", undefined, "helper")}
         {payloadVersion && (
           <span className="rounded bg-[var(--color-surface-3)] px-1 font-mono text-xs">
             v{payloadVersion}
           </span>
         )}
       </div>
+      {otherConsoles.length > 0 && (
+        <div className="flex items-center gap-1.5">
+          {otherConsoles.map((p) => {
+            const rt =
+              runtimeByHost[hostOf(p.host) || "_"] ?? EMPTY_HOST_RUNTIME;
+            const statusLabel =
+              rt.payloadStatus === "up"
+                ? tr("status_console_up", undefined, "helper up")
+                : rt.payloadStatus === "down"
+                  ? tr("status_console_down", undefined, "helper down")
+                  : tr("status_console_unknown", undefined, "not probed yet");
+            return (
+              <span
+                key={p.id}
+                title={`${p.name} — ${statusLabel}`}
+                className="inline-flex items-center gap-1 rounded-full px-1 py-0.5 ring-1 ring-inset"
+                style={{
+                  // Accent ring identifies WHICH console; the inner dot
+                  // carries its up/down state. Matches the tab stripe color.
+                  ["--tw-ring-color" as string]:
+                    profileAccentForHost(p.host, profiles) ?? "transparent",
+                }}
+              >
+                {dot(rt.payloadStatus)}
+              </span>
+            );
+          })}
+        </div>
+      )}
       {ps5Kernel && (
-        <div
-          className="flex items-center gap-2"
-          title={ps5Kernel}
-        >
+        <div className="flex items-center gap-2" title={ps5Kernel}>
           <span>PS5</span>
           <span className="rounded bg-[var(--color-surface-3)] px-1 font-mono text-xs">
             {ps5Firmware
@@ -68,9 +138,52 @@ export default function StatusBar() {
           </span>
         </div>
       )}
-      <div className="ml-auto">{tr("status_no_active_transfers", undefined, "no active transfers")}</div>
+      <div className="ml-auto">
+        {runningCount > 0
+          ? tr(
+              "status_running_count",
+              { count: runningCount },
+              `${runningCount} running`,
+            )
+          : tr("status_no_active_transfers", undefined, "no active transfers")}
+      </div>
+      <KeepAwakeIndicator />
       <CaptureButton />
     </div>
+  );
+}
+
+/**
+ * "Keeping your PS5 awake" indicator. Renders only when the user picked
+ * the "always" keep-awake policy AND at least one console's helper is
+ * actually answering (the policy can't tick a console that's down).
+ * Making the active policy visible matters: an invisible always-on
+ * power behavior would feel like the PS5 "mysteriously stopped
+ * sleeping" weeks after the user forgot the setting.
+ */
+function KeepAwakeIndicator() {
+  const tr = useTr();
+  const mode = useUploadSettingsStore((s) => s.keepPs5AwakeMode);
+  const anyUp = useConnectionStore((s) => {
+    for (const h in s.runtimeByHost) {
+      if (s.runtimeByHost[h].payloadStatus === "up") return true;
+    }
+    return false;
+  });
+  if (mode !== "always" || !anyUp) return null;
+  return (
+    <span
+      className="flex items-center gap-1 text-[var(--color-warn)]"
+      title={tr(
+        "status_keep_awake_tooltip",
+        "Keep-awake is set to “Always while connected” — connected consoles won't auto-enter rest mode while the app is open. Change in Settings → Upload.",
+      )}
+    >
+      <Zap size={11} aria-hidden />
+      <span className="hidden sm:inline">
+        {tr("status_keep_awake", "keeping awake")}
+      </span>
+    </span>
   );
 }
 

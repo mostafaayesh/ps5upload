@@ -114,7 +114,7 @@ export function useConfirm(): {
 
   const dialog = pending ? (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="anim-scrim fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-scrim)] p-4"
       onClick={() => settle(false)}
     >
       <div
@@ -127,7 +127,7 @@ export function useConfirm(): {
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={pending.message ? bodyId : undefined}
-        className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5"
+        className="anim-pop elev-3 w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <header
@@ -237,7 +237,7 @@ export function useAlert(): {
 
   const dialog = pending ? (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="anim-scrim fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-scrim)] p-4"
       onClick={settle}
     >
       <div
@@ -245,7 +245,7 @@ export function useAlert(): {
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={pending.message ? bodyId : undefined}
-        className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5"
+        className="anim-pop elev-3 w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <header
@@ -344,7 +344,7 @@ export function usePrompt(): {
 
   const dialog = pending ? (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="anim-scrim fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-scrim)] p-4"
       onClick={() => settle(null)}
     >
       <div
@@ -352,7 +352,7 @@ export function usePrompt(): {
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={pending.message ? bodyId : undefined}
-        className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5"
+        className="anim-pop elev-3 w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <header

@@ -42,6 +42,7 @@
 
 #include <dlfcn.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -243,8 +244,17 @@ static pthread_mutex_t g_appinst_mtx = PTHREAD_MUTEX_INITIALIZER;
  *  rather than always allocating fresh. Without this, repeated
  *  installs of the same pkg (common during testing or retries)
  *  exhaust the 16-slot table within a session — even though they
- *  refer to the same underlying Sony task. */
-static int32_t appinst_task_register(const char *content_id) {
+ *  refer to the same underlying Sony task.
+ *
+ *  `out_fresh` (optional): set to 1 when this call ALLOCATED the slot,
+ *  0 when it reused an existing same-content_id slot. Callers that
+ *  pre-reserve a slot before handing the install to Sony must only
+ *  release it on failure when it was freshly allocated — releasing a
+ *  REUSED slot would strip tracking from the still-in-flight install
+ *  that owns it (retry-while-installing scenario). */
+static int32_t appinst_task_register(const char *content_id,
+                                     int *out_fresh) {
+    if (out_fresh) *out_fresh = 0;
     pthread_mutex_lock(&g_appinst_mtx);
     /* First pass: existing slot for the same content_id? */
     for (int i = 0; i < APPINST_TASK_TABLE; i++) {
@@ -263,6 +273,7 @@ static int32_t appinst_task_register(const char *content_id) {
                     sizeof(g_appinst_tasks[i].content_id) - 1);
             g_appinst_tasks[i].content_id[sizeof(g_appinst_tasks[i].content_id) - 1] = '\0';
             pthread_mutex_unlock(&g_appinst_mtx);
+            if (out_fresh) *out_fresh = 1;
             return (int32_t)(APPINST_TASK_ID_FLAG | (uint32_t)i);
         }
     }
@@ -405,6 +416,29 @@ static int appinst_install_start(const char *url,
     AppInstPlayGoInfo playgo;
     memset(&playgo, 0, sizeof(playgo));
 
+    /* Reserve the tracking slot BEFORE handing the install to Sony when
+     * the caller supplied the content_id (the common case — the host
+     * parses it from the pkg header). Registering only after a
+     * successful InstallByPackage meant a full table orphaned a
+     * Sony-side install we could never report status for; and
+     * cancelling at that point is not an option (sceAppInstUtil-
+     * CancelInstall in this path regressed installs with 0x80B21106 —
+     * see the comment above the install call). Reserve-first fails
+     * cleanly before Sony is involved. When the caller's content_id is
+     * empty we can't reserve early (the cid is an OUTPUT of
+     * InstallByPackage); that path keeps post-install registration and
+     * the orphan caveat — empty-cid AND 16 distinct in-flight installs
+     * together are vanishingly rare. */
+    int32_t pre_tid = -1;
+    int pre_tid_fresh = 0;
+    if (content_id && content_id[0]) {
+        pre_tid = appinst_task_register(content_id, &pre_tid_fresh);
+        if (pre_tid < 0) {
+            *out_err_code = BGFT_ERR_TASK_TABLE_FULL;
+            return -1;
+        }
+    }
+
     /* Swap to ShellCore authid for the entire init+install window.
      * Persistent-ShellCore-authid payloads (injected into ShellUI's
      * own process) get this for free — sceAppInstUtilInitialize sees
@@ -461,18 +495,30 @@ static int appinst_install_start(const char *url,
         fprintf(stderr,
                 "[bgft] appinst path failed: rc=%d (content_id=%s, url=%s)\n",
                 rc, content_id, url);
+        /* Give back the pre-reserved slot — but ONLY when this call
+         * allocated it. A reused slot belongs to a still-in-flight
+         * install of the same content_id (retry scenario); releasing
+         * it here would strip that install's status tracking. */
+        if (pre_tid >= 0 && pre_tid_fresh) appinst_task_release(pre_tid);
         return -1;
     }
 
-    /* Prefer the caller's known-good content_id (the host-parsed pkg-header
-     * id Sony tracks the task under); fall back to Sony's OUTPUT field. For
-     * a local-path install Sony may leave pkg_info.content_id empty. */
-    const char *track_cid =
-        (content_id && content_id[0]) ? content_id : pkg_info.content_id;
-    int32_t tid = appinst_task_register(track_cid);
+    /* Pre-reserved slot (common case) or late registration when the
+     * caller had no content_id and we must use Sony's OUTPUT field. */
+    int32_t tid = pre_tid;
     if (tid < 0) {
-        *out_err_code = BGFT_ERR_TASK_TABLE_FULL;
-        return -1;
+        tid = appinst_task_register(pkg_info.content_id, NULL);
+        if (tid < 0) {
+            /* Sony accepted the install but every slot is taken by 16
+             * other distinct in-flight installs — we can't track it.
+             * The install itself continues (Sony owns it; the console
+             * UI shows progress); only our status reporting is lost.
+             * Deliberately NOT cancelling: killing a healthy install
+             * over bookkeeping is worse, and cancel here regressed
+             * installs in hardware testing (see comment above). */
+            *out_err_code = BGFT_ERR_TASK_TABLE_FULL;
+            return -1;
+        }
     }
     /* 2.25.x: when InstallByPackage installed from a LOCAL path (bare
      * absolute path, not http://), tag the task with APPINST_VIA_LOCAL_FLAG
@@ -528,6 +574,21 @@ static int appinst_install_start_local(const char *path,
         return -1;
     }
 
+    /* Reserve the tracking slot before handing the install to Sony —
+     * same reserve-first rationale as appinst_install_start: a full
+     * table must fail BEFORE Sony owns a task we can't track, because
+     * cancelling after the fact is off the table (regression note
+     * below). The caller-parsed content_id is required on this path. */
+    int32_t pre_tid = -1;
+    int pre_tid_fresh = 0;
+    if (content_id && content_id[0]) {
+        pre_tid = appinst_task_register(content_id, &pre_tid_fresh);
+        if (pre_tid < 0) {
+            *out_err_code = BGFT_ERR_TASK_TABLE_FULL;
+            return -1;
+        }
+    }
+
     /* Identical authid + lock + init discipline to appinst_install_start.
      * AppInstallPkg is gated on the same ShellCore-authid check as
      * InstallByPackage (same installer subsystem), so we hold the
@@ -553,6 +614,10 @@ static int appinst_install_start_local(const char *path,
         fprintf(stderr,
                 "[bgft] appinst-local path failed: rc=0x%08X (content_id=%s, path=%s)\n",
                 (unsigned)rc, content_id, path);
+        /* Give back the pre-reserved slot — but only when freshly
+         * allocated; a reused slot belongs to a still-in-flight
+         * install of the same content_id (see appinst_install_start). */
+        if (pre_tid >= 0 && pre_tid_fresh) appinst_task_release(pre_tid);
         return -1;
     }
 
@@ -571,12 +636,18 @@ static int appinst_install_start_local(const char *path,
             content_id ? content_id : "(null)",
             pkg_info.content_id[0] ? pkg_info.content_id : "(empty)",
             path);
-    const char *track_cid =
-        (content_id && content_id[0]) ? content_id : pkg_info.content_id;
-    int32_t tid = appinst_task_register(track_cid);
+    /* Pre-reserved slot (caller-supplied content_id, the normal case)
+     * or late registration from Sony's OUTPUT field. Same fallback
+     * caveat as appinst_install_start: late registration on a full
+     * table can't track the (continuing) Sony install — and we
+     * deliberately don't cancel it (regression note above). */
+    int32_t tid = pre_tid;
     if (tid < 0) {
-        *out_err_code = BGFT_ERR_TASK_TABLE_FULL;
-        return -1;
+        tid = appinst_task_register(pkg_info.content_id, NULL);
+        if (tid < 0) {
+            *out_err_code = BGFT_ERR_TASK_TABLE_FULL;
+            return -1;
+        }
     }
     /* Tag as a local-disk install so bgft_install_status takes the
      * synthetic-DONE bypass and never calls the FW-9.60-fatal
@@ -779,11 +850,18 @@ static sce_bgft_register_task_fn   g_bgft_register = NULL;
  * don't always know in advance. */
 static sce_bgft_register_task_fn   g_bgft_register_debug = NULL;
 /* Most recent Register-path tag, surfaced via
- * bgft_install_last_register_path(). Updated under g_mtx within
- * bgft_install_start. The "none" sentinel covers two distinct cases —
- * "init never ran" and "BGFT is unavailable on this FW" — which the
- * host UI distinguishes by also reading bgft_install_unavailable_reason(). */
-static const char *g_last_register_path = "none";
+ * bgft_install_last_register_path(). The "none" sentinel covers two
+ * distinct cases — "init never ran" and "BGFT is unavailable on this
+ * FW" — which the host UI distinguishes by also reading
+ * bgft_install_unavailable_reason().
+ *
+ * _Atomic (this and the four error diagnostics below): writes happen
+ * in install paths and reads in PKG_INSTALL_STATUS handlers, which run
+ * on DIFFERENT mgmt client threads with no shared lock. The values
+ * only ever point at string literals / hold whole error codes, so
+ * relaxed-style atomic load/store is all that's needed — it just turns
+ * a formal C11 data race into defined behavior at zero practical cost. */
+static const char *_Atomic g_last_register_path = "none";
 /* Per-tier error codes from the most recent install attempt, surfaced
  * via bgft_install_last_*_err(). Set unconditionally on every attempt
  * (success: 0, failure: error code). Pre-2.2.54-fix-round-8 used
@@ -792,10 +870,10 @@ static const char *g_last_register_path = "none";
  * UINT32_MAX), making real tier failures appear as "tier never
  * attempted" in the diagnostic. Now using a separate `_set` boolean
  * flag so the value can be any 32-bit number including 0xFFFFFFFF. */
-static uint32_t g_last_shellui_err = 0;
-static int      g_last_shellui_err_set = 0;
-static uint32_t g_last_appinst_err = 0;
-static int      g_last_appinst_err_set = 0;
+static _Atomic uint32_t g_last_shellui_err = 0;
+static _Atomic int      g_last_shellui_err_set = 0;
+static _Atomic uint32_t g_last_appinst_err = 0;
+static _Atomic int      g_last_appinst_err_set = 0;
 static sce_bgft_start_task_fn      g_bgft_start = NULL;
 static sce_bgft_get_progress_fn    g_bgft_progress = NULL;
 
@@ -1034,10 +1112,9 @@ const char *bgft_install_unavailable_reason(void) {
 }
 
 const char *bgft_install_last_register_path(void) {
-    /* Plain pointer read — `g_last_register_path` only ever points at
-     * one of three string literals ("intdebug" / "regular" / "none"),
-     * so a torn read still produces a valid pointer. Mutex avoidance
-     * keeps PKG_INSTALL_STATUS responses cheap. */
+    /* Atomic pointer load (see the declaration) — always yields one of
+     * the path-tag string literals, never a torn pointer. Lock-free so
+     * PKG_INSTALL_STATUS responses stay cheap. */
     return g_last_register_path;
 }
 
@@ -1207,7 +1284,7 @@ int bgft_install_start(const char *url,
         g_last_shellui_err = shellui_err;
         g_last_shellui_err_set = 1;
         if (rc == 0) {
-            int32_t tid = appinst_task_register(content_id);
+            int32_t tid = appinst_task_register(content_id, NULL);
             if (tid >= 0) {
                 /* OR in the shellui-rpc backing flag so
                  * bgft_install_status routes the synthetic-DONE

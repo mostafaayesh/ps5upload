@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { PageHeader, Button, EmptyState } from "../../components";
+import { useConfirm } from "../../components/ConfirmDialog";
 import { useTr } from "../../state/lang";
 import {
   useActivityHistoryStore,
@@ -17,10 +18,12 @@ import {
 } from "../../state/activityHistory";
 import { formatBytes, formatDuration } from "../../lib/format";
 import { fsOpCancel } from "../../api/ps5";
+import { hostOf } from "../../lib/addr";
 import { useFsBulkOpStore, useFsDownloadOpStore } from "../../state/fsBulkOp";
 import { useTransferStore } from "../../state/transfer";
 import { useUploadQueueStore } from "../../state/uploadQueue";
-import { useConsoleLabel } from "../../state/roster";
+import { profileNameForAddr, useRosterStore } from "../../state/roster";
+import { ConsoleChip } from "../../components/ConsoleChip";
 
 /**
  * Cross-screen log of past + current operations. Reads from the
@@ -37,11 +40,31 @@ export default function ActivityScreen() {
   const entries = useActivityHistoryStore((s) => s.entries);
   const clear = useActivityHistoryStore((s) => s.clear);
   const clearRunning = useActivityHistoryStore((s) => s.clearRunning);
-  const [confirmClear, setConfirmClear] = useState(false);
+  // Canonical confirm dialog — replaces the hand-rolled modal this screen
+  // used to maintain in parallel with ConfirmDialog (style drift hazard).
+  const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirm();
   const [view, setView] = useState<"list" | "timeline">("list");
 
   const running = entries.filter((e) => e.outcome === "running");
   const past = entries.filter((e) => e.outcome !== "running");
+
+  const onClearAll = async () => {
+    const ok = await confirmDialog({
+      title: tr(
+        "activity_clear_confirm_title",
+        undefined,
+        "Clear all activity?",
+      ),
+      message: tr(
+        "activity_clear_confirm_body",
+        undefined,
+        'Removes every entry — past AND running. The underlying ops aren\'t cancelled (use per-row Stop for that), but their UI rows disappear. To dismiss only stuck running rows, use "Clear running" instead.',
+      ),
+      confirmLabel: tr("activity_clear", undefined, "Clear history"),
+      destructive: true,
+    });
+    if (ok) clear();
+  };
 
   return (
     <div className="p-6">
@@ -55,14 +78,19 @@ export default function ActivityScreen() {
         )}
         right={
           <div className="flex items-center gap-2">
-            <div className="flex rounded-md border border-[var(--color-border)] text-xs">
+            <div
+              className="flex rounded-md border border-[var(--color-border)] text-xs"
+              role="group"
+              aria-label={tr("activity_view_toggle", undefined, "View")}
+            >
               <button
                 type="button"
                 onClick={() => setView("list")}
-                className={`rounded-l-md px-2 py-1 ${
+                aria-pressed={view === "list"}
+                className={`rounded-l-md px-2 py-1 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${
                   view === "list"
                     ? "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
-                    : "hover:bg-[var(--color-surface-3)]"
+                    : "text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
                 }`}
               >
                 {tr("activity_view_list", undefined, "List")}
@@ -70,10 +98,11 @@ export default function ActivityScreen() {
               <button
                 type="button"
                 onClick={() => setView("timeline")}
-                className={`rounded-r-md px-2 py-1 ${
+                aria-pressed={view === "timeline"}
+                className={`rounded-r-md px-2 py-1 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${
                   view === "timeline"
                     ? "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
-                    : "hover:bg-[var(--color-surface-3)]"
+                    : "text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
                 }`}
               >
                 {tr("activity_view_timeline", undefined, "Timeline")}
@@ -84,7 +113,7 @@ export default function ActivityScreen() {
                 variant="ghost"
                 size="sm"
                 leftIcon={<Trash2 size={12} />}
-                onClick={() => setConfirmClear(true)}
+                onClick={() => void onClearAll()}
               >
                 {tr("activity_clear", undefined, "Clear history")}
               </Button>
@@ -157,59 +186,13 @@ export default function ActivityScreen() {
         </section>
       )}
 
-      {confirmClear && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setConfirmClear(false)}
-        >
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="mb-2 text-sm font-semibold">
-              {tr("activity_clear_confirm_title", undefined, "Clear all activity?")}
-            </header>
-            <p className="mb-4 text-xs text-[var(--color-muted)]">
-              {tr(
-                "activity_clear_confirm_body",
-                undefined,
-                "Removes every entry — past AND running. The underlying ops aren't cancelled (use per-row Stop for that), but their UI rows disappear. To dismiss only stuck running rows, use \"Clear running\" instead.",
-              )}
-            </p>
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setConfirmClear(false)}
-              >
-                {tr("cancel", undefined, "Cancel")}
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => {
-                  clear();
-                  setConfirmClear(false);
-                }}
-                autoFocus
-              >
-                {tr("activity_clear", undefined, "Clear history")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmDialogNode}
     </div>
   );
 }
 
 function ActivityRow({ entry }: { entry: ActivityEntry }) {
   const tr = useTr();
-  // Console this activity targeted (uploads/installs stash `addr`). Lets a
-  // multi-console user tell which PS5 each running/recent job belongs to.
-  const consoleLabel = useConsoleLabel(entry.addr ?? "");
   const isRunning = entry.outcome === "running";
   // For finished rows we have a fixed end timestamp (pure subtract).
   // For running rows we tick `now` every second so the elapsed
@@ -264,20 +247,32 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
       entry.kind === "fs-paste-copy" ||
       entry.kind === "fs-paste-move"
     ) {
-      useFsBulkOpStore.getState().requestCancel();
+      // Scope to THIS entry's console — the bulk-op store is per-host now,
+      // so a bare cancel would target the wrong console's op.
+      useFsBulkOpStore.getState().requestCancel(hostOf(entry.addr ?? ""));
     } else if (entry.kind === "download") {
-      useFsDownloadOpStore.getState().requestStop();
+      useFsDownloadOpStore.getState().requestStop(hostOf(entry.addr ?? ""));
     } else if (
       entry.kind === "upload" ||
       entry.kind === "upload-dir" ||
       entry.kind === "upload-reconcile"
     ) {
-      useTransferStore.getState().reset();
+      // Scope to THIS entry's console. transfer state is per-host
+      // (phasesByHost); a bare reset() would tear down whichever console
+      // happens to be transferring, not the one this row belongs to.
+      useTransferStore
+        .getState()
+        .reset(entry.addr ? hostOf(entry.addr) : undefined);
     } else if (entry.kind === "upload-queue") {
-      // Queue-driven uploads: halt the queue worker (resets the running
-      // item to pending). Previously Stop was a no-op for these — the
-      // longest-running ops had a dead button.
-      useUploadQueueStore.getState().stop();
+      // Queue-driven uploads: halt only THIS console's queue worker (resets
+      // its running item to pending). stop() would halt every console's
+      // queue; stopHost() is per-console. Previously Stop was a no-op for
+      // these — the longest-running ops had a dead button.
+      if (entry.addr) {
+        useUploadQueueStore.getState().stopHost(hostOf(entry.addr));
+      } else {
+        useUploadQueueStore.getState().stop();
+      }
     }
     // library-* ops are component-local; the fsOpCancel call above
     // is the only useful action — the screen's poller will see the
@@ -291,15 +286,10 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
       <div className="mb-1 flex items-center gap-2">
         <OutcomeIcon outcome={entry.outcome} />
         <span className="font-medium">{entry.label}</span>
-        {consoleLabel && (
-          <span
-            className="inline-flex max-w-[10rem] items-center gap-1 truncate rounded bg-[var(--color-surface-3)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-muted)]"
-            title={entry.addr}
-          >
-            <span aria-hidden>🖥</span>
-            <span className="truncate">{consoleLabel}</span>
-          </span>
-        )}
+        {/* Canonical console chip (colored dot + roster name, hidden for
+            single-console rosters where it's pure noise). Same accent
+            color as the console's tab so rows match tabs at a glance. */}
+        <ConsoleChip addr={entry.addr} />
         {entry.outcome === "running" && entry.phase === "finalizing" && (
           // Inline pill that visibly marks the post-100% state where the
           // engine is waiting on the PS5 to commit the manifest. Without
@@ -345,7 +335,8 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
           </span>
         )}
         <span className="ml-auto text-xs text-[var(--color-muted)]">
-          {formatRelative(entry.startedAtMs, tr)} · {formatDuration(elapsedMs / 1000)}
+          {formatRelative(entry.startedAtMs, tr)} ·{" "}
+          {formatDuration(elapsedMs / 1000)}
         </span>
         {isRunning && (
           <button
@@ -387,7 +378,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
           paths are long and a single break-all line wraps awkwardly
           at the end. Falls back to the legacy single `detail` line
           for entries created before fromPath/toPath were tracked. */}
-      {(entry.fromPath || entry.toPath) ? (
+      {entry.fromPath || entry.toPath ? (
         <div className="mb-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-xs text-[var(--color-muted)]">
           {entry.fromPath && (
             <>
@@ -430,25 +421,28 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
           // pill at the top already tells the user what's happening.
           <span>{formatBytes(speed)}/s</span>
         )}
-        {!isRunning && entry.bytes !== undefined && entry.bytes > 0 && speed > 0 && (
-          <span>
-            {tr(
-              "activity_avg_speed",
-              // Was previously called with `undefined` as the vars
-              // arg. tr() always looks up the key in the active
-              // locale first and only falls through to the 3rd-arg
-              // fallback if the lookup misses — every locale has
-              // this key, so the fallback never ran. Result: a
-              // literal "{speed}" rendered in every language the
-              // app supports (the user-reported "(speed)" in the
-              // bug screenshot is just curly braces blurred by a
-              // phone camera). Passing the vars now interpolates
-              // correctly in every locale.
-              { speed: formatBytes(speed) },
-              `avg ${formatBytes(speed)}/s`,
-            )}
-          </span>
-        )}
+        {!isRunning &&
+          entry.bytes !== undefined &&
+          entry.bytes > 0 &&
+          speed > 0 && (
+            <span>
+              {tr(
+                "activity_avg_speed",
+                // Was previously called with `undefined` as the vars
+                // arg. tr() always looks up the key in the active
+                // locale first and only falls through to the 3rd-arg
+                // fallback if the lookup misses — every locale has
+                // this key, so the fallback never ran. Result: a
+                // literal "{speed}" rendered in every language the
+                // app supports (the user-reported "(speed)" in the
+                // bug screenshot is just curly braces blurred by a
+                // phone camera). Passing the vars now interpolates
+                // correctly in every locale.
+                { speed: formatBytes(speed) },
+                `avg ${formatBytes(speed)}/s`,
+              )}
+            </span>
+          )}
         <span>
           {entry.outcome === "running"
             ? tr("activity_outcome_running", undefined, "Running")
@@ -470,9 +464,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
         // is more confusing than helpful.
         <div
           className={`mt-1 text-xs ${
-            isRunning
-              ? "text-[var(--color-warn)]"
-              : "text-[var(--color-bad)]"
+            isRunning ? "text-[var(--color-warn)]" : "text-[var(--color-bad)]"
           }`}
         >
           {entry.error}
@@ -484,7 +476,9 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
 
 function OutcomeIcon({ outcome }: { outcome: ActivityOutcome }) {
   if (outcome === "running")
-    return <Loader2 size={13} className="animate-spin text-[var(--color-accent)]" />;
+    return (
+      <Loader2 size={13} className="animate-spin text-[var(--color-accent)]" />
+    );
   if (outcome === "done")
     return <CheckCircle2 size={13} className="text-[var(--color-good)]" />;
   if (outcome === "failed")
@@ -529,6 +523,9 @@ function formatRelative(
  */
 function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
   const tr = useTr();
+  // Roster for tooltip console attribution — two overlapping amber blocks
+  // from two consoles are otherwise indistinguishable on hover.
+  const profiles = useRosterStore((s) => s.profiles);
   // Group entries by local-day key (YYYY-MM-DD).
   const byDay = new Map<string, ActivityEntry[]>();
   for (const e of entries) {
@@ -605,7 +602,8 @@ function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
                 const dayStart = new Date(start);
                 dayStart.setHours(0, 0, 0, 0);
                 const dayMs = 86_400_000;
-                const left = ((start.getTime() - dayStart.getTime()) / dayMs) * 100;
+                const left =
+                  ((start.getTime() - dayStart.getTime()) / dayMs) * 100;
                 const widthMs = end.getTime() - start.getTime();
                 const widthPct = Math.max(0.4, (widthMs / dayMs) * 100);
                 return (
@@ -617,7 +615,11 @@ function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
                       width: `${Math.min(100 - left, widthPct).toFixed(2)}%`,
                       backgroundColor: blockColor(e.outcome),
                     }}
-                    title={`${e.label} · ${e.outcome} · ${start.toLocaleTimeString()}${
+                    title={`${
+                      e.addr && profiles.length > 1
+                        ? `${profileNameForAddr(e.addr, profiles)} · `
+                        : ""
+                    }${e.label} · ${e.outcome} · ${start.toLocaleTimeString()}${
                       e.endedAtMs ? ` → ${end.toLocaleTimeString()}` : ""
                     }`}
                   />

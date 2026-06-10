@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 
 import { AlertTriangle } from "lucide-react";
-import { PageHeader, EmptyState, ErrorCard, Button } from "../../components";
+import {
+  PageHeader,
+  ErrorCard,
+  Button,
+  ConnectionGate,
+} from "../../components";
 import { useTr } from "../../state/lang";
 import PowerTelemetryPanel from "./PowerTelemetryPanel";
 import NetworkPanel from "./NetworkPanel";
@@ -78,7 +83,10 @@ const SENSOR_READ_COOLDOWN_MS = 2_000;
  * ahead of time and drop the helper), so this is purely a button
  * debounce.
  */
-function shouldAllowSensorRead(lastReadAt: number | null, now: number): boolean {
+function shouldAllowSensorRead(
+  lastReadAt: number | null,
+  now: number,
+): boolean {
   if (lastReadAt !== null && now - lastReadAt < SENSOR_READ_COOLDOWN_MS) {
     return false;
   }
@@ -87,9 +95,9 @@ function shouldAllowSensorRead(lastReadAt: number | null, now: number): boolean 
 
 function formatBytes(n: number): string {
   if (n <= 0) return "—";
-  const gib = n / (1024 ** 3);
+  const gib = n / 1024 ** 3;
   if (gib >= 1) return `${gib.toFixed(2)} GiB`;
-  const mib = n / (1024 ** 2);
+  const mib = n / 1024 ** 2;
   return `${mib.toFixed(0)} MiB`;
 }
 
@@ -205,6 +213,21 @@ export default function HardwareScreen() {
   // time info changed, producing a double-poll burst on first
   // load (Hardware crash audit, 2.12.0).
   const infoRef = useRef<HwInfo | null>(null);
+
+  // All four cards show data belonging to ONE console. On tab switch,
+  // drop everything immediately — without this, the previous console's
+  // model/serial/temps render under the new console's name, and worse,
+  // the infoRef shadow means the NEW console's static info would never
+  // be fetched at all (refresh skips HW_INFO once infoRef is non-null).
+  useEffect(() => {
+    infoRef.current = null;
+    setInfo(null);
+    setTemps(null);
+    setPower(null);
+    setStorage(null);
+    setError(null);
+    setSensorReadAt(null);
+  }, [host]);
 
   const refresh = useCallback(async () => {
     if (!host?.trim() || payloadStatus !== "up") return;
@@ -373,21 +396,8 @@ export default function HardwareScreen() {
         }
       />
 
-      {payloadStatus !== "up" && (
-        <EmptyState
-          icon={Cpu}
-          size="hero"
-          title={tr("payload_not_connected", undefined, "Helper not connected")}
-          message={tr(
-            "payload_not_connected_message",
-            undefined,
-            "Head to Connection and Send helper first — hardware info becomes available once the helper is running.",
-          )}
-        />
-      )}
-
       {/* Only surface the error card when the payload IS up — otherwise
-          the empty state above already explains the state. */}
+          the ConnectionGate below already explains the state. */}
       {error && payloadStatus === "up" && (
         <div className="mb-4">
           <ErrorCard
@@ -401,7 +411,7 @@ export default function HardwareScreen() {
         </div>
       )}
 
-      {payloadStatus === "up" && (
+      <ConnectionGate require="payload">
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           <SensorCard
             icon={<Thermometer size={14} />}
@@ -450,11 +460,7 @@ export default function HardwareScreen() {
               value={formatFreq(temps?.cpu_freq_mhz ?? 0)}
               hint={
                 temps && temps.cpu_freq_mhz > 0
-                  ? tr(
-                      "hw_from_kernel_tsc",
-                      undefined,
-                      "From kernel TSC",
-                    )
+                  ? tr("hw_from_kernel_tsc", undefined, "From kernel TSC")
                   : undefined
               }
             />
@@ -491,7 +497,11 @@ export default function HardwareScreen() {
             title={tr("hardware_uptime", undefined, "Uptime")}
           >
             <StatRow
-              label={tr("hw_running_since_boot", undefined, "Running since boot")}
+              label={tr(
+                "hw_running_since_boot",
+                undefined,
+                "Running since boot",
+              )}
               value={formatUptime(power?.operating_time_sec ?? 0)}
             />
             {/* System load avg comes from the SDK's getloadavg (added
@@ -523,9 +533,18 @@ export default function HardwareScreen() {
             icon={<Cpu size={14} />}
             title={tr("hardware_system", undefined, "System")}
           >
-            <StatRow label={tr("hw_model", undefined, "Model")} value={info?.model ?? "—"} />
-            <StatRow label={tr("hw_serial", undefined, "Serial")} value={info?.serial ?? "—"} />
-            <StatRow label={tr("hw_os", undefined, "OS")} value={info?.os ?? "—"} />
+            <StatRow
+              label={tr("hw_model", undefined, "Model")}
+              value={info?.model ?? "—"}
+            />
+            <StatRow
+              label={tr("hw_serial", undefined, "Serial")}
+              value={info?.serial ?? "—"}
+            />
+            <StatRow
+              label={tr("hw_os", undefined, "OS")}
+              value={info?.os ?? "—"}
+            />
             {/* Precise FW word via kernel R/W (added via the 2026-05
                 SDK refresh, kernel_get_fw_version). 0 means kernel
                 R/W wasn't available on this loader — fall back to
@@ -602,11 +621,7 @@ export default function HardwareScreen() {
             payloadUp={payloadStatus === "up"}
           />
 
-          <SmpMetaCard
-            host={host ?? ""}
-            payloadUp={payloadStatus === "up"}
-          />
-
+          <SmpMetaCard host={host ?? ""} payloadUp={payloadStatus === "up"} />
 
           {/* Lifetime ICC telemetry — fetched on mount + on demand,
               not on the live-poll interval. Different cadence from
@@ -627,14 +642,14 @@ export default function HardwareScreen() {
             </>
           )}
         </div>
-      )}
+      </ConnectionGate>
 
       {/* Kernel log lives OUTSIDE the sensor grid: the <pre> renders
-        * hundreds of monospace lines and would get squeezed into a 1/3-
-        * width column at xl breakpoint (the grid container above is
-        * `lg:grid-cols-2 xl:grid-cols-3`), making the log unreadable.
-        * Full-width section below the grid gives it the horizontal room
-        * it needs without disturbing the responsive sensor layout. */}
+       * hundreds of monospace lines and would get squeezed into a 1/3-
+       * width column at xl breakpoint (the grid container above is
+       * `lg:grid-cols-2 xl:grid-cols-3`), making the log unreadable.
+       * Full-width section below the grid gives it the horizontal room
+       * it needs without disturbing the responsive sensor layout. */}
       {host?.trim() && payloadStatus === "up" && (
         <SystemLogSection host={host} payloadStatus={payloadStatus} />
       )}
@@ -695,7 +710,11 @@ function StatRow({
 const FAN_PRESETS: ReadonlyArray<{ label: string; c: number; hint: string }> = [
   { label: "Quiet", c: 55, hint: "Fan engages earlier — cooler, louder" },
   { label: "Balanced", c: 65, hint: "Close to Sony's default" },
-  { label: "Performance", c: 75, hint: "Fan ramps only under load — quieter idle" },
+  {
+    label: "Performance",
+    c: 75,
+    hint: "Fan ramps only under load — quieter idle",
+  },
 ];
 
 function FanThresholdCard({
@@ -748,7 +767,10 @@ function FanThresholdCard({
           {tr("hardware_fan_threshold", "Fan threshold")}
         </span>
         {busy && (
-          <Loader2 size={12} className="animate-spin text-[var(--color-accent)]" />
+          <Loader2
+            size={12}
+            className="animate-spin text-[var(--color-accent)]"
+          />
         )}
       </header>
 
@@ -782,9 +804,7 @@ function FanThresholdCard({
 
       <label className="mb-1 flex items-center justify-between text-xs text-[var(--color-muted)]">
         <span>{tr("hardware_fan_custom", "Custom")}</span>
-        <span className="font-mono tabular-nums">
-          {draftC}°C
-        </span>
+        <span className="font-mono tabular-nums">{draftC}°C</span>
       </label>
       <div className="flex items-center gap-2">
         <input
@@ -910,12 +930,7 @@ function FanCurvePreview({ thresholdC }: { thresholdC: number }) {
           strokeDasharray="3 3"
         />
         {/* X-axis labels */}
-        <text
-          x={PADDING}
-          y={H - 1}
-          fontSize="9"
-          fill="var(--color-muted)"
-        >
+        <text x={PADDING} y={H - 1} fontSize="9" fill="var(--color-muted)">
           {tempMin}°C
         </text>
         <text
@@ -1056,7 +1071,11 @@ function SmpMetaCard({
       const probe = guard.capture();
       setBusy(true);
       try {
-        const ack = await smpMetaControl(transferAddr(probe.host), "set_poll", clamped);
+        const ack = await smpMetaControl(
+          transferAddr(probe.host),
+          "set_poll",
+          clamped,
+        );
         if (probe.isStale()) return;
         if (!ack.ok) {
           setError(ack.err || "set_poll_failed");
@@ -1088,7 +1107,10 @@ function SmpMetaCard({
           {tr("smp_meta_title", "SMP appmeta heal")}
         </span>
         {busy && (
-          <Loader2 size={12} className="animate-spin text-[var(--color-accent)]" />
+          <Loader2
+            size={12}
+            className="animate-spin text-[var(--color-accent)]"
+          />
         )}
         <span className="ml-auto flex items-center gap-1 text-xs font-medium">
           {running ? (
@@ -1127,19 +1149,27 @@ function SmpMetaCard({
             <dt className="text-[var(--color-muted)]">
               {tr("smp_meta_games", "Games")}
             </dt>
-            <dd className="font-mono tabular-nums">{stats?.games_scanned ?? 0}</dd>
+            <dd className="font-mono tabular-nums">
+              {stats?.games_scanned ?? 0}
+            </dd>
             <dt className="text-[var(--color-muted)]">
               {tr("smp_meta_icons", "Icons healed")}
             </dt>
-            <dd className="font-mono tabular-nums">{stats?.icons_healed ?? 0}</dd>
+            <dd className="font-mono tabular-nums">
+              {stats?.icons_healed ?? 0}
+            </dd>
             <dt className="text-[var(--color-muted)]">
               {tr("smp_meta_pics", "Other art")}
             </dt>
-            <dd className="font-mono tabular-nums">{stats?.pics_healed ?? 0}</dd>
+            <dd className="font-mono tabular-nums">
+              {stats?.pics_healed ?? 0}
+            </dd>
             <dt className="text-[var(--color-muted)]">
               {tr("smp_meta_json", "param.json")}
             </dt>
-            <dd className="font-mono tabular-nums">{stats?.json_healed ?? 0}</dd>
+            <dd className="font-mono tabular-nums">
+              {stats?.json_healed ?? 0}
+            </dd>
             <dt className="text-[var(--color-muted)]">
               {tr("smp_meta_missing", "Unfixable")}
             </dt>
@@ -1215,7 +1245,9 @@ function SmpMetaCard({
  */
 type SystemLogSectionProps = {
   host: string | null | undefined;
-  payloadStatus: ReturnType<typeof useConnectionStore.getState>["payloadStatus"];
+  payloadStatus: ReturnType<
+    typeof useConnectionStore.getState
+  >["payloadStatus"];
 };
 
 function SystemLogSection({ host, payloadStatus }: SystemLogSectionProps) {

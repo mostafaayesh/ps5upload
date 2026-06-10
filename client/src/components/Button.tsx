@@ -49,10 +49,12 @@ export function Button({
   className = "",
   ...rest
 }: ButtonProps) {
+  // Keyboard focus comes from the global :focus-visible ring in index.css
+  // (v3) so buttons match every other interactive element — no per-component
+  // ring classes needed.
   const base =
     "inline-flex items-center justify-center gap-1.5 rounded-md font-medium " +
-    "transition-colors outline-none " +
-    "focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-surface)] " +
+    "transition-colors " +
     "disabled:cursor-not-allowed disabled:opacity-50";
 
   const sizing =

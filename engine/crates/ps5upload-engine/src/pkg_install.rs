@@ -1136,7 +1136,9 @@ async fn serve_handler(
         builder = builder.status(StatusCode::OK);
     }
 
-    builder.body(Body::from(chunk)).unwrap()
+    builder
+        .body(Body::from(chunk))
+        .unwrap_or_else(builder_failed_response)
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────
@@ -1305,13 +1307,24 @@ pub fn lan_ip_for_ps5(ps5_host: &str) -> std::io::Result<IpAddr> {
     Ok(sock.local_addr()?.ip())
 }
 
+/// Last-ditch fallback when a `Response::builder()` chain fails. The
+/// builders in this file only set statically valid headers, so this is
+/// unreachable in practice — but one engine process serves every
+/// console, and a panic in a response builder would kill all of their
+/// transfers, so fail soft with a bare 500 instead of unwrapping.
+fn builder_failed_response(e: axum::http::Error) -> Response<Body> {
+    let mut resp = Response::new(Body::from(format!("response build failed: {e}")));
+    *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+    resp
+}
+
 fn json_ok<T: Serialize>(v: &T) -> Response<Body> {
     let body = serde_json::to_vec(v).unwrap_or_else(|_| b"{}".to_vec());
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(body))
-        .unwrap()
+        .unwrap_or_else(builder_failed_response)
 }
 
 fn json_err(status: StatusCode, msg: &str) -> Response<Body> {
@@ -1320,7 +1333,7 @@ fn json_err(status: StatusCode, msg: &str) -> Response<Body> {
         .status(status)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(body))
-        .unwrap()
+        .unwrap_or_else(builder_failed_response)
 }
 
 fn plain_response(status: StatusCode, msg: &str) -> Response<Body> {
@@ -1328,7 +1341,7 @@ fn plain_response(status: StatusCode, msg: &str) -> Response<Body> {
         .status(status)
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
         .body(Body::from(msg.to_string()))
-        .unwrap()
+        .unwrap_or_else(builder_failed_response)
 }
 
 /// Strip port + IPv6 brackets from a `host:port` (or `[ipv6]:port`)

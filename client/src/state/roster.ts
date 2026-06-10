@@ -3,6 +3,7 @@ import { useConnectionStore } from "./connection";
 import { useRunningAppsStore } from "./runningApps";
 import { useFsClipboardStore } from "./fsClipboard";
 import { useLibraryStore } from "./library";
+import { useUploadStore } from "./upload";
 import { hostOf } from "../lib/addr";
 
 /**
@@ -124,7 +125,9 @@ function genId(): string {
   }
   // Fallback for ancient webkit2gtk builds — RFC 4122-ish, not
   // cryptographically strong but unique enough for our scope.
-  return "p_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  return (
+    "p_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+  );
 }
 
 const initial = loadStored();
@@ -153,6 +156,10 @@ export const useRosterStore = create<RosterState>((set, get) => ({
     // path — a wrong-target action. Clear up front; the Library screen's
     // stale-host guard drops any late A-refresh, and B's refresh repopulates.
     useLibraryStore.getState().clear();
+    // The Upload screen's destination volume is a PS5-side path that only
+    // exists on the previous console; clear it so the new console re-detects
+    // its own volumes instead of showing a stale (possibly nonexistent) dest.
+    useUploadStore.getState().setDestination(null);
     // Sync connection store. AppShell's host-watcher kicks off
     // probes against the new host, populating
     // payloadStatus/payloadVersion/ps5Kernel naturally.
@@ -185,6 +192,14 @@ export const useRosterStore = create<RosterState>((set, get) => ({
     if (next_active === id) {
       next_active = next[0]?.id ?? null;
       if (next[0]) {
+        // Removing the active console promotes another one — tear down the
+        // removed console's per-host state exactly like setActive() does, so
+        // the newly-active console doesn't inherit stale running-apps badges,
+        // FS clipboard paths, or Library entries from the one just deleted.
+        useRunningAppsStore.getState().clearForHostChange(next[0].host);
+        useFsClipboardStore.getState().clear();
+        useLibraryStore.getState().clear();
+        useUploadStore.getState().setDestination(null);
         useConnectionStore.getState().setHost(next[0].host);
       }
     }
@@ -205,6 +220,15 @@ export const useRosterStore = create<RosterState>((set, get) => ({
     set({ profiles: next });
     persist(next, get().active_id);
     if (get().active_id === id) {
+      // Re-pointing the active profile at a different PS5 is a console
+      // switch in disguise: tear down the previous console's per-host state
+      // exactly like setActive()/remove() do, so the Library, FS clipboard,
+      // and running-apps badges don't carry over to the new console (a stale
+      // Unmount/paste could otherwise target the wrong PS5).
+      useRunningAppsStore.getState().clearForHostChange(host.trim());
+      useFsClipboardStore.getState().clear();
+      useLibraryStore.getState().clear();
+      useUploadStore.getState().setDestination(null);
       useConnectionStore.getState().setHost(host.trim());
     }
   },
@@ -269,6 +293,72 @@ export function profileNameForAddr(
  *  when the roster changes (e.g. the user renames a console). */
 export function useConsoleLabel(addr: string): string {
   return useRosterStore((s) => profileNameForAddr(addr, s.profiles));
+}
+
+/**
+ * Per-console accent palette. With two consoles both mid-upload, names
+ * alone are easy to confuse at a glance (especially defaults like
+ * "PS5 (192.168.1.50)" vs "PS5 (192.168.1.51)") — a stable color per
+ * console gives every attribution surface (tab strip, activity rows,
+ * status dots) a second, pre-attentive identity channel.
+ *
+ * Assignment is by roster position, so the first console is always
+ * blue, the second violet, etc. Position is stable in practice (the
+ * roster is append-ordered and removals are rare); deriving from the
+ * profile id hash instead would survive removals but risks two
+ * consoles landing on the SAME color, which defeats the purpose for
+ * the 2-console case this exists for. Colors are oklch-ish mid-tones
+ * that read on all three themes.
+ */
+const CONSOLE_ACCENTS = [
+  "#3b82f6", // blue
+  "#a855f7", // violet
+  "#f59e0b", // amber
+  "#10b981", // emerald
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+  "#ef4444", // red
+  "#84cc16", // lime
+];
+
+/** Pure: the accent color for a host/addr, or null when the host isn't
+ *  in the roster. Port-tolerant like `profileNameForHost`. */
+export function profileAccentForHost(
+  host: string,
+  profiles: PS5Profile[],
+): string | null {
+  const bare = hostOf(host);
+  if (!bare) return null;
+  const idx = profiles.findIndex((p) => hostOf(p.host) === bare);
+  if (idx < 0) return null;
+  return CONSOLE_ACCENTS[idx % CONSOLE_ACCENTS.length];
+}
+
+/** Reactive hook: the accent color for a console's host/addr. */
+export function useConsoleAccent(addr: string): string | null {
+  return useRosterStore((s) => profileAccentForHost(addr, s.profiles));
+}
+
+/**
+ * Prefix a notification title with the console it concerns —
+ * "Living-room PS5: Backed up CUSA34882" — but only when the roster has
+ * more than one console (single-PS5 users don't need telling which).
+ *
+ * For two consoles mid-work, an unprefixed "PS5 reboot requested" or
+ * "Backed up …" toast is unanswerable; this is the one-line fix every
+ * notification call site applies on its way into pushNotification (and
+ * therefore into the OS notification mirror, which reuses the title).
+ * Non-reactive by design: notifications are fire-and-forget strings
+ * minted at event time, so a snapshot read is correct.
+ */
+export function withConsolePrefix(
+  host: string | null | undefined,
+  title: string,
+): string {
+  if (!host?.trim()) return title;
+  const profiles = useRosterStore.getState().profiles;
+  if (profiles.length < 2) return title;
+  return `${profileNameForHost(host, profiles)}: ${title}`;
 }
 
 /** Get the currently-active profile, or null when none exists. */

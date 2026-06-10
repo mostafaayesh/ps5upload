@@ -64,6 +64,10 @@ extern int posix_fallocate(int fd, off_t offset, off_t len);
 
 #define FTX2_MAGIC 0x32585446u
 #define FTX2_VERSION 1u
+/* NOTE: These frame numbers, MAGIC, VERSION, and the two TX_FLAG_*
+ * values below are duplicated in Rust (engine/crates/ftx2-proto/src/lib.rs)
+ * and exercised by the payload_c_wire_constants_match test. Keep them
+ * in sync or the host and payload will not understand each other. */
 #define FTX2_FRAME_HELLO 1u
 #define FTX2_FRAME_HELLO_ACK 2u
 #define FTX2_FRAME_ERROR 3u
@@ -82,8 +86,11 @@ extern int posix_fallocate(int fd, off_t offset, off_t len);
  * so the desktop client can render a live "Finalized N of M" counter
  * instead of an indeterminate "Finalizing on PS5…" black box. Old
  * clients don't set the flag and we behave as before (silent apply,
- * single CommitTxAck). */
+ * single CommitTxAck).
+ * (See also the cross-language parity test in ftx2-proto.) */
 #define FTX2_TX_FLAG_APPLY_PROGRESS_REQUESTED 0x4u
+/* (See payload_c_wire_constants_match test in Rust ftx2-proto for the
+ * required matching values on the host side.) */
 #define FTX2_FRAME_QUERY_TX 12u
 #define FTX2_FRAME_QUERY_TX_ACK 13u
 #define FTX2_FRAME_COMMIT_TX 14u
@@ -4509,6 +4516,15 @@ static int handle_stream_shard(runtime_state_t *state, int client_fd,
         return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
                           "shard_header_too_short", 22);
     }
+    /* Wire-sanity cap, mirroring BEGIN_TX_BODY_MAX: the engine ships
+     * 64 MiB shards (DEFAULT_SHARD_SIZE) — 256 MiB is 4× headroom for
+     * any future bump while a malformed/hostile frame claiming a
+     * multi-GiB body can no longer drive near-4 GiB malloc attempts in
+     * the packed-record path or a multi-GiB socket drain. */
+    if (body_len > (uint64_t)256 * 1024 * 1024) {
+        return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
+                          "shard_body_too_large", 20);
+    }
     if (recv_exact(client_fd, shard_hdr_bytes, FTX2_SHARD_HEADER_LEN) != 0) return -1;
 
     memcpy(tx_id, shard_hdr_bytes, 16);
@@ -8308,7 +8324,12 @@ static int handle_app_launch(runtime_state_t *state, int client_fd,
         return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
                           "launch_title_id_missing", 23);
     }
-    if (launch_title(title_id, &err) != 0) {
+    /* Stack scratch for launch_title's formatted failure reasons —
+     * per-call storage so concurrent APP_LAUNCH mgmt threads can't
+     * race each other's error strings (see register.h). */
+    char launch_reason[128];
+    if (launch_title(title_id, &err, launch_reason, sizeof(launch_reason)) !=
+        0) {
         const char *reason = err ? err : "launch_failed";
         return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
                           reason, (uint64_t)strlen(reason));
@@ -16141,6 +16162,16 @@ static void transfer_thread_count_dec(void) {
     pthread_mutex_unlock(&g_transfer_count_mtx);
 }
 
+/* pthread cleanup handler so the count is always decremented even if the
+ * worker thread is cancelled or exits abnormally (e.g. crash inside
+ * handle_binary_frame). The count is only a safety cap (8) above the
+ * advertised limit (4); a leak just means we may fall back to inline
+ * handling for one extra connection until the payload is replaced. */
+static void transfer_thread_cleanup(void *arg) {
+    (void)arg;
+    transfer_thread_count_dec();
+}
+
 static int transfer_thread_can_spawn(void) {
     int can;
     pthread_mutex_lock(&g_transfer_count_mtx);
@@ -16175,8 +16206,12 @@ static void *transfer_client_thread(void *arg) {
     runtime_state_t *state = ctx->state;
     int client_fd = ctx->client_fd;
     free(ctx);
+
+    /* Guarantee dec even on pthread_cancel or crash paths inside the
+     * connection handler. Normal return also runs the pop(1). */
+    pthread_cleanup_push(transfer_thread_cleanup, NULL);
     transfer_handle_connection(state, client_fd);
-    transfer_thread_count_dec();
+    pthread_cleanup_pop(1);
     return NULL;
 }
 

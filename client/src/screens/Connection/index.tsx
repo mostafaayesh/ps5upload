@@ -493,7 +493,10 @@ export default function ConnectionScreen() {
               size={14}
               className="mt-0.5 shrink-0 text-[var(--color-accent)]"
             />
-            <div className="min-w-0 flex-1">
+            {/* min-w floor (not 0): below ~14rem the text column was
+                squeezing into a skinny tower beside the CTA on phones —
+                the floor makes the button wrap underneath instead. */}
+            <div className="min-w-[14rem] flex-1">
               <div className="font-semibold text-[var(--color-text)]">
                 {tr(
                   "connection_first_run_nudge_title",

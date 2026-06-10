@@ -64,8 +64,14 @@ ANDROID_APK        := $(ANDROID_GEN_DIR)/app/build/outputs/apk/universal/debug/a
 # placeholder launcher icons; we re-apply ours so the Android icon matches
 # the desktop app icon. gen/ is gitignored, so this runs at init time.
 ANDROID_ICON_SRC   := src-tauri/icons/sources/macos_squircle_1024.png
+# rustup's *real* toolchain bin (not the ~/.cargo/bin shim). The Android std
+# lives only here; Homebrew `rust` ships only the host std. We pin PATH to this
+# dir for the android recipes so cross-compilation works even when Homebrew's
+# cargo precedes rustup on PATH (otherwise `cargo --target aarch64-linux-android`
+# picks Homebrew's cargo and fails with "can't find crate for `core`/`std`").
+RUSTUP_CARGO_BIN := $(shell dirname "$$(rustup which cargo 2>/dev/null)" 2>/dev/null)
 # Env preamble shared by the android recipes.
-ANDROID_ENV = JAVA_HOME="$(ANDROID_JAVA_HOME)" ANDROID_HOME="$(ANDROID_HOME)" NDK_HOME="$(ANDROID_NDK_HOME)"
+ANDROID_ENV = JAVA_HOME="$(ANDROID_JAVA_HOME)" ANDROID_HOME="$(ANDROID_HOME)" NDK_HOME="$(ANDROID_NDK_HOME)" $(if $(RUSTUP_CARGO_BIN),PATH="$(RUSTUP_CARGO_BIN):$$PATH")
 # adb from the SDK (falls back to PATH if a device-only adb is installed).
 ADB ?= $(ANDROID_HOME)/platform-tools/adb
 

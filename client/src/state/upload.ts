@@ -66,6 +66,11 @@ export interface UploadState {
    *  who want save-data to persist back into the image (rare; mostly
    *  for editable homebrew scratchpads) flip this off explicitly. */
   mountReadOnly: boolean;
+  /** Game-folder-only: register the game with the PS5 OS right after the
+   *  upload commits, so it lands on the home screen in one step. Sticky
+   *  preference (localStorage), default ON — uploading a game and NOT
+   *  wanting to play it is the rare case. */
+  registerAfterUpload: boolean;
 
   destinationVolume: string | null;
   destinationSubpath: string;
@@ -79,6 +84,7 @@ export interface UploadState {
 
   setMountAfterUpload(on: boolean): void;
   setMountReadOnly(on: boolean): void;
+  setRegisterAfterUpload(on: boolean): void;
   setDestination(volume: string | null, subpath?: string): void;
   setExcludeMode(mode: ExcludeMode): void;
   toggleExclude(pattern: string): void;
@@ -138,6 +144,11 @@ export const useUploadStore = create<UploadState>((set, get) => ({
   zipInspectEntries: null,
   mountAfterUpload: false,
   mountReadOnly: true,
+  registerAfterUpload:
+    typeof window === "undefined"
+      ? true
+      : window.localStorage.getItem("ps5upload.register_after_upload") !==
+        "false",
   destinationVolume: null,
   // Default to /data/homebrew/ — the community-standard scan path
   // that third-party PS5 game scanners typically walk. Files landed
@@ -275,6 +286,16 @@ export const useUploadStore = create<UploadState>((set, get) => ({
 
   setMountAfterUpload: (mountAfterUpload) => set({ mountAfterUpload }),
   setMountReadOnly: (mountReadOnly) => set({ mountReadOnly }),
+  setRegisterAfterUpload: (registerAfterUpload) => {
+    // Sticky across sessions — this is a workflow preference, not a
+    // per-upload decision (unlike mountAfterUpload, which resets with
+    // the picked source).
+    window.localStorage.setItem(
+      "ps5upload.register_after_upload",
+      registerAfterUpload ? "true" : "false",
+    );
+    set({ registerAfterUpload });
+  },
 
   setDestination: (destinationVolume, destinationSubpath) =>
     set((s) => ({

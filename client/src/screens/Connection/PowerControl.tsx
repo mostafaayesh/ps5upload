@@ -19,6 +19,7 @@ import { Button } from "../../components";
 import { useConfirm } from "../../components/ConfirmDialog";
 import { useTr } from "../../state/lang";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 import { audit } from "../../state/auditLog";
 
 /**
@@ -32,7 +33,9 @@ import { audit } from "../../state/auditLog";
  */
 export default function PowerControl({ host }: { host: string }) {
   const tr = useTr();
-  const [busy, setBusy] = useState<null | "reboot" | "shutdown" | "standby">(null);
+  const [busy, setBusy] = useState<null | "reboot" | "shutdown" | "standby">(
+    null,
+  );
   const [last, setLast] = useState<PowerControlAck | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirm();
@@ -46,11 +49,7 @@ export default function PowerControl({ host }: { host: string }) {
   ) {
     if (!host?.trim()) return;
     const ok = await confirmDialog({
-      title: tr(
-        "power_confirm_title",
-        { kind },
-        `Confirm ${kind}`,
-      ),
+      title: tr("power_confirm_title", { kind }, `Confirm ${kind}`),
       message: confirmText,
       destructive: true,
       confirmLabel:
@@ -73,15 +72,19 @@ export default function PowerControl({ host }: { host: string }) {
         setLast(ack);
       }
       if (ack.ok) {
-        pushNotification("info", `PS5 ${kind} requested`, {
-          body: ack.err
-            ? ack.err
-            : tr(
-                "power_ack_dispatched",
-                { kind },
-                `${kind} dispatched to ${host}.`,
-              ),
-        });
+        pushNotification(
+          "info",
+          withConsolePrefix(host, `PS5 ${kind} requested`),
+          {
+            body: ack.err
+              ? ack.err
+              : tr(
+                  "power_ack_dispatched",
+                  { kind },
+                  `${kind} dispatched to ${host}.`,
+                ),
+          },
+        );
         audit(
           kind === "reboot"
             ? "system_reboot"
@@ -94,7 +97,13 @@ export default function PowerControl({ host }: { host: string }) {
       } else {
         const msg = ack.err ?? "unknown error";
         setError(msg);
-        pushNotification("error", `PS5 ${kind} failed`, { body: msg });
+        pushNotification(
+          "error",
+          withConsolePrefix(host, `PS5 ${kind} failed`),
+          {
+            body: msg,
+          },
+        );
         audit(
           kind === "reboot"
             ? "system_reboot"
@@ -108,7 +117,9 @@ export default function PowerControl({ host }: { host: string }) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      pushNotification("error", `PS5 ${kind} failed`, { body: msg });
+      pushNotification("error", withConsolePrefix(host, `PS5 ${kind} failed`), {
+        body: msg,
+      });
       audit(
         kind === "reboot"
           ? "system_reboot"
@@ -209,7 +220,10 @@ export default function PowerControl({ host }: { host: string }) {
       </div>
       {last && (
         <div className="mt-2 flex items-start gap-1.5 text-xs">
-          <CheckCircle2 size={11} className="mt-0.5 shrink-0 text-[var(--color-good)]" />
+          <CheckCircle2
+            size={11}
+            className="mt-0.5 shrink-0 text-[var(--color-good)]"
+          />
           <span className="text-[var(--color-muted)]">
             {last.action ?? "ok"}
             {last.err && ` — ${last.err}`}

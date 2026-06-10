@@ -22,6 +22,7 @@ import { Button } from "../../components";
 import { useConfirm } from "../../components/ConfirmDialog";
 import { useTr } from "../../state/lang";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 import { useRunningAppsStore } from "../../state/runningApps";
 import { useDocumentVisible } from "../../lib/visibility";
 
@@ -56,21 +57,36 @@ export default function RunningAppsPanel({ mgmtAddr }: { mgmtAddr: string }) {
   // re-renders. The cache is read inside async functions, so React
   // doesn't need to observe it.
   const appdbCacheRef = useRef<{
+    addr: string;
     fetched_ms: number;
     entries: AppDbEntry[];
   } | null>(null);
 
   const fetchAppdb = useCallback(async (): Promise<AppDbEntry[]> => {
     const cached = appdbCacheRef.current;
-    if (cached && Date.now() - cached.fetched_ms < 30_000) {
+    // Key the cache by console address: after a console switch the panel stays
+    // mounted with a new mgmtAddr, so a time-only check would join the new
+    // console's running list against the previous console's app.db — showing
+    // the wrong title names/IDs (app_id values are small and collide across
+    // consoles).
+    if (
+      cached &&
+      cached.addr === mgmtAddr &&
+      Date.now() - cached.fetched_ms < 30_000
+    ) {
       return cached.entries;
     }
     try {
       const r = await appdbQuery(mgmtAddr);
-      appdbCacheRef.current = { fetched_ms: Date.now(), entries: r.apps };
+      appdbCacheRef.current = {
+        addr: mgmtAddr,
+        fetched_ms: Date.now(),
+        entries: r.apps,
+      };
       return r.apps;
     } catch {
-      return cached?.entries ?? [];
+      // Only fall back to stale entries if they belong to THIS console.
+      return cached?.addr === mgmtAddr ? cached.entries : [];
     }
   }, [mgmtAddr]);
 
@@ -99,9 +115,7 @@ export default function RunningAppsPanel({ mgmtAddr }: { mgmtAddr: string }) {
       // separately. Tag with the address so a profile switch in the
       // PS5 roster can clear stale data tied to a different console.
       useRunningAppsStore.getState().setRunning(
-        joined
-          .map((j) => j.title_id)
-          .filter((t): t is string => !!t),
+        joined.map((j) => j.title_id).filter((t): t is string => !!t),
         mgmtAddr,
       );
     } catch (e) {
@@ -116,6 +130,18 @@ export default function RunningAppsPanel({ mgmtAddr }: { mgmtAddr: string }) {
   // accumulator, so a long minimization would otherwise keep
   // hammering the PS5 mgmt port + double-credit play-time when the
   // window finally comes back. Mirror's the AppShell pattern.
+  // Clear the displayed running-apps the instant the target console changes.
+  // The panel stays mounted across a console switch, and refresh() takes
+  // ~50-500ms to resolve against the new console — without this reset the old
+  // console's rows (and their Kill/Suspend/Resume buttons) stay live, and a
+  // click would dispatch the action to the NEW console's mgmtAddr against the
+  // OLD console's app_id (app_id values are small and collide across
+  // consoles). Emptying apps collapses the panel until the new data lands.
+  useEffect(() => {
+    setApps([]);
+    setError(null);
+  }, [mgmtAddr]);
+
   const visible = useDocumentVisible();
   useEffect(() => {
     if (!visible) return;
@@ -134,20 +160,32 @@ export default function RunningAppsPanel({ mgmtAddr }: { mgmtAddr: string }) {
     try {
       const ack = await fn(mgmtAddr, appId);
       if (!ack.ok) {
-        pushNotification("warning", `${label} failed`, {
-          body: ack.err ?? "unknown error",
-        });
+        pushNotification(
+          "warning",
+          withConsolePrefix(mgmtAddr, `${label} failed`),
+          {
+            body: ack.err ?? "unknown error",
+          },
+        );
       } else {
-        pushNotification("info", `${label} requested`, {
-          body: `app_id ${appId}`,
-        });
+        pushNotification(
+          "info",
+          withConsolePrefix(mgmtAddr, `${label} requested`),
+          {
+            body: `app_id ${appId}`,
+          },
+        );
       }
       // Re-fetch immediately so the UI reflects the new state.
       void refresh();
     } catch (e) {
-      pushNotification("error", `${label} failed`, {
-        body: e instanceof Error ? e.message : String(e),
-      });
+      pushNotification(
+        "error",
+        withConsolePrefix(mgmtAddr, `${label} failed`),
+        {
+          body: e instanceof Error ? e.message : String(e),
+        },
+      );
     } finally {
       setBusyApp(null);
     }
@@ -216,9 +254,7 @@ export default function RunningAppsPanel({ mgmtAddr }: { mgmtAddr: string }) {
                 variant="ghost"
                 size="sm"
                 leftIcon={<Pause size={11} />}
-                onClick={() =>
-                  doAction(a.app_id, "Suspend", appSuspend)
-                }
+                onClick={() => doAction(a.app_id, "Suspend", appSuspend)}
                 disabled={busyApp !== null}
               >
                 {tr("running_apps_suspend", undefined, "Suspend")}

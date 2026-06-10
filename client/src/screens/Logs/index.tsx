@@ -11,8 +11,8 @@ import KernelLogPanel from "./KernelLogPanel";
  *   - **app**: in-memory React/Tauri events. Persists for the session.
  *   - **kernel**: live /dev/klog stream from the helper. Polled.
  *
- * Pre-2.12.0 these were two separate sidebar entries (/logs and
- * /kernel-log). Merged with `?tab=kernel` so deep links work.
+ * (Historically split across /logs and the old /kernel-log route;
+ * merged under ?tab=kernel. Legacy redirects remain for old bookmarks.)
  *
  * The shell (URL contract + tablist + a11y + keyboard nav + page
  * header) lives in `layout/TabbedShell`; this file is just tab

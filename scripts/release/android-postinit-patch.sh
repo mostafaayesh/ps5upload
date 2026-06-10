@@ -23,6 +23,20 @@
 #    normal restarts (app-private config dir) and in-place updates (now
 #    that releases share a stable signing key), but allowBackup + explicit
 #    include rules let Android restore them on a fresh reinstall too.
+#
+# Plus <uses-permission> injection: all-files storage access for the
+# in-app picker, and Wi-Fi multicast/state permissions so mDNS console
+# discovery can receive 224.0.0.251:5353 (see the perms list below;
+# acquiring the MulticastLock via JNI is still TODO for full reliability).
+#
+# 3) Pin WebView textZoom to 100% in MainActivity. Android WebView scales
+#    every font by the device's system Font size / Display size accessibility
+#    setting, so a user with a larger-than-default font sees the whole UI
+#    blown up — dense rows (Library, Upload) clip their text to the first few
+#    characters. The layout is rem-based off an 18px root and tuned for phone
+#    width; it can't reflow for a 1.5-2x system font. Overriding the
+#    onWebViewCreate hook (exposed by WryActivity) to set textZoom = 100 makes
+#    the app render at its designed size regardless of that setting.
 
 set -euo pipefail
 
@@ -112,6 +126,17 @@ perms = [
     '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />',
     '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',
     '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />',
+    # mDNS console discovery: receiving multicast (224.0.0.251:5353)
+    # requires CHANGE_WIFI_MULTICAST_STATE; without it the Wi-Fi stack
+    # filters multicast frames and discovery silently finds nothing.
+    # ACCESS_NETWORK_STATE / ACCESS_WIFI_STATE let the engine pick the
+    # right interface. NOTE: the permission alone helps some devices,
+    # but full reliability also needs a WifiManager.MulticastLock
+    # acquired via JNI while browsing — still TODO (the lock is the
+    # complete fix; many handsets drop multicast until it's held).
+    '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+    '<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />',
+    '<uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />',
 ]
 missing = [p for p in perms if 'android.permission.' + p.split('android.permission.')[1].split('"')[0] not in src]
 if missing:
@@ -120,11 +145,47 @@ if missing:
     if new == src:
         sys.exit("::error::could not find <manifest> tag to add permissions")
     src = new
-    print("added storage permissions:", ", ".join(p.split('"')[1] for p in missing))
+    print("added permissions:", ", ".join(p.split('"')[1] for p in missing))
 else:
-    print("storage permissions already present — skipping")
+    print("permissions already present — skipping")
 
 open(path, "w", encoding="utf-8").write(src)
 PY
+
+# --- (3) pin WebView textZoom in MainActivity ------------------------
+# MainActivity.kt is the user-owned activity (not under generated/); we add
+# an onWebViewCreate override that pins textZoom so the device font-scale
+# doesn't enlarge the UI. Idempotent: skipped if the override already exists.
+mainactivity="$(find "$gen/java" -name MainActivity.kt -print -quit 2>/dev/null || true)"
+if [ -z "$mainactivity" ]; then
+  echo "::warning::MainActivity.kt not found under $gen/java — skipping textZoom patch" >&2
+else
+  python3 - "$mainactivity" <<'PY'
+import sys
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+if "onWebViewCreate" in src:
+    print("MainActivity.kt already has onWebViewCreate — skipping")
+    sys.exit(0)
+method = '''
+  // Pin WebView text zoom to 100% so the UI renders at its designed 18px base
+  // regardless of the device's system Font size / Display size accessibility
+  // setting (Android WebView otherwise multiplies every font by it, which on a
+  // larger-than-default font overflows the dense rem-based layout and clips
+  // e.g. Library/Upload rows to "PPS..."). textZoom affects only text size,
+  // not pinch-zoom.
+  override fun onWebViewCreate(webView: android.webkit.WebView) {
+    webView.settings.textZoom = 100
+    super.onWebViewCreate(webView)
+  }
+'''
+idx = src.rstrip().rfind("}")
+if idx == -1:
+    sys.exit("::error::could not find class closing brace in MainActivity.kt")
+src = src[:idx] + method + src[idx:]
+open(path, "w", encoding="utf-8").write(src)
+print("patched MainActivity.kt with onWebViewCreate textZoom=100")
+PY
+fi
 
 echo "android post-init patches applied"

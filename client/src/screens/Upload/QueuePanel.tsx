@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -90,10 +90,11 @@ export function QueuePanel() {
   // the socket and the UI would show two "running" things. Gate
   // the Start buttons on transferInFlight; the Upload screen's
   // Upload button does the symmetric disable on `queueRunning`.
-  // Any one-shot upload active on ANY console. One-shots are per-console now
-  // (phasesByHost), but the queue Start button stays conservatively gated on
-  // "any one-shot in flight" — the per-console transfer-port collision is
-  // handled inside the queue runner, and this keeps the existing safe UX.
+  // "Start all" stays conservatively gated on "any one-shot in flight" —
+  // it would start EVERY console's drain loop, including the one whose
+  // transfer port the one-shot currently owns. The per-console Start
+  // buttons below gate on their OWN console's phase only (ConsoleGroup),
+  // so console B's queue can start while console A runs a one-shot.
   const transferInFlight = useTransferStore((s) =>
     Object.values(s.phasesByHost).some(
       (p) => p.kind === "starting" || p.kind === "running",
@@ -229,7 +230,6 @@ export function QueuePanel() {
             host={g.host}
             items={g.items}
             hostRunning={!!runningHosts[g.host]}
-            transferInFlight={transferInFlight}
             showHeader={multiConsole}
             onStartHost={() => void startHost(g.host)}
             onStopHost={() => stopHost(g.host)}
@@ -250,7 +250,6 @@ function ConsoleGroup({
   host,
   items,
   hostRunning,
-  transferInFlight,
   showHeader,
   onStartHost,
   onStopHost,
@@ -261,7 +260,6 @@ function ConsoleGroup({
   host: string;
   items: QueueItem[];
   hostRunning: boolean;
-  transferInFlight: boolean;
   showHeader: boolean;
   onStartHost: () => void;
   onStopHost: () => void;
@@ -272,11 +270,31 @@ function ConsoleGroup({
   const tr = useTr();
   const label = useConsoleLabel(host);
   const [collapsed, setCollapsed] = useState(false);
+  // Gate THIS console's Start on THIS console's one-shot only. The transfer
+  // port is single-client per PS5 — a one-shot on console A is irrelevant
+  // to console B's queue, and gating on "any console" (the pre-2.31.0
+  // behavior) wrongly blocked parallel multi-console operation.
+  const transferInFlight = useTransferStore((s) => {
+    const p = s.phasesByHost[host];
+    return p?.kind === "starting" || p?.kind === "running";
+  });
 
-  const runningN = items.filter((i) => i.status === "running").length;
-  const pending = items.filter((i) => i.status === "pending").length;
-  const done = items.filter((i) => i.status === "done").length;
-  const failed = items.filter((i) => i.status === "failed").length;
+  // One pass instead of four .filter().length sweeps — this header
+  // re-renders at progress-tick rate while uploads run, so the cost
+  // (and the four throwaway arrays) repeats several times a second.
+  const { runningN, pending, done, failed } = useMemo(() => {
+    let runningN = 0;
+    let pending = 0;
+    let done = 0;
+    let failed = 0;
+    for (const i of items) {
+      if (i.status === "running") runningN++;
+      else if (i.status === "pending") pending++;
+      else if (i.status === "done") done++;
+      else if (i.status === "failed") failed++;
+    }
+    return { runningN, pending, done, failed };
+  }, [items]);
 
   const rows = (
     <ul className="grid gap-2">
@@ -312,7 +330,11 @@ function ConsoleGroup({
           title={
             collapsed
               ? tr("queue_group_expand", undefined, "Show this console's queue")
-              : tr("queue_group_collapse", undefined, "Hide this console's queue")
+              : tr(
+                  "queue_group_collapse",
+                  undefined,
+                  "Hide this console's queue",
+                )
           }
         >
           <ChevronRight
@@ -714,7 +736,10 @@ function StatusIcon({ status }: { status: QueueItemStatus }) {
       );
     case "failed":
       return (
-        <XCircle size={18} className="mt-0.5 shrink-0 text-[var(--color-bad)]" />
+        <XCircle
+          size={18}
+          className="mt-0.5 shrink-0 text-[var(--color-bad)]"
+        />
       );
   }
 }

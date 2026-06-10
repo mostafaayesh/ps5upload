@@ -52,6 +52,10 @@ export default function NotificationInbox() {
   );
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // Filter-in-render is fine here: the render already subscribes to
+  // the full `entries` array (visibleEntries below needs it), so a
+  // separate derived-count selector wouldn't save any re-renders —
+  // it would just add a second subscription over the same data.
   const unread = entries.filter((e) => !e.read).length;
   const visibleEntries = unreadOnly
     ? entries.filter((e) => unreadIdsAtOpen.has(e.id))
@@ -110,7 +114,9 @@ export default function NotificationInbox() {
           <span
             className="absolute -right-0.5 -top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--color-bad)] px-1 text-[9px] font-semibold tabular-nums text-white"
             title={tr(
-              unread === 1 ? "notifications_unread_one" : "notifications_unread_many",
+              unread === 1
+                ? "notifications_unread_one"
+                : "notifications_unread_many",
               { count: unread },
               `${unread} unread notification${unread === 1 ? "" : "s"}`,
             )}
@@ -128,7 +134,7 @@ export default function NotificationInbox() {
           // the window's left edge and clip off-screen. `left-0`
           // grows rightward into the main content area. The
           // max-w-[calc(100vw-2rem)] keeps small windows safe.
-          className="absolute bottom-full left-0 mb-1 w-80 max-w-[calc(100vw-2rem)] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
+          className="anim-rise elev-2 absolute bottom-full left-0 mb-1 w-80 max-w-[calc(100vw-2rem)] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]"
           style={{ zIndex: 60 }}
         >
           <header className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
@@ -261,10 +267,24 @@ function NotificationRow({
 
 function LevelIcon({ level }: { level: NotificationLevel }) {
   if (level === "success")
-    return <CheckCircle2 size={12} className="mt-0.5 shrink-0 text-[var(--color-good)]" />;
+    return (
+      <CheckCircle2
+        size={12}
+        className="mt-0.5 shrink-0 text-[var(--color-good)]"
+      />
+    );
   if (level === "warning")
-    return <AlertTriangle size={12} className="mt-0.5 shrink-0 text-[var(--color-warn)]" />;
+    return (
+      <AlertTriangle
+        size={12}
+        className="mt-0.5 shrink-0 text-[var(--color-warn)]"
+      />
+    );
   if (level === "error")
-    return <XCircle size={12} className="mt-0.5 shrink-0 text-[var(--color-bad)]" />;
-  return <Info size={12} className="mt-0.5 shrink-0 text-[var(--color-muted)]" />;
+    return (
+      <XCircle size={12} className="mt-0.5 shrink-0 text-[var(--color-bad)]" />
+    );
+  return (
+    <Info size={12} className="mt-0.5 shrink-0 text-[var(--color-muted)]" />
+  );
 }

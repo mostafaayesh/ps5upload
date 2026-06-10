@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Terminal,
-  Play,
-  Pause,
-  Trash2,
-  Copy,
-  Filter,
-} from "lucide-react";
+import { Terminal, Play, Pause, Trash2, Copy, Filter } from "lucide-react";
 import { klogChunk } from "../../api/ps5";
 import { mgmtAddr } from "../../lib/addr";
 import { useConnectionStore } from "../../state/connection";
 import { Button, EmptyState } from "../../components";
 import { useTr } from "../../state/lang";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 import { writeClipboard } from "../../lib/clipboard";
+import { useDocumentVisible } from "../../lib/visibility";
 
 /**
  * Live kernel log viewer with noise filtering.
@@ -56,7 +51,10 @@ const CATEGORY_RULES: Array<{ cat: Category; re: RegExp }> = [
   { cat: "etahen-payload", re: /\betaHEN\b|\betahen\b/i },
   { cat: "sony-pf-auth", re: /\[PFAuthClient\]/ },
   { cat: "sony-bgs-storage", re: /\bBgsStorage\b/ },
-  { cat: "sony-rnps", re: /\bRNPS\b|HERMES TTPoolInstance|TwinTurbo|rnpsjscoverageinfo/ },
+  {
+    cat: "sony-rnps",
+    re: /\bRNPS\b|HERMES TTPoolInstance|TwinTurbo|rnpsjscoverageinfo/,
+  },
   { cat: "sony-curl", re: /\[RNPS Curl\]/ },
   {
     cat: "sony-memory-stats",
@@ -75,7 +73,7 @@ const CATEGORY_RULES: Array<{ cat: Category; re: RegExp }> = [
 const DEFAULT_HIDDEN_CATEGORIES: ReadonlySet<Category> = new Set<Category>();
 
 const CATEGORY_LABEL: Record<Category, string> = {
-  "ps5upload": "ps5upload",
+  ps5upload: "ps5upload",
   "shellui-crash": "ShellUI crash",
   "kernel-error": "Kernel panic/error",
   "sony-pf-auth": "Sony PFAuthClient",
@@ -90,11 +88,11 @@ const CATEGORY_LABEL: Record<Category, string> = {
   "kstuff-payload": "kstuff payload",
   "etahen-payload": "etaHEN payload",
   "shellui-info": "ShellUI info",
-  "other": "Other / uncategorised",
+  other: "Other / uncategorised",
 };
 
 const CATEGORY_BORDER: Partial<Record<Category, string>> = {
-  "ps5upload": "border-l-2 border-l-blue-500",
+  ps5upload: "border-l-2 border-l-blue-500",
   "shellui-crash": "border-l-2 border-l-red-500 bg-red-500/5",
   "kernel-error": "border-l-2 border-l-red-500 bg-red-500/5",
   "kstuff-payload": "border-l-2 border-l-amber-500",
@@ -112,7 +110,9 @@ export default function KernelLogPanel() {
   const tr = useTr();
   const host = useConnectionStore((s) => s.host);
   const payloadStatus = useConnectionStore((s) => s.payloadStatus);
-  const [entries, setEntries] = useState<Array<{ text: string; cat: Category }>>([]);
+  const [entries, setEntries] = useState<
+    Array<{ text: string; cat: Category }>
+  >([]);
   const [playing, setPlaying] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hiddenCats, setHiddenCats] = useState<Set<Category>>(
@@ -122,33 +122,56 @@ export default function KernelLogPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const [userScrolled, setUserScrolled] = useState(false);
+  // Pause polling while the window is hidden — same pattern as the
+  // Dashboard pollers. /dev/klog reads while minimized are pure waste,
+  // and the buffer is drained on the next visible tick anyway.
+  // (`docVisible` to avoid clashing with the filtered-lines `visible`.)
+  const docVisible = useDocumentVisible();
+
+  // The klog stream belongs to ONE console. Drop the scrollback when the
+  // tab switches — without this, console A's lines stay on screen and
+  // console B's lines append after them, producing an unreadable mix.
+  useEffect(() => {
+    setEntries([]);
+    setError(null);
+  }, [host]);
 
   const tick = useCallback(async () => {
     if (!host?.trim() || payloadStatus !== "up") return;
+    const tickHost = host;
     try {
-      const chunk = await klogChunk(mgmtAddr(host.trim()), 16 * 1024);
+      const chunk = await klogChunk(mgmtAddr(tickHost.trim()), 16 * 1024);
+      // Stale-host guard: a chunk that lands after a tab switch must not
+      // leak the previous console's lines into the fresh scrollback.
+      if (useConnectionStore.getState().host !== tickHost) return;
       if (chunk && chunk.length > 0) {
         setEntries((prev) => {
           const newLines = chunk
             .split(/\r?\n/)
             .filter((l) => l.length > 0)
             .map((text) => ({ text, cat: classify(text) }));
+          // A non-empty chunk can still yield zero lines (e.g. bare
+          // newlines). Returning `prev` unchanged keeps the state
+          // referentially stable, so the visible/counts useMemo and
+          // the 5000-row list diff don't re-run on idle ticks.
+          if (newLines.length === 0) return prev;
           const next = [...prev, ...newLines];
           return next.length > 5000 ? next.slice(-5000) : next;
         });
         setError(null);
       }
     } catch (e) {
+      if (useConnectionStore.getState().host !== tickHost) return;
       setError(e instanceof Error ? e.message : String(e));
     }
   }, [host, payloadStatus]);
 
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || !docVisible) return;
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [playing, tick]);
+  }, [playing, docVisible, tick]);
 
   const { visible, counts } = useMemo(() => {
     const counts: Partial<Record<Category, number>> = {};
@@ -220,9 +243,13 @@ export default function KernelLogPanel() {
     if (visible.length === 0) return;
     const ok = await writeClipboard(visible.map((v) => v.text).join("\n"));
     if (ok) {
-      pushNotification("success", "Kernel log copied", {
-        body: `${visible.length} visible line${visible.length === 1 ? "" : "s"} on the clipboard. (${entries.length - visible.length} filtered.)`,
-      });
+      pushNotification(
+        "success",
+        withConsolePrefix(host, "Kernel log copied"),
+        {
+          body: `${visible.length} visible line${visible.length === 1 ? "" : "s"} on the clipboard. (${entries.length - visible.length} filtered.)`,
+        },
+      );
     } else {
       pushNotification("warning", "Copy failed", {
         body: "Clipboard access denied.",
@@ -321,7 +348,11 @@ export default function KernelLogPanel() {
                 onClick={showAll}
                 className="text-xs underline-offset-2 hover:underline"
               >
-                {tr("kernellog_show_all_default", undefined, "Show all (default)")}
+                {tr(
+                  "kernellog_show_all_default",
+                  undefined,
+                  "Show all (default)",
+                )}
               </button>
             </div>
           </div>

@@ -213,7 +213,17 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
       // runtime (or unknowns) instead of leaving the previous console's
       // values on screen until the next poll — kills the stale-host window.
       const rt = s.runtimeByHost[hostOf(host) || "_"] ?? EMPTY_HOST_RUNTIME;
-      return { host, ...mirrorRuntime(host, rt) };
+      // Reset the Connection screen's two-step check status too — those
+      // fields are global, so leaving them showing console A's "✓ ok"
+      // after switching to (unchecked) console B is misleading.
+      return {
+        host,
+        ...mirrorRuntime(host, rt),
+        step1: "idle" as const,
+        step1Msg: "Enter your PS5's address and check",
+        step2: "idle" as const,
+        step2Msg: "Payload not loaded yet",
+      };
     }),
   setStatus: (patch) => set(patch),
   setStep1: (step1, step1Msg) => set({ step1, step1Msg }),

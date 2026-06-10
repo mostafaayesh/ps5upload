@@ -31,7 +31,8 @@
 //!       "windows-x86_64": "https://.../PS5Upload-2.2.0-win-x64.zip",
 //!       "windows-aarch64":"https://.../PS5Upload-2.2.0-win-arm64.zip",
 //!       "linux-x86_64":   "https://.../PS5Upload-2.2.0-linux-x64.zip",
-//!       "linux-aarch64":  "https://.../PS5Upload-2.2.0-linux-arm64.zip"
+//!       "linux-aarch64":  "https://.../PS5Upload-2.2.0-linux-arm64.zip",
+//!       "android":        "https://.../PS5Upload-2.2.0-android.apk"
 //!     }
 //!   }
 //!
@@ -88,7 +89,7 @@ struct Manifest {
 /// Platform key used in the manifest. Matches the format tauri-plugin-
 /// updater historically uses, which keeps the `scripts/gen-updater-
 /// manifest.py` output compatible with either consumer. This function
-/// is the single source of truth for which of our six (os, arch)
+/// is the single source of truth for which of our supported (os, arch)
 /// combinations we're running under.
 fn current_platform_key() -> &'static str {
     // The cfg-gated returns compile down to a single string constant
@@ -116,6 +117,15 @@ fn current_platform_key() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
     {
         return "linux-aarch64";
+    }
+    // Android ships as ONE universal APK covering both arm64 and armv7
+    // (publish.yml builds `--target aarch64 --target armv7` into a single
+    // `PS5Upload-<ver>-android.apk`), so every Android arch maps to the
+    // same manifest key. Keep this in sync with the
+    // `scripts/gen-updater-manifest.py` pattern for `-android.apk`.
+    #[cfg(target_os = "android")]
+    {
+        return "android";
     }
     #[allow(unreachable_code)]
     {
@@ -440,7 +450,14 @@ pub async fn update_download(
             None => meta.len() > 0,
         };
         if skip {
-            reveal(&app, &target).await?;
+            // `reveal` is best-effort for the same reason as the fresh-download
+            // path below: the bundle is already complete on disk, so a failure
+            // to open the OS file manager must not be reported back to the
+            // renderer as a download failure (a user re-clicking "Download"
+            // would otherwise see a spurious error).
+            if let Err(e) = reveal(&app, &target).await {
+                eprintln!("[updates] cached bundle at {target:?} but reveal failed: {e}");
+            }
             return Ok(UpdateDownload {
                 path: target.to_string_lossy().into_owned(),
                 bytes: meta.len(),

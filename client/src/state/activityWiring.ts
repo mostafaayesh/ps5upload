@@ -1,4 +1,9 @@
-import { useFsBulkOpStore, useFsDownloadOpStore } from "./fsBulkOp";
+import {
+  useFsBulkOpStore,
+  useFsDownloadOpStore,
+  IDLE_BULK,
+  IDLE_DOWNLOAD,
+} from "./fsBulkOp";
 import { useTransferStore, IDLE_PHASE } from "./transfer";
 import { useUploadQueueStore } from "./uploadQueue";
 import {
@@ -47,8 +52,15 @@ export function installActivityWiring() {
       )
     )
       return true;
-    if (useFsDownloadOpStore.getState().active) return true;
-    if (useUploadQueueStore.getState().items.some((it) => it.status === "running"))
+    if (
+      Object.values(useFsDownloadOpStore.getState().byHost).some(
+        (d) => d.active,
+      )
+    )
+      return true;
+    if (
+      useUploadQueueStore.getState().items.some((it) => it.status === "running")
+    )
       return true;
     return false;
   };
@@ -82,7 +94,12 @@ export function installActivityWiring() {
       if (phase.kind === "starting" && prevKind === "idle") {
         transferActivityIds.set(
           host,
-          useActivityHistoryStore.getState().start("upload", "Upload starting…"),
+          // `addr: host` — the phasesByHost key IS the bare console host.
+          // Without it, the entry renders with no console chip and a
+          // two-console session can't tell whose upload this is.
+          useActivityHistoryStore
+            .getState()
+            .start("upload", "Upload starting…", { addr: host }),
         );
         continue;
       }
@@ -146,89 +163,143 @@ export function installActivityWiring() {
   });
 
   // ── FS bulk ops (delete / paste-copy / paste-move) ───────────────
-  let bulkActivityId: string | null = null;
+  // PER CONSOLE: the bulk-op store is keyed by host (byHost), so track the
+  // running activity-id per host. Without this, two consoles' concurrent
+  // bulk ops would share one id and misattribute each other's progress /
+  // completion (mirrors transferActivityIds above).
+  const bulkActivityIds = new Map<string, string>();
   useFsBulkOpStore.subscribe((state, prev) => {
-    // Forward per-item byte progress (currentBytesCopied + currentSize)
-    // into the activity entry so the ActivityBar / Activity tab tick
-    // in lockstep with the in-screen banner. Without this, FS pastes
-    // showed "Running" with no bytes for the whole op duration.
-    if (state.op !== null && bulkActivityId !== null) {
-      if (
-        state.currentBytesCopied !== prev.currentBytesCopied ||
-        state.currentSize !== prev.currentSize
-      ) {
-        useActivityHistoryStore.getState().update(bulkActivityId, {
-          bytes: state.currentBytesCopied,
-          totalBytes: state.currentSize ?? 0,
-        });
+    if (state.byHost === prev.byHost) return;
+    const hosts = new Set([
+      ...Object.keys(state.byHost),
+      ...Object.keys(prev.byHost),
+    ]);
+    for (const host of hosts) {
+      const cur = state.byHost[host] ?? IDLE_BULK;
+      const old = prev.byHost[host] ?? IDLE_BULK;
+      if (cur === old) continue;
+      const existingId = bulkActivityIds.get(host) ?? null;
+      // Forward per-item byte progress (currentBytesCopied + currentSize)
+      // into the activity entry so the ActivityBar / Activity tab tick in
+      // lockstep with the in-screen banner.
+      if (cur.op !== null && existingId !== null) {
+        if (
+          cur.currentBytesCopied !== old.currentBytesCopied ||
+          cur.currentSize !== old.currentSize
+        ) {
+          useActivityHistoryStore.getState().update(existingId, {
+            bytes: cur.currentBytesCopied,
+            totalBytes: cur.currentSize ?? 0,
+          });
+        }
       }
-    }
-    if (state.op === prev.op && state.cancelRequested === prev.cancelRequested) return;
-    if (state.op !== null && prev.op === null) {
-      const kind: ActivityKind =
-        state.op === "delete"
-          ? "fs-delete"
-          : state.op === "paste-copy"
-            ? "fs-paste-copy"
-            : "fs-paste-move";
-      const verb =
-        state.op === "delete"
-          ? "Deleting"
-          : state.op === "paste-copy"
-            ? "Copying"
-            : "Moving";
-      bulkActivityId = useActivityHistoryStore
-        .getState()
-        .start(kind, `${verb} ${state.total} item${state.total === 1 ? "" : "s"}`, {
-          fromPath: state.fromPath || undefined,
-          toPath: state.toPath || undefined,
-          files: state.total,
+      if (cur.op === old.op && cur.cancelRequested === old.cancelRequested)
+        continue;
+      if (cur.op !== null && old.op === null) {
+        const kind: ActivityKind =
+          cur.op === "delete"
+            ? "fs-delete"
+            : cur.op === "paste-copy"
+              ? "fs-paste-copy"
+              : "fs-paste-move";
+        const verb =
+          cur.op === "delete"
+            ? "Deleting"
+            : cur.op === "paste-copy"
+              ? "Copying"
+              : "Moving";
+        bulkActivityIds.set(
+          host,
+          useActivityHistoryStore
+            .getState()
+            .start(
+              kind,
+              `${verb} ${cur.total} item${cur.total === 1 ? "" : "s"}`,
+              {
+                fromPath: cur.fromPath || undefined,
+                toPath: cur.toPath || undefined,
+                files: cur.total,
+                // The byHost key IS the bare console host.
+                addr: host || undefined,
+              },
+            ),
+        );
+        continue;
+      }
+      if (cur.op === null && old.op !== null && existingId !== null) {
+        const outcome = old.cancelRequested
+          ? "stopped"
+          : cur.errorBanner
+            ? "failed"
+            : "done";
+        useActivityHistoryStore.getState().finish(existingId, outcome, {
+          error: cur.errorBanner ?? undefined,
         });
-      return;
-    }
-    if (state.op === null && prev.op !== null && bulkActivityId !== null) {
-      const outcome = prev.cancelRequested
-        ? "stopped"
-        : state.errorBanner
-          ? "failed"
-          : "done";
-      useActivityHistoryStore.getState().finish(bulkActivityId, outcome, {
-        error: state.errorBanner ?? undefined,
-      });
-      bulkActivityId = null;
+        bulkActivityIds.delete(host);
+      }
     }
   });
 
   // ── FS downloads ─────────────────────────────────────────────────
-  let downloadActivityId: string | null = null;
+  // PER CONSOLE: downloads are keyed by host (byHost), so track the running
+  // activity-id per host. Without this, starting a download on console B
+  // while console A's was active would reuse A's single id — B's bytes got
+  // credited to A's entry and B's download had no record at all.
+  const downloadActivityIds = new Map<string, string>();
   useFsDownloadOpStore.subscribe((state, prev) => {
-    if (state.active === prev.active && state.bytesReceived === prev.bytesReceived) {
-      return;
-    }
-    if (state.active && !prev.active) {
-      downloadActivityId = useActivityHistoryStore
-        .getState()
-        .start("download", `Downloading ${state.rootName}`, {
-          fromPath: state.rootSrcPath,
-          toPath: state.destDir,
+    if (state.byHost === prev.byHost) return;
+    const hosts = new Set([
+      ...Object.keys(state.byHost),
+      ...Object.keys(prev.byHost),
+    ]);
+    for (const host of hosts) {
+      const cur = state.byHost[host] ?? IDLE_DOWNLOAD;
+      const old = prev.byHost[host] ?? IDLE_DOWNLOAD;
+      if (cur === old) continue;
+      const existingId = downloadActivityIds.get(host) ?? null;
+      if (cur.active && !old.active) {
+        downloadActivityIds.set(
+          host,
+          useActivityHistoryStore
+            .getState()
+            .start("download", `Downloading ${cur.rootName}`, {
+              fromPath: cur.rootSrcPath,
+              toPath: cur.destDir,
+              // The byHost key IS the bare console host.
+              addr: host || undefined,
+            }),
+        );
+        continue;
+      }
+      if (cur.active && existingId !== null) {
+        if (
+          cur.bytesReceived !== old.bytesReceived ||
+          cur.totalBytes !== old.totalBytes
+        ) {
+          useActivityHistoryStore.getState().update(existingId, {
+            bytes: cur.bytesReceived,
+            totalBytes: cur.totalBytes,
+          });
+        }
+        continue;
+      }
+      if (!cur.active && old.active && existingId !== null) {
+        // requestStop() (the Stop button) bumps this host's runId; a natural
+        // end() leaves it unchanged. Without this, a user-stopped download
+        // would show the same green "done" chip as a completed one, since
+        // requestStop() also clears errorBanner.
+        const outcome = cur.errorBanner
+          ? "failed"
+          : cur.runId !== old.runId
+            ? "stopped"
+            : "done";
+        useActivityHistoryStore.getState().finish(existingId, outcome, {
+          bytes: old.bytesReceived,
+          totalBytes: old.totalBytes,
+          error: cur.errorBanner ?? undefined,
         });
-      return;
-    }
-    if (state.active && downloadActivityId !== null) {
-      useActivityHistoryStore.getState().update(downloadActivityId, {
-        bytes: state.bytesReceived,
-        totalBytes: state.totalBytes,
-      });
-      return;
-    }
-    if (!state.active && prev.active && downloadActivityId !== null) {
-      const outcome = state.errorBanner ? "failed" : "done";
-      useActivityHistoryStore.getState().finish(downloadActivityId, outcome, {
-        bytes: prev.bytesReceived,
-        totalBytes: prev.totalBytes,
-        error: state.errorBanner ?? undefined,
-      });
-      downloadActivityId = null;
+        downloadActivityIds.delete(host);
+      }
     }
   });
 
@@ -264,6 +335,10 @@ export function installActivityWiring() {
           .start("upload-queue", `Queue: ${item.displayName}`, {
             fromPath: item.sourcePath,
             toPath: item.resolvedDest,
+            // Which console this queue item targets — drives the console
+            // chip on ActivityBar/Activity rows. Same `ip:9113` shape the
+            // Activity screen's fsOpCancel path expects (port-tolerant).
+            addr: item.addr,
           });
         uploadQueueActivityIds.set(item.id, id);
         continue;

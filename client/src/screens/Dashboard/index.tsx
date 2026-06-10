@@ -20,7 +20,7 @@ import {
   type HwTemps,
   type HwPower,
 } from "../../api/ps5";
-import { PageHeader, EmptyState } from "../../components";
+import { PageHeader, ConnectionGate, ConsoleChip } from "../../components";
 import { useTr } from "../../state/lang";
 import { useDocumentVisible } from "../../lib/visibility";
 import { transferAddr } from "../../lib/addr";
@@ -66,6 +66,14 @@ export default function DashboardScreen() {
   const recentNotifs = useMemo(() => allNotifs.slice(0, 5), [allNotifs]);
   const runningTitleIds = useRunningAppsStore((s) => s.titleIds);
 
+  // Live sensors belong to ONE console: drop the previous console's
+  // readings the instant the tab switches, instead of showing them under
+  // the new console's name until the next 5-second tick lands.
+  useEffect(() => {
+    setTemps(null);
+    setPower(null);
+  }, [host]);
+
   useEffect(() => {
     if (!visible || !host?.trim() || payloadStatus !== "up") return;
     let cancelled = false;
@@ -104,23 +112,16 @@ export default function DashboardScreen() {
         )}
       />
 
-      {payloadStatus !== "up" ? (
-        <EmptyState
-          fill
-          icon={LayoutDashboard}
-          message={tr(
-            "dashboard_no_payload",
-            undefined,
-            "Connect to your PS5 first.",
-          )}
-        />
-      ) : (
+      <ConnectionGate require="payload">
         <div className="mx-auto grid max-w-6xl gap-3 md:grid-cols-2 xl:grid-cols-3">
           <DashCard
             icon={<Cable size={14} />}
             title={tr("dashboard_connection_title", "Connection")}
           >
-            <KvRow label={tr("dashboard_label_host", "Host")} value={host || "—"} />
+            <KvRow
+              label={tr("dashboard_label_host", "Host")}
+              value={host || "—"}
+            />
             <KvRow
               label={tr("dashboard_label_engine", "Engine")}
               value={engineStatus === "up" ? "up" : "down"}
@@ -243,6 +244,7 @@ export default function DashboardScreen() {
                       />
                     )}
                     <span className="min-w-0 flex-1 truncate">{e.label}</span>
+                    <ConsoleChip addr={e.addr} className="shrink-0" />
                   </li>
                 ))}
               </ul>
@@ -251,7 +253,10 @@ export default function DashboardScreen() {
 
           <DashCard
             icon={<Bell size={14} />}
-            title={tr("dashboard_recent_notifications_title", "Recent notifications")}
+            title={tr(
+              "dashboard_recent_notifications_title",
+              "Recent notifications",
+            )}
           >
             {recentNotifs.length === 0 ? (
               <div className="text-xs text-[var(--color-muted)]">
@@ -273,7 +278,7 @@ export default function DashboardScreen() {
             )}
           </DashCard>
         </div>
-      )}
+      </ConnectionGate>
     </div>
   );
 }
@@ -329,4 +334,3 @@ function KvRow({
     </div>
   );
 }
-

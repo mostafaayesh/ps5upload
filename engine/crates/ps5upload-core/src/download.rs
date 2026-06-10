@@ -523,6 +523,12 @@ pub fn download_to_local(
                         );
                         continue;
                     }
+                    // Terminal failure: a retry sweeps and recreates the
+                    // .part from byte 0 (no cross-attempt resume), so the
+                    // partial bytes are worthless — best-effort remove
+                    // rather than leaving an orphan next to the real file.
+                    drop(file);
+                    let _ = fs::remove_file(&part_path);
                     return Err(e)
                         .with_context(|| format!("download {} @ {offset}", entry.remote_path));
                 }
@@ -537,8 +543,11 @@ pub fn download_to_local(
             .with_context(|| format!("stat {} after write", part_path.display()))?
             .len();
         if written != expected {
+            // A truncated .part can't be resumed (a retry restarts from
+            // byte 0), so don't leave the bad bytes around as an orphan.
+            let _ = fs::remove_file(&part_path);
             anyhow::bail!(
-                "downloaded {} bytes but expected {} for {} — possible truncation (partial at {})",
+                "downloaded {} bytes but expected {} for {} — possible truncation; removed incomplete {}",
                 written,
                 expected,
                 entry.remote_path,
@@ -563,6 +572,12 @@ pub fn download_to_local(
         //     message explaining that the bytes ARE on disk at
         //     the .part path so the user knows the download
         //     itself succeeded.
+        //
+        // On BOTH promotion failures the .part is intentionally
+        // left on disk: the bytes are complete and verified, and
+        // the error messages point the user at the .part path for
+        // manual recovery — don't delete it like the failed-
+        // transfer paths above do.
         if local_path.exists() {
             if let Err(e) = fs::remove_file(&local_path) {
                 anyhow::bail!(
@@ -897,14 +912,12 @@ mod pipeline_tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         std::thread::spawn(move || {
-            let mut conn_idx = 0usize;
-            for stream in listener.incoming() {
+            for (conn_idx, stream) in listener.incoming().enumerate() {
                 let mut s = match stream {
                     Ok(s) => s,
                     Err(_) => break,
                 };
                 let drop_after_one = drop_first_conn && conn_idx == 0;
-                conn_idx += 1;
                 let mut answered = 0usize;
                 loop {
                     let mut hbuf = [0u8; FRAME_HEADER_LEN];

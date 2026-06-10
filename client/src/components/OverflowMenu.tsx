@@ -108,7 +108,7 @@ export function OverflowMenu({
       {open && (
         <div
           role="menu"
-          className="absolute z-30 mt-1 min-w-[200px] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
+          className="anim-rise elev-2 absolute z-30 mt-1 min-w-[200px] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]"
           style={{ ...menuPositionStyle, top: "100%" }}
         >
           {items.map((item, i) => (

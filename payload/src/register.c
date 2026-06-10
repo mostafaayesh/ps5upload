@@ -1216,11 +1216,41 @@ int list_registered_titles_json(char *out_json,
         }
         src_esc[sei] = '\0';
 
+        /* Resolve the human-readable title name from the game's
+         * param.json/param.sfo (mount.lnk gave us its source path). Without
+         * this the row's title_name was emitted as the title_id, so the
+         * Library showed nine-character IDs instead of game names. Falls back
+         * to the title_id when metadata can't be read (e.g. the source lives
+         * inside an image that isn't mounted right now). */
+        char title_name[256] = {0};
+        char meta_id[64] = {0};
+        if (src[0] == '\0' ||
+            read_title_metadata(src, meta_id, sizeof(meta_id),
+                                title_name, sizeof(title_name)) != 0) {
+            title_name[0] = '\0';
+        }
+        const char *name_src = title_name[0] ? title_name : tid;
+
+        /* Same minimal JSON escape as src — game titles can contain quotes
+         * or backslashes (e.g. "Marvel's Spider-Man"). */
+        char name_esc[sizeof(title_name) * 2 + 2];
+        size_t nei = 0;
+        for (const char *np = name_src; *np && nei + 2 < sizeof(name_esc); np++) {
+            unsigned char c = (unsigned char)*np;
+            if (c == '\\' || c == '"') {
+                name_esc[nei++] = '\\';
+                name_esc[nei++] = (char)c;
+            } else if (c >= 0x20) {
+                name_esc[nei++] = (char)c;
+            }
+        }
+        name_esc[nei] = '\0';
+
         n = snprintf(out_json + off, out_cap - off,
                      "%s{\"title_id\":\"%s\",\"title_name\":\"%s\","
                      "\"src\":\"%s\",\"image_backed\":%s}",
                      first ? "" : ",",
-                     tid, tid, src_esc,
+                     tid, name_esc, src_esc,
                      image_backed ? "true" : "false");
         if (n < 0 || (size_t)n >= out_cap - off) {
             closedir(dir);
@@ -1537,8 +1567,17 @@ int unregister_title(const char *title_id, const char **err_reason_out) {
             (void)kernel_set_ucred_authid(mypid, REG_SHELLCORE_AUTHID);
         }
         int unrc = g_reg.app_uninstall(title_id, NULL, NULL);
+        /* Restore the prior authid with retry-and-verify (3 attempts),
+         * matching bgft.c's authid_release_shellcore(). A single unverified
+         * set could silently fail and leave this pid holding the ShellCore
+         * authid — and a non-ShellCore pid carrying ShellCore authid is the
+         * exact kernel-watchdog hazard documented in main.c. The helper there
+         * is static to bgft.c, so the loop is inlined here. */
         if (saved != 0) {
-            (void)kernel_set_ucred_authid(mypid, saved);
+            for (int attempt = 0; attempt < 3; attempt++) {
+                (void)kernel_set_ucred_authid(mypid, saved);
+                if (kernel_get_ucred_authid(mypid) == saved) break;
+            }
         }
         pthread_mutex_unlock(&kernel_rw_lock);
         usleep(SONY_API_POST_SLEEP_US);
@@ -1582,7 +1621,8 @@ int register_browser_launch(void) {
 /* shellui_rpc API — declarations come from shellui_rpc.h. */
 #include "shellui_rpc.h"
 
-int launch_title(const char *title_id, const char **err_reason_out) {
+int launch_title(const char *title_id, const char **err_reason_out,
+                 char *reason_buf, size_t reason_cap) {
     register_module_init();
     if (!title_id || !is_safe_component(title_id)) {
         if (err_reason_out) *err_reason_out = "launch_title_id_invalid";
@@ -1687,18 +1727,20 @@ int launch_title(const char *title_id, const char **err_reason_out) {
             int rc2 = shellui_rpc_launch_app(title_id, fg_user);
             if (rc2 == 0 || rc2 == -2) return 0;
             if (rc2 > 0) {
-                /* Plain static (not __thread): the SDK's emutls
-                 * implementation prevents the binary from loading
-                 * on this firmware. Mgmt loop is single-threaded,
-                 * but two clients connecting in rapid succession
-                 * could race the read. Acceptable: the buffer is
-                 * always written immediately before err_reason_out
-                 * is set, and the consumer copies before another
-                 * launch can occur (single-threaded). */
-                static char reason_buf[80];
-                snprintf(reason_buf, sizeof(reason_buf),
-                         "launch_sony_error_0x%08x", (unsigned int)rc2);
-                if (err_reason_out) *err_reason_out = reason_buf;
+                /* Format into the CALLER's scratch buffer (see the
+                 * header note). The mgmt server runs one thread per
+                 * client connection, so the previous function-local
+                 * `static` buffer was a data race between concurrent
+                 * APP_LAUNCH requests — and `__thread` is unusable
+                 * here (the SDK's emutls breaks rtld lib_init on
+                 * PS5, before main even runs). */
+                if (reason_buf && reason_cap > 0) {
+                    snprintf(reason_buf, reason_cap,
+                             "launch_sony_error_0x%08x", (unsigned int)rc2);
+                    if (err_reason_out) *err_reason_out = reason_buf;
+                } else if (err_reason_out) {
+                    *err_reason_out = "launch_sony_error";
+                }
                 return -1;
             }
             /* rc2 == -1: pre-dispatch failure on retry. Fall through
@@ -1777,18 +1819,18 @@ int launch_title(const char *title_id, const char **err_reason_out) {
     /* All strategies failed. Surface a diagnostic so the engine error
      * includes which paths we tried.
      *
-     * Plain static (not __thread): the SDK's emutls implementation
-     * prevents the binary from loading on PS5 firmware (rtld lib_init
-     * fails when emutls symbols are present, even before main runs).
-     * Mgmt loop is single-threaded; the worst case race is two near-
-     * simultaneous launches stomping the same buffer just before the
-     * caller copies the const char *. Acceptable for an error path. */
-    {
-        static char reason_buf[128];
-        snprintf(reason_buf, sizeof(reason_buf),
+     * Formatted into the caller's scratch buffer (see header note):
+     * the mgmt server runs one thread per client connection, so the
+     * previous function-local `static` raced concurrent APP_LAUNCH
+     * requests — and `__thread` is unusable (the SDK's emutls breaks
+     * rtld lib_init on PS5, before main even runs). */
+    if (reason_buf && reason_cap > 0) {
+        snprintf(reason_buf, reason_cap,
                  "launch_all_strategies_failed: param=%d null=%d sys=%d",
                  tried_param, tried_null, tried_sys);
         if (err_reason_out) *err_reason_out = reason_buf;
+    } else if (err_reason_out) {
+        *err_reason_out = "launch_all_strategies_failed";
     }
     return -1;
 }

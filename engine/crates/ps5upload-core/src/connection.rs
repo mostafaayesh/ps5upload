@@ -157,10 +157,20 @@ pub struct Connection {
 fn write_all_parts<W: Write>(stream: &mut W, parts: &[&[u8]]) -> io::Result<()> {
     // Copy parts into a mutable local slice so we can advance past written bytes.
     let mut cursor: [&[u8]; 4] = [&[], &[], &[], &[]];
-    assert!(
+    // A hard assert here would panic the whole engine process (and every
+    // console's transfers) if a future caller passes >4 slices — surface
+    // it as an io::Error instead, with a debug_assert to catch dev-time
+    // misuse early.
+    debug_assert!(
         parts.len() <= cursor.len(),
         "write_all_parts accepts ≤4 slices"
     );
+    if parts.len() > cursor.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("write_all_parts accepts ≤4 slices, got {}", parts.len()),
+        ));
+    }
     for (i, p) in parts.iter().enumerate() {
         cursor[i] = p;
     }
@@ -560,7 +570,7 @@ mod transient_resource_error_tests {
     fn non_os_error_is_not_transient() {
         // An error with no raw OS code (e.g. a synthesised ErrorKind) must
         // not be misclassified as a recoverable resource spike.
-        let e = io::Error::new(io::ErrorKind::Other, "synthetic");
+        let e = io::Error::other("synthetic");
         assert!(!is_transient_local_resource_error(&e));
     }
 }

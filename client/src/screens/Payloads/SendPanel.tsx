@@ -7,16 +7,16 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  ChevronRight,
   FolderOpen,
   History,
   Trash2,
   RotateCcw,
 } from "lucide-react";
 
-import {
-  useConnectionStore,
-  PS5_LOADER_PORT,
-} from "../../state/connection";
+import { Button } from "../../components";
+
+import { useConnectionStore, PS5_LOADER_PORT } from "../../state/connection";
 import { sendPayload } from "../../api/ps5";
 import { useTr } from "../../state/lang";
 import { pushNotification } from "../../state/notifications";
@@ -43,9 +43,9 @@ import { PlaylistsPanel } from "./PlaylistsPanel";
  * history row fills the form with that record's path + port; the
  * user can then re-send as-is or tweak.
  *
- * Pre-2.12.0 this lived at /send-payload as a standalone screen. The
- * Payloads shell now owns the page header + tab strip; this panel
- * just renders content.
+ * (The old standalone /send-payload route was merged into the
+ * Payloads tab's "send" sub-tab. Legacy redirects preserve old
+ * bookmarks.)
  */
 
 type Status =
@@ -137,6 +137,10 @@ export default function SendPanel() {
   // deliberate custom port is never clobbered.
   const [portManuallyEdited, setPortManuallyEdited] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  // "Typical loader ports" reference table — collapsed by default so
+  // the form stays uncluttered. State-driven (not native <details>)
+  // because the UA disclosure triangle doesn't follow the theme.
+  const [portsOpen, setPortsOpen] = useState(false);
 
   // Clear a terminal send banner when the user edits the target. The "sent"
   // banner renders the LIVE host/port, so without this, editing the IP after
@@ -378,9 +382,9 @@ export default function SendPanel() {
           </div>
           <div className="mt-1 text-xs text-[var(--color-muted)]">
             {tr("sendpayload_sent_to", undefined, "Sent to")}{" "}
-            <code>{host || "…"}</code>:
-            {parsedPort ?? portText}
-            {tr("sendpayload_default", undefined, ". Default")} {PS5_LOADER_PORT}{" "}
+            <code>{host || "…"}</code>:{parsedPort ?? portText}
+            {tr("sendpayload_default", undefined, ". Default")}{" "}
+            {PS5_LOADER_PORT}{" "}
             {tr(
               "sendpayload_elfldr_convention",
               undefined,
@@ -392,41 +396,54 @@ export default function SendPanel() {
               get a quick lookup without leaving the screen. These are
               community-common defaults — custom loaders may listen
               anywhere, hence the caveat. */}
-          <details className="mt-2 text-xs text-[var(--color-muted)]">
-            <summary className="cursor-pointer select-none">
+          <div className="mt-2 text-xs text-[var(--color-muted)]">
+            <button
+              type="button"
+              onClick={() => setPortsOpen((o) => !o)}
+              aria-expanded={portsOpen}
+              className="inline-flex cursor-pointer select-none items-center gap-1 rounded-md transition-colors hover:text-[var(--color-text)]"
+            >
+              <ChevronRight
+                size={12}
+                className={`shrink-0 transition-transform ${portsOpen ? "rotate-90" : ""}`}
+              />
               {tr(
                 "sendpayload_typical_ports_summary",
                 "Typical loader ports by format",
               )}
-            </summary>
-            <ul className="mt-2 ml-4 list-disc space-y-1">
-              <li>
-                <code>.elf</code> → <code>9021</code> ·{" "}
-                {tr("sendpayload_port_elf_desc", "elfldr (default)")}
-              </li>
-              <li>
-                <code>.js</code> → <code>50000</code> ·{" "}
-                {tr(
-                  "sendpayload_port_js_desc",
-                  "WebKit / browser-stage payloads",
-                )}
-              </li>
-              <li>
-                <code>.lua</code> → <code>9026</code> ·{" "}
-                {tr("sendpayload_port_lua_desc", "Lua runtime plugins")}
-              </li>
-              <li>
-                <code>.jar</code> → <code>9025</code> ·{" "}
-                {tr("sendpayload_port_jar_desc", "BD-JB / BDJ runtime")}
-              </li>
-            </ul>
-            <p className="mt-2">
-              {tr(
-                "sendpayload_typical_ports_caveat",
-                "These are common defaults — custom loaders may listen on any port.",
-              )}
-            </p>
-          </details>
+            </button>
+            {portsOpen && (
+              <>
+                <ul className="mt-2 ml-4 list-disc space-y-1">
+                  <li>
+                    <code>.elf</code> → <code>9021</code> ·{" "}
+                    {tr("sendpayload_port_elf_desc", "elfldr (default)")}
+                  </li>
+                  <li>
+                    <code>.js</code> → <code>50000</code> ·{" "}
+                    {tr(
+                      "sendpayload_port_js_desc",
+                      "WebKit / browser-stage payloads",
+                    )}
+                  </li>
+                  <li>
+                    <code>.lua</code> → <code>9026</code> ·{" "}
+                    {tr("sendpayload_port_lua_desc", "Lua runtime plugins")}
+                  </li>
+                  <li>
+                    <code>.jar</code> → <code>9025</code> ·{" "}
+                    {tr("sendpayload_port_jar_desc", "BD-JB / BDJ runtime")}
+                  </li>
+                </ul>
+                <p className="mt-2">
+                  {tr(
+                    "sendpayload_typical_ports_caveat",
+                    "These are common defaults — custom loaders may listen on any port.",
+                  )}
+                </p>
+              </>
+            )}
+          </div>
 
           {/* File picker + editable path. The text input is the
               canonical source of truth — the Choose button just fills
@@ -489,25 +506,21 @@ export default function SendPanel() {
           )}
 
           <div className="mt-5 flex items-center justify-end gap-2">
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="md"
+              leftIcon={<Send size={14} />}
+              loading={status.kind === "sending"}
               onClick={send}
               disabled={
                 !elfPath ||
                 !host?.trim() ||
                 !portValid ||
-                status.kind === "sending" ||
                 status.kind === "probing"
               }
-              className="flex items-center gap-2 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-contrast)] disabled:opacity-50"
             >
-              {status.kind === "sending" ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Send size={14} />
-              )}
               {tr("sendpayload_send", undefined, "Send")}
-            </button>
+            </Button>
           </div>
 
           {status.kind === "sent" && (
@@ -518,7 +531,11 @@ export default function SendPanel() {
               />
               <div>
                 <div className="font-medium text-[var(--color-good)]">
-                  {tr("sendpayload_payload_sent_to", undefined, "Payload sent to")}{" "}
+                  {tr(
+                    "sendpayload_payload_sent_to",
+                    undefined,
+                    "Payload sent to",
+                  )}{" "}
                   {host}:{parsedPort ?? PS5_LOADER_PORT}
                 </div>
                 <div className="mt-0.5 text-[var(--color-muted)]">
@@ -559,14 +576,13 @@ export default function SendPanel() {
       </div>
 
       <p className="mt-4 text-xs text-[var(--color-muted)]">
-        Only send payloads from sources you trust — a malicious .elf,
-        .bin, .js, .lua, or .jar file can do anything on your PS5.
-        ps5upload doesn't bundle or verify third-party loaders; you're
-        responsible for the files you pick.
+        Only send payloads from sources you trust — a malicious .elf, .bin, .js,
+        .lua, or .jar file can do anything on your PS5. ps5upload doesn't bundle
+        or verify third-party loaders; you're responsible for the files you
+        pick.
       </p>
 
       <PlaylistsPanel host={host} port={parsedPort ?? PS5_LOADER_PORT} />
-
     </div>
   );
 }

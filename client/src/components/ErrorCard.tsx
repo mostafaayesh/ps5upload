@@ -1,4 +1,30 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
+
+import { useTr } from "../state/lang";
+
+/** Shared dismiss "×" for the status cards below. Errors used to clear
+ *  only implicitly (next refresh / navigation), which users read as
+ *  "stuck" — an explicit dismiss makes the lifecycle visible. */
+function DismissButton({
+  onDismiss,
+  tone,
+}: {
+  onDismiss: () => void;
+  tone: string;
+}) {
+  const tr = useTr();
+  return (
+    <button
+      type="button"
+      onClick={onDismiss}
+      aria-label={tr("dismiss", "Dismiss")}
+      className="shrink-0 rounded p-0.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-3)]"
+      style={{ color: `var(--color-${tone})` }}
+    >
+      <X size={14} aria-hidden />
+    </button>
+  );
+}
 
 /**
  * Red-tinted error card. Used when a screen-level operation failed
@@ -13,10 +39,13 @@ export function ErrorCard({
   title,
   detail,
   action,
+  onDismiss,
 }: {
   title: string;
   detail?: React.ReactNode;
   action?: React.ReactNode;
+  /** When provided, renders a dismiss "×" so the user can clear the error. */
+  onDismiss?: () => void;
 }) {
   return (
     // role="alert" + aria-live="assertive" so screen readers announce
@@ -41,6 +70,7 @@ export function ErrorCard({
         )}
         {action && <div className="mt-2">{action}</div>}
       </div>
+      {onDismiss && <DismissButton onDismiss={onDismiss} tone="bad" />}
     </div>
   );
 }
@@ -54,10 +84,12 @@ export function SuccessCard({
   title,
   detail,
   action,
+  onDismiss,
 }: {
   title: string;
   detail?: React.ReactNode;
   action?: React.ReactNode;
+  onDismiss?: () => void;
 }) {
   return (
     // status + aria-live="polite": success messages are informative,
@@ -90,6 +122,7 @@ export function SuccessCard({
         )}
         {action && <div className="mt-2">{action}</div>}
       </div>
+      {onDismiss && <DismissButton onDismiss={onDismiss} tone="good" />}
     </div>
   );
 }
@@ -100,10 +133,12 @@ export function WarningCard({
   title,
   detail,
   action,
+  onDismiss,
 }: {
   title: string;
   detail?: React.ReactNode;
   action?: React.ReactNode;
+  onDismiss?: () => void;
 }) {
   return (
     // Warning is "heads up" rather than "this failed" — polite live
@@ -127,6 +162,7 @@ export function WarningCard({
         )}
         {action && <div className="mt-2">{action}</div>}
       </div>
+      {onDismiss && <DismissButton onDismiss={onDismiss} tone="warn" />}
     </div>
   );
 }

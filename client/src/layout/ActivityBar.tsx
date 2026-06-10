@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Loader2, ChevronUp, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -8,6 +9,8 @@ import {
 } from "../state/activityHistory";
 import { formatBytes, formatDuration } from "../lib/format";
 import { useTr } from "../state/lang";
+import { ConsoleChip } from "../components";
+import { profileNameForAddr, useRosterStore } from "../state/roster";
 
 /**
  * Persistent footer bar that surfaces in-flight activity across
@@ -33,11 +36,43 @@ import { useTr } from "../state/lang";
 export default function ActivityBar() {
   const tr = useTr();
   const navigate = useNavigate();
-  const entries = useActivityHistoryStore((s) => s.entries);
-  const running = entries.filter((e) => e.outcome === "running");
+  // Subscribe to cheap derived values only — running count plus the
+  // first running entry's label/addr. The store stamps progress bytes
+  // into `entries` ~2× per second during uploads, and a raw `entries`
+  // subscription here re-rendered the bar (and this collapsed line)
+  // on every tick even though nothing visible changed. The shallow
+  // tuple only differs when an activity starts/finishes or the lead
+  // entry's headline changes, so progress ticks no longer touch the
+  // collapsed bar. Live byte counters live in RunningList below.
+  const [runningCount, firstLabel, firstAddr] = useActivityHistoryStore(
+    useShallow((s) => {
+      let count = 0;
+      let label = "";
+      let addr: string | undefined;
+      for (const e of s.entries) {
+        if (e.outcome === "running") {
+          if (count === 0) {
+            label = e.label;
+            addr = e.addr;
+          }
+          count++;
+        }
+      }
+      return [count, label, addr] as const;
+    }),
+  );
   const [expanded, setExpanded] = useState(false);
+  const profiles = useRosterStore((s) => s.profiles);
 
-  if (running.length === 0) return null;
+  if (runningCount === 0) return null;
+
+  // Collapsed one-liner: with several consoles working at once, prefix
+  // the first entry with its console so a glance at the footer answers
+  // "who is doing that?" without expanding the bar.
+  const firstConsole =
+    profiles.length > 1 && firstAddr
+      ? profileNameForAddr(firstAddr, profiles)
+      : null;
 
   return (
     <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)]">
@@ -47,19 +82,27 @@ export default function ActivityBar() {
           onClick={() => setExpanded((v) => !v)}
           className="flex flex-1 items-center gap-2 truncate hover:opacity-80"
           aria-expanded={expanded}
-          aria-label={tr("activity_bar_toggle", undefined, "Toggle activity panel")}
+          aria-label={tr(
+            "activity_bar_toggle",
+            undefined,
+            "Toggle activity panel",
+          )}
         >
-          <Loader2 size={12} className="animate-spin text-[var(--color-accent)]" />
+          <Loader2
+            size={12}
+            className="animate-spin text-[var(--color-accent)]"
+          />
           <span className="font-medium">
             {tr(
               "activity_bar_in_flight",
-              { count: running.length },
-              `${running.length} activity item${running.length === 1 ? "" : "s"} running`,
+              { count: runningCount },
+              `${runningCount} activity item${runningCount === 1 ? "" : "s"} running`,
             )}
           </span>
           <span className="ml-2 truncate text-[var(--color-muted)]">
-            {running[0].label}
-            {running.length > 1 && ` · +${running.length - 1} more`}
+            {firstConsole ? `[${firstConsole}] ` : ""}
+            {firstLabel}
+            {runningCount > 1 && ` · +${runningCount - 1} more`}
           </span>
           {expanded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
         </button>
@@ -72,15 +115,26 @@ export default function ActivityBar() {
         </button>
       </div>
 
-      {expanded && (
-        <div className="border-t border-[var(--color-border)] px-4 py-2">
-          <ul className="space-y-1.5 text-xs">
-            {running.map((entry) => (
-              <RunningRow key={entry.id} entry={entry} />
-            ))}
-          </ul>
-        </div>
-      )}
+      {expanded && <RunningList />}
+    </div>
+  );
+}
+
+/** Expanded row list, split into its own component so the full
+ *  `entries` subscription only exists while the bar is expanded
+ *  (conditional render = the hook isn't mounted otherwise). These
+ *  rows show live byte counters, so re-rendering on every progress
+ *  tick is the point here — the split keeps that cost opt-in. */
+function RunningList() {
+  const entries = useActivityHistoryStore((s) => s.entries);
+  const running = entries.filter((e) => e.outcome === "running");
+  return (
+    <div className="border-t border-[var(--color-border)] px-4 py-2">
+      <ul className="space-y-1.5 text-xs">
+        {running.map((entry) => (
+          <RunningRow key={entry.id} entry={entry} />
+        ))}
+      </ul>
     </div>
   );
 }
@@ -105,6 +159,7 @@ function RunningRow({ entry }: { entry: ActivityEntry }) {
 
   return (
     <li className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+      <ConsoleChip addr={entry.addr} />
       <span className="font-medium text-[var(--color-text)]">
         {entry.label}
       </span>

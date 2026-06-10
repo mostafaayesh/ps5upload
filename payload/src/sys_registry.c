@@ -29,31 +29,34 @@ static regmgr_get_int_fn       g_get_int = NULL;
 static regmgr_set_int_fn       g_set_int = NULL;
 static regmgr_get_str_fn       g_get_str = NULL;
 static rtc_get_network_tick_fn g_rtc_get_ntp_tick = NULL;
-static int                     g_resolved = 0;
-static pthread_mutex_t         g_init_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_once_t          g_resolve_once = PTHREAD_ONCE_INIT;
+
+static void resolve_impl(void) {
+    /* RTLD_DEFAULT walks every loaded SPRX — same pattern as
+     * sys_time.c. We deliberately don't dlopen a specific .sprx
+     * because the runtime export surface differs from the SDK
+     * stub layout: on some firmwares libSceRegMgr.sprx is loaded
+     * indirectly via SceShellCore IPC, NOT as a direct dep of
+     * our payload, so dlopen("libSceRegMgr.sprx", ...) would
+     * fail while RTLD_DEFAULT still finds the symbol. */
+    g_get_int = (regmgr_get_int_fn)dlsym(RTLD_DEFAULT,
+                                          "sceRegMgrGetInt");
+    g_set_int = (regmgr_set_int_fn)dlsym(RTLD_DEFAULT,
+                                          "sceRegMgrSetInt");
+    g_get_str = (regmgr_get_str_fn)dlsym(RTLD_DEFAULT,
+                                          "sceRegMgrGetStr");
+    g_rtc_get_ntp_tick = (rtc_get_network_tick_fn)dlsym(
+        RTLD_DEFAULT, "sceRtcGetCurrentNetworkTick");
+}
 
 static void resolve_once(void) {
-    if (g_resolved) return;
-    pthread_mutex_lock(&g_init_lock);
-    if (!g_resolved) {
-        /* RTLD_DEFAULT walks every loaded SPRX — same pattern as
-         * sys_time.c. We deliberately don't dlopen a specific .sprx
-         * because the runtime export surface differs from the SDK
-         * stub layout: on some firmwares libSceRegMgr.sprx is loaded
-         * indirectly via SceShellCore IPC, NOT as a direct dep of
-         * our payload, so dlopen("libSceRegMgr.sprx", ...) would
-         * fail while RTLD_DEFAULT still finds the symbol. */
-        g_get_int = (regmgr_get_int_fn)dlsym(RTLD_DEFAULT,
-                                              "sceRegMgrGetInt");
-        g_set_int = (regmgr_set_int_fn)dlsym(RTLD_DEFAULT,
-                                              "sceRegMgrSetInt");
-        g_get_str = (regmgr_get_str_fn)dlsym(RTLD_DEFAULT,
-                                              "sceRegMgrGetStr");
-        g_rtc_get_ntp_tick = (rtc_get_network_tick_fn)dlsym(
-            RTLD_DEFAULT, "sceRtcGetCurrentNetworkTick");
-        g_resolved = 1;
-    }
-    pthread_mutex_unlock(&g_init_lock);
+    /* pthread_once instead of the previous hand-rolled
+     * double-checked lock: the unsynchronized fast-path read of a
+     * plain int was a C11 data race (UB; benign on x86-64 TSO but
+     * a compiler is allowed to break it). pthread_once is the
+     * codebase's standard for one-shot init and gives the same
+     * fast path with defined semantics. */
+    pthread_once(&g_resolve_once, resolve_impl);
 }
 
 int sys_registry_get_int(uint32_t key, int *out_val,

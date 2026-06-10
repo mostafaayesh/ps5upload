@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   FolderTree,
   Folder,
@@ -19,9 +20,18 @@ import {
   X,
 } from "lucide-react";
 import { pickPath } from "../../lib/pickPath";
-import { PageHeader, Button, EmptyState } from "../../components";
+import {
+  PageHeader,
+  Button,
+  EmptyState,
+  ConnectionGate,
+} from "../../components";
 // Direct import to avoid the barrel's circular-dep warning at build.
-import { useConfirm, useAlert, usePrompt } from "../../components/ConfirmDialog";
+import {
+  useConfirm,
+  useAlert,
+  usePrompt,
+} from "../../components/ConfirmDialog";
 import { useTr } from "../../state/lang";
 
 import { useConnectionStore, PS5_PAYLOAD_PORT } from "../../state/connection";
@@ -38,11 +48,9 @@ import {
   fetchVolumes,
   type Volume,
 } from "../../api/ps5";
-import {
-  loadFsLastPath,
-  saveFsLastPath,
-} from "../../lib/fsLastPath";
+import { loadFsLastPath, saveFsLastPath } from "../../lib/fsLastPath";
 import { useActivityHistoryStore } from "../../state/activityHistory";
+import { pushNotification } from "../../state/notifications";
 import { useRecentPathsStore } from "../../state/recentPaths";
 import {
   useFsClipboardStore,
@@ -51,6 +59,12 @@ import {
 import {
   useFsBulkOpStore,
   useFsDownloadOpStore,
+  bulkOpForHost,
+  otherActiveBulkHost,
+  fsBulkOpHandle,
+  downloadForHost,
+  otherActiveDownloadHost,
+  fsDownloadOpHandle,
 } from "../../state/fsBulkOp";
 import { useElapsed } from "../../lib/useElapsed";
 import { runBulkDelete as runBulkDeleteLoop } from "../../lib/bulkDelete";
@@ -95,6 +109,11 @@ function formatDuration(sec: number): string {
 // previously had two different signatures across screens (bare host
 // vs transfer-port addr); the canonical helper accepts either.
 import { mgmtAddr as toMgmtAddr } from "../../lib/addr";
+import {
+  profileNameForHost,
+  useRosterStore,
+  withConsolePrefix,
+} from "../../state/roster";
 import { useStaleHostGuard } from "../../lib/staleHostGuard";
 
 function parent(p: string): string {
@@ -194,9 +213,7 @@ export function isSinglePathName(name: string): boolean {
 
 function crumbs(p: string): { label: string; path: string }[] {
   const parts = p.split("/").filter(Boolean);
-  const out: { label: string; path: string }[] = [
-    { label: "/", path: "/" },
-  ];
+  const out: { label: string; path: string }[] = [{ label: "/", path: "/" }];
   let cur = "";
   for (const part of parts) {
     cur += `/${part}`;
@@ -242,8 +259,68 @@ export default function FileSystemScreen() {
   // Lifted into Zustand so the in-flight bulk op survives navigation.
   // The async runner writes to the store; the screen reads from it.
   // Re-mount after a tab switch sees the still-running operation.
-  const bulkOp = useFsBulkOpStore();
-  const downloadOp = useFsDownloadOpStore();
+  //
+  // Deliberately narrowed selectors (NOT whole-store subscriptions):
+  // the paste loop stamps `currentBytesCopied` every 500 ms and the
+  // download poller stamps `bytesReceived` at poll rate. A whole-store
+  // subscription made this 2000+ line screen re-render on every one of
+  // those ticks. The per-tick fields are consumed by BulkOpBanner /
+  // DownloadOpBanner via their own narrow subscriptions, so the screen
+  // body only needs the slow-moving fields below.
+  // Per-console bulk-op / download state: select THIS console's slot from
+  // the per-host stores. Each console's op is fully independent, so the
+  // screen always renders its own host's progress (never another console's).
+  const bulkOp = useFsBulkOpStore(
+    useShallow((s) => {
+      const b = bulkOpForHost(s, host);
+      return {
+        op: b.op,
+        total: b.total,
+        done: b.done,
+        currentName: b.currentName,
+        currentSize: b.currentSize,
+        fromPath: b.fromPath,
+        toPath: b.toPath,
+        startedAtMs: b.startedAtMs,
+        errorBanner: b.errorBanner,
+      };
+    }),
+  );
+  const downloadOp = useFsDownloadOpStore(
+    useShallow((s) => {
+      const d = downloadForHost(s, host);
+      return {
+        active: d.active,
+        rootName: d.rootName,
+        rootSrcPath: d.rootSrcPath,
+        destDir: d.destDir,
+        startedAtMs: d.startedAtMs,
+        errorBanner: d.errorBanner,
+      };
+    }),
+  );
+  const rosterProfiles = useRosterStore((s) => s.profiles);
+  // "Here" is now always this console's own slot (selected above). The
+  // "elsewhere" indicators surface that ANOTHER console has an op running,
+  // so its tab shows a busy badge and switching to it reveals progress —
+  // but it never hijacks this console's banner. Consoles run concurrently
+  // (no app-wide single-flight anymore).
+  const bulkOpHere = bulkOp.op !== null;
+  const bulkOpElsewhereHost = useFsBulkOpStore((s) =>
+    otherActiveBulkHost(s, host),
+  );
+  const bulkOpElsewhere = bulkOpElsewhereHost !== null;
+  const downloadHere = downloadOp.active;
+  const downloadElsewhereHost = useFsDownloadOpStore((s) =>
+    otherActiveDownloadHost(s, host),
+  );
+  const downloadElsewhere = downloadElsewhereHost !== null;
+  // Host-bound handles for the async runners + banner controls. Bound to
+  // the host of the render they're created in; an onClick captures that
+  // render's handle, so an op keeps writing to the console it started on
+  // even if the user switches tabs mid-run.
+  const fsBulk = fsBulkOpHandle(host);
+  const fsDownload = fsDownloadOpHandle(host);
   // Custom confirm modal — replaces window.confirm() which is a
   // no-op in Tauri webview and falls through to plugin-dialog's
   // ACL-gated confirm command.
@@ -355,9 +432,7 @@ export default function FileSystemScreen() {
           // Only show writable, non-placeholder volumes — the picker
           // is for navigation, and a placeholder ("disk not yet
           // mounted") would jump to a nonexistent path.
-          setVolumes(
-            vols.filter((v) => v.writable && !v.is_placeholder),
-          );
+          setVolumes(vols.filter((v) => v.writable && !v.is_placeholder));
         }
       } catch {
         if (!cancelled) setVolumes([]);
@@ -413,16 +488,12 @@ export default function FileSystemScreen() {
 
   const selectedEntries = useMemo(
     () => (entries ? entries.filter((e) => selected.has(e.name)) : []),
-    [entries, selected]
+    [entries, selected],
   );
 
   const runDelete = async (name: string) => {
     const ok = await confirmDialog({
-      title: tr(
-        "fs_delete_confirm_title",
-        { name },
-        `Delete "${name}"?`,
-      ),
+      title: tr("fs_delete_confirm_title", { name }, `Delete "${name}"?`),
       message: tr(
         "fs_delete_confirm_body",
         undefined,
@@ -457,6 +528,14 @@ export default function FileSystemScreen() {
       okOutcome = false;
       errMsg = e instanceof Error ? e.message : String(e);
       setError(errMsg);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_fs_delete_failed", undefined, "Delete failed"),
+        ),
+        { body: errMsg },
+      );
     } finally {
       useActivityHistoryStore
         .getState()
@@ -478,7 +557,7 @@ export default function FileSystemScreen() {
         tr(
           "fs_name_invalid",
           undefined,
-          "Name can't contain / or \\ and can't be \".\" or \"..\".",
+          'Name can\'t contain / or \\ and can\'t be "." or "..".',
         ),
       );
       return;
@@ -502,13 +581,22 @@ export default function FileSystemScreen() {
       await fsMove(
         `${host}:${PS5_PAYLOAD_PORT}`,
         joinPath(path, oldName),
-        joinPath(path, newName)
+        joinPath(path, newName),
       );
       setRenaming(null);
       await refresh();
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(raw) || raw);
+      const human = humanizePs5Error(raw) || raw;
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_fs_rename_failed", undefined, "Rename failed"),
+        ),
+        { body: human },
+      );
     } finally {
       setBusyEntry(null);
     }
@@ -558,7 +646,10 @@ export default function FileSystemScreen() {
             "Bulk rename produced names containing / or \\, or reserved names . / ...",
           ) +
           "\n\n" +
-          invalid.slice(0, 10).map((x) => `  ${x}`).join("\n") +
+          invalid
+            .slice(0, 10)
+            .map((x) => `  ${x}`)
+            .join("\n") +
           (invalid.length > 10 ? `\n  ...and ${invalid.length - 10} more` : ""),
       });
       return;
@@ -607,7 +698,10 @@ export default function FileSystemScreen() {
               "These target names collide and would destroy existing files — no files were renamed:",
             ) +
             "\n\n" +
-            conflicts.slice(0, 10).map((c) => `  ${c}`).join("\n") +
+            conflicts
+              .slice(0, 10)
+              .map((c) => `  ${c}`)
+              .join("\n") +
             (conflicts.length > 10
               ? `\n  …and ${conflicts.length - 10} more`
               : ""),
@@ -627,9 +721,7 @@ export default function FileSystemScreen() {
       ),
       message:
         preview +
-        (renames.length > 10
-          ? `\n  …and ${renames.length - 10} more`
-          : ""),
+        (renames.length > 10 ? `\n  …and ${renames.length - 10} more` : ""),
       confirmLabel: tr("fs_bulk_rename_apply", undefined, "Rename"),
     });
     if (!ok) return;
@@ -651,6 +743,14 @@ export default function FileSystemScreen() {
     }
     if (failures.length > 0) {
       setError(`First failure: ${failures[0]}`);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_fs_rename_failed", undefined, "Rename failed"),
+        ),
+        { body: `First failure: ${failures[0]}` },
+      );
     }
     await alertDialog({
       title: tr(
@@ -662,7 +762,10 @@ export default function FileSystemScreen() {
       // batch otherwise gives no actionable detail.
       message:
         failures.length > 0
-          ? failures.slice(0, 10).map((f) => `  ${f}`).join("\n") +
+          ? failures
+              .slice(0, 10)
+              .map((f) => `  ${f}`)
+              .join("\n") +
             (failures.length > 10
               ? `\n  …and ${failures.length - 10} more`
               : "")
@@ -683,7 +786,7 @@ export default function FileSystemScreen() {
         tr(
           "fs_name_invalid",
           undefined,
-          "Name can't contain / or \\ and can't be \".\" or \"..\".",
+          'Name can\'t contain / or \\ and can\'t be "." or "..".',
         ),
       );
       return;
@@ -696,7 +799,16 @@ export default function FileSystemScreen() {
       await refresh();
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(raw) || raw);
+      const human = humanizePs5Error(raw) || raw;
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_fs_mkdir_failed", undefined, "Create folder failed"),
+        ),
+        { body: human },
+      );
     } finally {
       setBusyEntry(null);
     }
@@ -706,10 +818,11 @@ export default function FileSystemScreen() {
   // error but continues so a batch where one item fails doesn't abort
   // the rest.
   const runBulkDelete = async () => {
-    // Single-flight: refuse if a bulk op is already running. Without
-    // this, a tab-switch + return + click sequence could double-fire
-    // since the runner is async and outlives the original event.
-    if (useFsBulkOpStore.getState().op !== null) return;
+    // Single-flight PER CONSOLE: refuse if THIS console already has a bulk
+    // op running. Without this, a tab-switch + return + click sequence could
+    // double-fire since the runner is async and outlives the original event.
+    // Other consoles are unaffected — they run their own ops concurrently.
+    if (fsBulk.op !== null) return;
     const names = [...selected];
     if (names.length === 0) return;
     const ok = await confirmDialog({
@@ -728,7 +841,7 @@ export default function FileSystemScreen() {
     });
     if (!ok) return;
     setError(null);
-    useFsBulkOpStore.getState().begin({
+    fsBulk.begin({
       op: "delete",
       total: names.length,
       fromPath: path,
@@ -763,33 +876,29 @@ export default function FileSystemScreen() {
         joinPath,
         deleter: async (itemPath) => {
           const opId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-          useFsBulkOpStore.getState().setCurrentOpId(opId);
+          fsBulk.setCurrentOpId(opId);
           let pollerStopped = false;
           const pollerDone = (async () => {
             await new Promise((r) => setTimeout(r, 250));
             while (!pollerStopped) {
               try {
                 const snap = await fsOpStatus(addr, opId);
-                useFsBulkOpStore
-                  .getState()
-                  .setCurrentBytesCopied(snap.bytes_copied);
+                fsBulk.setCurrentBytesCopied(snap.bytes_copied);
                 // Directory-tree deletes start with currentSize=null
                 // (list_dir doesn't surface dir sizes); the payload's
                 // recursive_size pre-walk fills total_bytes — sync it
                 // back so the banner can render a percentage.
                 if (
                   snap.total_bytes > 0 &&
-                  useFsBulkOpStore.getState().currentSize !== snap.total_bytes
+                  fsBulk.currentSize !== snap.total_bytes
                 ) {
-                  useFsBulkOpStore.getState().setProgress({
-                    done: useFsBulkOpStore.getState().done,
-                    currentPath: useFsBulkOpStore.getState().currentPath,
-                    currentName: useFsBulkOpStore.getState().currentName,
+                  fsBulk.setProgress({
+                    done: fsBulk.done,
+                    currentPath: fsBulk.currentPath,
+                    currentName: fsBulk.currentName,
                     currentSize: snap.total_bytes,
                   });
-                  useFsBulkOpStore
-                    .getState()
-                    .setCurrentBytesCopied(snap.bytes_copied);
+                  fsBulk.setCurrentBytesCopied(snap.bytes_copied);
                 }
               } catch {
                 // 404 from the engine = op finished. Other errors
@@ -801,7 +910,7 @@ export default function FileSystemScreen() {
           })();
           const cancelWatcher = (async () => {
             while (!pollerStopped) {
-              if (useFsBulkOpStore.getState().cancelRequested) {
+              if (fsBulk.cancelRequested) {
                 try {
                   await fsOpCancel(addr, opId);
                 } catch (e) {
@@ -832,19 +941,33 @@ export default function FileSystemScreen() {
           } finally {
             pollerStopped = true;
             await Promise.allSettled([pollerDone, cancelWatcher]);
-            useFsBulkOpStore.getState().setCurrentOpId(null);
+            fsBulk.setCurrentOpId(null);
           }
         },
-        onProgress: (p) => useFsBulkOpStore.getState().setProgress(p),
-        shouldCancel: () => useFsBulkOpStore.getState().cancelRequested,
+        onProgress: (p) => fsBulk.setProgress(p),
+        shouldCancel: () => fsBulk.cancelRequested,
       });
     } finally {
-      // Always release the bulk-op store, even if a sync error in
-      // the loop body throws. Without this finally, an exception
-      // would leave op !== null in the store, and the single-flight
-      // guard would permanently block future bulk ops on this
-      // screen until reload.
-      useFsBulkOpStore.getState().end(result.firstError);
+      // Always release this console's bulk-op slot, even if a sync error in
+      // the loop body throws. Without this finally, an exception would leave
+      // op !== null in this console's slot, and the per-console single-flight
+      // guard would permanently block future bulk ops on this console until
+      // reload.
+      fsBulk.end(result.firstError);
+      if (result.firstError) {
+        pushNotification(
+          "error",
+          withConsolePrefix(
+            host,
+            tr(
+              "notif_fs_bulk_op_failed",
+              undefined,
+              "File operation finished with errors",
+            ),
+          ),
+          { body: result.firstError },
+        );
+      }
     }
     if (result.firstError) setError(result.firstError);
     await refresh();
@@ -878,13 +1001,13 @@ export default function FileSystemScreen() {
   // failure keeps the clipboard so the user can retry (maybe after
   // freeing space or fixing permissions).
   const runPaste = async () => {
-    // Single-flight guard: same rationale as runBulkDelete.
-    if (useFsBulkOpStore.getState().op !== null) return;
+    // Single-flight guard PER CONSOLE: same rationale as runBulkDelete.
+    if (fsBulk.op !== null) return;
     if (clipboard.items.length === 0 || !clipboard.op) return;
     const op = clipboard.op;
     const items = clipboard.items;
     setError(null);
-    useFsBulkOpStore.getState().begin({
+    fsBulk.begin({
       op: op === "cut" ? "paste-move" : "paste-copy",
       total: items.length,
       fromPath: clipboard.sourceLabel ?? "",
@@ -898,10 +1021,10 @@ export default function FileSystemScreen() {
         // Between-items cancel check. We *also* drive in-flight
         // cancellation for the current item via FS_OP_CANCEL below
         // — that's what gives a 28 GiB copy a sub-second Stop.
-        if (useFsBulkOpStore.getState().cancelRequested) break;
+        if (fsBulk.cancelRequested) break;
         const item = items[i];
         const target = joinPath(path, item.name);
-        useFsBulkOpStore.getState().setProgress({
+        fsBulk.setProgress({
           done: i,
           currentPath: item.path,
           currentName: item.name,
@@ -912,7 +1035,7 @@ export default function FileSystemScreen() {
         // needs uniqueness across the at-most-MAX_FS_OPS in-flight
         // copies, not collision-resistance.
         const opId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-        useFsBulkOpStore.getState().setCurrentOpId(opId);
+        fsBulk.setCurrentOpId(opId);
         // Spawn a parallel poller that updates byte-progress in the
         // store every 500 ms. The fsCopy/fsMove call below blocks
         // for the full duration of the copy; without this the user
@@ -925,25 +1048,21 @@ export default function FileSystemScreen() {
           while (!pollerStopped) {
             try {
               const snap = await fsOpStatus(addr, opId);
-              useFsBulkOpStore
-                .getState()
-                .setCurrentBytesCopied(snap.bytes_copied);
+              fsBulk.setCurrentBytesCopied(snap.bytes_copied);
               // Also keep currentSize in sync with the payload's
               // measured total — the directory case starts with
               // size=null but the recursive walk knows the total.
               if (
                 snap.total_bytes > 0 &&
-                useFsBulkOpStore.getState().currentSize !== snap.total_bytes
+                fsBulk.currentSize !== snap.total_bytes
               ) {
-                useFsBulkOpStore.getState().setProgress({
-                  done: useFsBulkOpStore.getState().done,
-                  currentPath: useFsBulkOpStore.getState().currentPath,
-                  currentName: useFsBulkOpStore.getState().currentName,
+                fsBulk.setProgress({
+                  done: fsBulk.done,
+                  currentPath: fsBulk.currentPath,
+                  currentName: fsBulk.currentName,
                   currentSize: snap.total_bytes,
                 });
-                useFsBulkOpStore
-                  .getState()
-                  .setCurrentBytesCopied(snap.bytes_copied);
+                fsBulk.setCurrentBytesCopied(snap.bytes_copied);
               }
             } catch {
               // 404 from the engine means the op finished — break
@@ -961,7 +1080,7 @@ export default function FileSystemScreen() {
         // current 28 GiB copy abort within ~one disk IO.
         const cancelWatcher = (async () => {
           while (!pollerStopped) {
-            if (useFsBulkOpStore.getState().cancelRequested) {
+            if (fsBulk.cancelRequested) {
               try {
                 await fsOpCancel(addr, opId);
               } catch (e) {
@@ -1020,17 +1139,29 @@ export default function FileSystemScreen() {
         } finally {
           pollerStopped = true;
           await Promise.allSettled([pollerDone, cancelWatcher]);
-          useFsBulkOpStore.getState().setCurrentOpId(null);
+          fsBulk.setCurrentOpId(null);
         }
       }
     } finally {
       const problemMsgs = [...duplicated, ...errors];
-      // Always release the bulk-op store so the single-flight guard
-      // doesn't strand the screen with op !== null after a sync error
-      // in the loop body.
-      useFsBulkOpStore.getState().end(
-        problemMsgs.length > 0 ? problemMsgs.join(" · ") : null,
-      );
+      // Always release this console's bulk-op slot so the per-console
+      // single-flight guard doesn't strand it with op !== null after a sync
+      // error in the loop body.
+      fsBulk.end(problemMsgs.length > 0 ? problemMsgs.join(" · ") : null);
+      if (problemMsgs.length > 0) {
+        pushNotification(
+          "error",
+          withConsolePrefix(
+            host,
+            tr(
+              "notif_fs_bulk_op_failed",
+              undefined,
+              "File operation finished with errors",
+            ),
+          ),
+          { body: problemMsgs.join(" · ") },
+        );
+      }
     }
     const problemMsgs = [...duplicated, ...errors];
     if (problemMsgs.length > 0) {
@@ -1058,11 +1189,7 @@ export default function FileSystemScreen() {
     if (entry.kind !== "file") return;
     if (entry.size > 256 * 1024) {
       await alertDialog({
-        title: tr(
-          "fs_preview_too_large_title",
-          undefined,
-          "Preview too large",
-        ),
+        title: tr("fs_preview_too_large_title", undefined, "Preview too large"),
         message: tr(
           "fs_preview_too_large_body",
           { size: formatBytes(entry.size) },
@@ -1125,7 +1252,10 @@ export default function FileSystemScreen() {
         lines.push(`BLAKE3: failed — ${blake.reason}`);
       }
       if (crc.status === "fulfilled") {
-        const hex = (crc.value.crc32 ?? 0).toString(16).padStart(8, "0").toUpperCase();
+        const hex = (crc.value.crc32 ?? 0)
+          .toString(16)
+          .padStart(8, "0")
+          .toUpperCase();
         lines.push(`CRC32:  0x${hex}`);
       } else {
         lines.push(`CRC32: failed — ${crc.reason}`);
@@ -1203,13 +1333,15 @@ export default function FileSystemScreen() {
    *  off `transfer_download`, poll jobStatus to terminal. Single-
    *  flight at the screen level: only one download at a time. */
   const runDownload = async (entry: DirEntry) => {
-    if (useFsDownloadOpStore.getState().active) return;
+    // Single-flight per console: only one download at a time on THIS
+    // console (others download concurrently into their own slots).
+    if (fsDownload.active) return;
     const picked = await pickPath({
       mode: "folder",
       title: tr(
         "fs_download_dialog_title",
         { name: entry.name },
-        "Pick a destination folder for \"{name}\"",
+        'Pick a destination folder for "{name}"',
       ),
     });
     if (typeof picked !== "string") return;
@@ -1221,18 +1353,25 @@ export default function FileSystemScreen() {
     try {
       jobId = await startTransferDownload(remote, picked, addr, kind);
     } catch (e) {
-      const msg =
-        e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message : String(e);
       const friendly = tr(
         "fs_download_start_failed",
         { error: msg },
         "Couldn't start the download: {error}",
       );
       setError(friendly);
-      useFsDownloadOpStore.getState().end(friendly);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_fs_download_failed", undefined, "Download failed"),
+        ),
+        { body: friendly },
+      );
+      fsDownload.end(friendly);
       return;
     }
-    const myRunId = useFsDownloadOpStore.getState().begin({
+    const myRunId = fsDownload.begin({
       jobId,
       rootName: entry.name,
       rootSrcPath: remote,
@@ -1249,14 +1388,14 @@ export default function FileSystemScreen() {
     // runId; this loop exits at its next check; the engine job
     // continues server-side and the .part promotion eventually
     // happens (no engine cancel API today).
-    const isLive = () => useFsDownloadOpStore.getState().runId === myRunId;
+    const isLive = () => fsDownload.runId === myRunId;
     while (true) {
       if (!isLive()) return;
       try {
         const snap = await jobStatus(jobId);
         if (!isLive()) return;
         if (snap.status === "done") {
-          useFsDownloadOpStore.getState().end(null);
+          fsDownload.end(null);
           return;
         }
         if (snap.status === "failed") {
@@ -1266,10 +1405,18 @@ export default function FileSystemScreen() {
             "Download failed: {error}",
           );
           setError(friendly);
-          useFsDownloadOpStore.getState().end(friendly);
+          pushNotification(
+            "error",
+            withConsolePrefix(
+              host,
+              tr("notif_fs_download_failed", undefined, "Download failed"),
+            ),
+            { body: friendly },
+          );
+          fsDownload.end(friendly);
           return;
         }
-        useFsDownloadOpStore.getState().setProgress({
+        fsDownload.setProgress({
           bytesReceived: snap.bytes_sent ?? 0,
           totalBytes: snap.total_bytes ?? 0,
         });
@@ -1282,7 +1429,15 @@ export default function FileSystemScreen() {
           "Lost contact with the engine while downloading: {error}",
         );
         setError(friendly);
-        useFsDownloadOpStore.getState().end(friendly);
+        pushNotification(
+          "error",
+          withConsolePrefix(
+            host,
+            tr("notif_fs_download_failed", undefined, "Download failed"),
+          ),
+          { body: friendly },
+        );
+        fsDownload.end(friendly);
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -1309,9 +1464,8 @@ export default function FileSystemScreen() {
   const currentVolumePath = useMemo(() => {
     if (!volumes || volumes.length === 0) return null;
     if (path === "/" || path === "") return null;
-    const norm = path.length > 1 && path.endsWith("/")
-      ? path.slice(0, -1)
-      : path;
+    const norm =
+      path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
     let best: string | null = null;
     for (const v of volumes) {
       if (norm === v.path || norm.startsWith(v.path + "/")) {
@@ -1357,265 +1511,303 @@ export default function FileSystemScreen() {
         }
       />
 
-      {/* Volume picker. Renders only when we have at least one
+      <ConnectionGate require="payload">
+        {/* Volume picker. Renders only when we have at least one
           writable volume — otherwise it's clutter. Selecting a
           volume jumps to its root, mirroring how Library's Move
           modal lets users pick a destination volume. The picker
           shows path + free-space so users can spot which mount has
           headroom for an upload at a glance. */}
-      {volumes && volumes.length > 0 && (
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-          <label className="text-[var(--color-muted)]">
-            {tr("fs_volume_picker_label", undefined, "Volume")}
-          </label>
-          <select
-            value={currentVolumePath ?? ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v) setPath(v);
-            }}
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 font-mono text-xs focus:border-[var(--color-accent)] focus:outline-none"
-            aria-label={tr(
-              "fs_volume_picker_aria",
-              undefined,
-              "Jump to a volume",
-            )}
-          >
-            {/* Empty option only when the current path doesn't sit
+        {volumes && volumes.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+            <label className="text-[var(--color-muted)]">
+              {tr("fs_volume_picker_label", undefined, "Volume")}
+            </label>
+            <select
+              value={currentVolumePath ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v) setPath(v);
+              }}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 font-mono text-xs focus:border-[var(--color-accent)] focus:outline-none"
+              aria-label={tr(
+                "fs_volume_picker_aria",
+                undefined,
+                "Jump to a volume",
+              )}
+            >
+              {/* Empty option only when the current path doesn't sit
                 under any known volume — otherwise the controlled
                 value would mismatch the option list and React would
                 warn. The user sees "(custom path)" in that case so
                 they understand why no volume is highlighted. */}
-            {currentVolumePath === null && (
-              <option value="" disabled>
-                {tr(
-                  "fs_volume_picker_custom",
-                  undefined,
-                  "(custom path)",
+              {currentVolumePath === null && (
+                <option value="" disabled>
+                  {tr("fs_volume_picker_custom", undefined, "(custom path)")}
+                </option>
+              )}
+              {volumes.map((v) => (
+                <option key={v.path} value={v.path}>
+                  {v.path} · {formatBytes(v.free_bytes)} {tr("fs_free", "free")}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Breadcrumbs + up-button */}
+        <div className="mb-3 flex items-center gap-1 overflow-x-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setPath(parent(path))}
+            disabled={path === "/"}
+            title={tr("fs_parent_dir", undefined, "Parent directory")}
+            className="rounded-md p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)] disabled:opacity-30"
+          >
+            <ArrowUp size={14} />
+          </button>
+          {crumbs(path).map((c, i, arr) => (
+            <span key={c.path} className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPath(c.path)}
+                className={
+                  "rounded px-1.5 py-0.5 font-mono " +
+                  (i === arr.length - 1
+                    ? "font-medium text-[var(--color-text)]"
+                    : "text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]")
+                }
+              >
+                {i === 0 ? (
+                  <Home size={12} className="inline -translate-y-[1px]" />
+                ) : (
+                  c.label
                 )}
-              </option>
-            )}
-            {volumes.map((v) => (
-              <option key={v.path} value={v.path}>
-                {v.path} · {formatBytes(v.free_bytes)} {tr("fs_free", "free")}
-              </option>
-            ))}
-          </select>
+              </button>
+              {i < arr.length - 1 && (
+                <ChevronRight size={12} className="text-[var(--color-muted)]" />
+              )}
+            </span>
+          ))}
+          <RecentPathsDropdown onPick={(p) => setPath(p)} currentPath={path} />
         </div>
-      )}
 
-      {/* Breadcrumbs + up-button */}
-      <div className="mb-3 flex items-center gap-1 overflow-x-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs">
-        <button
-          type="button"
-          onClick={() => setPath(parent(path))}
-          disabled={path === "/"}
-          title={tr("fs_parent_dir", undefined, "Parent directory")}
-          className="rounded-md p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)] disabled:opacity-30"
-        >
-          <ArrowUp size={14} />
-        </button>
-        {crumbs(path).map((c, i, arr) => (
-          <span key={c.path} className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setPath(c.path)}
-              className={
-                "rounded px-1.5 py-0.5 font-mono " +
-                (i === arr.length - 1
-                  ? "font-medium text-[var(--color-text)]"
-                  : "text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]")
-              }
-            >
-              {i === 0 ? <Home size={12} className="inline -translate-y-[1px]" /> : c.label}
-            </button>
-            {i < arr.length - 1 && (
-              <ChevronRight size={12} className="text-[var(--color-muted)]" />
-            )}
-          </span>
-        ))}
-        <RecentPathsDropdown onPick={(p) => setPath(p)} currentPath={path} />
-      </div>
-
-      {/* Clipboard banner: non-empty clipboard shows what's staged and
+        {/* Clipboard banner: non-empty clipboard shows what's staged and
           where it came from; paste target is always the current path. */}
-      {clipboardActive && (
-        <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface-2)] p-2 text-xs">
-          <ClipboardPaste size={14} className="text-[var(--color-accent)]" />
-          <span>
+        {clipboardActive && (
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface-2)] p-2 text-xs">
+            <ClipboardPaste size={14} className="text-[var(--color-accent)]" />
+            <span>
+              <span className="font-medium">
+                {tr(
+                  clipboard.items.length === 1 ? "fs_item_one" : "fs_item_many",
+                  { count: clipboard.items.length },
+                  `${clipboard.items.length} item${clipboard.items.length === 1 ? "" : "s"}`,
+                )}
+              </span>{" "}
+              {clipboard.op === "cut"
+                ? tr("fs_to_move", undefined, "to move")
+                : tr("fs_to_copy", undefined, "to copy")}
+              {clipboard.sourceLabel
+                ? ` ${tr("fs_from", undefined, "from")} ${clipboard.sourceLabel}`
+                : ""}
+            </span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                onClick={runPaste}
+                disabled={bulkOp.op !== null || !host?.trim()}
+                className="flex items-center gap-1 rounded-md bg-[var(--color-accent)] px-2 py-1 text-xs font-medium text-[var(--color-accent-contrast)] disabled:opacity-50"
+              >
+                {tr("fs_paste_here", undefined, "Paste here")}
+              </button>
+              <button
+                type="button"
+                onClick={() => clipboard.clear()}
+                className="rounded-md border border-[var(--color-border)] p-1 hover:bg-[var(--color-surface-3)]"
+                title={tr(
+                  "fs_cancel_clipboard",
+                  undefined,
+                  "Cancel — forget the staged items",
+                )}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Selection toolbar: only visible with ≥1 selected. */}
+        {selectionActive && (
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface-2)] p-2 text-xs">
             <span className="font-medium">
               {tr(
-                clipboard.items.length === 1 ? "fs_item_one" : "fs_item_many",
-                { count: clipboard.items.length },
-                `${clipboard.items.length} item${clipboard.items.length === 1 ? "" : "s"}`,
+                "fs_selected_count",
+                { count: selected.size },
+                `${selected.size} selected`,
               )}
-            </span>{" "}
-            {clipboard.op === "cut"
-              ? tr("fs_to_move", undefined, "to move")
-              : tr("fs_to_copy", undefined, "to copy")}
-            {clipboard.sourceLabel
-              ? ` ${tr("fs_from", undefined, "from")} ${clipboard.sourceLabel}`
-              : ""}
-          </span>
-          <div className="ml-auto flex items-center gap-1">
+            </span>
             <button
               type="button"
-              onClick={runPaste}
-              disabled={bulkOp.op !== null || !host?.trim()}
-              className="flex items-center gap-1 rounded-md bg-[var(--color-accent)] px-2 py-1 text-xs font-medium text-[var(--color-accent-contrast)] disabled:opacity-50"
+              onClick={() => stageClipboard("cut")}
+              disabled={bulkOp.op !== null}
+              className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 hover:bg-[var(--color-surface-3)] disabled:opacity-50"
             >
-              {tr("fs_paste_here", undefined, "Paste here")}
+              <Scissors size={12} />
+              {tr("fs_cut", undefined, "Cut")}
             </button>
             <button
               type="button"
-              onClick={() => clipboard.clear()}
-              className="rounded-md border border-[var(--color-border)] p-1 hover:bg-[var(--color-surface-3)]"
-              title={tr("fs_cancel_clipboard", undefined, "Cancel — forget the staged items")}
+              onClick={() => stageClipboard("copy")}
+              disabled={bulkOp.op !== null}
+              className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 hover:bg-[var(--color-surface-3)] disabled:opacity-50"
+            >
+              <Copy size={12} />
+              {tr("copy", undefined, "Copy")}
+            </button>
+            <button
+              type="button"
+              onClick={() => runBulkRename(Array.from(selected))}
+              disabled={bulkOp.op !== null || selected.size === 0}
+              title={tr(
+                "fs_bulk_rename_tooltip",
+                undefined,
+                "Bulk rename via pattern (s/old/new/, ^prefix_, _suffix$, lower, upper)",
+              )}
+              className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 hover:bg-[var(--color-surface-3)] disabled:opacity-50"
+            >
+              <Pencil size={12} />
+              {tr("fs_bulk_rename", undefined, "Bulk rename")}
+            </button>
+            <button
+              type="button"
+              onClick={runBulkDelete}
+              disabled={bulkOp.op !== null}
+              className="flex items-center gap-1 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface)] px-2 py-1 text-[var(--color-bad)] hover:bg-[var(--color-surface-3)] disabled:opacity-50"
+            >
+              <Trash2 size={12} />
+              {tr("library_delete", undefined, "Delete")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="ml-auto rounded-md border border-[var(--color-border)] p-1 hover:bg-[var(--color-surface-3)]"
+              title={tr("fs_clear_selection", undefined, "Clear selection")}
             >
               <X size={12} />
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Selection toolbar: only visible with ≥1 selected. */}
-      {selectionActive && (
-        <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface-2)] p-2 text-xs">
-          <span className="font-medium">
-            {tr("fs_selected_count", { count: selected.size }, `${selected.size} selected`)}
-          </span>
-          <button
-            type="button"
-            onClick={() => stageClipboard("cut")}
-            disabled={bulkOp.op !== null}
-            className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 hover:bg-[var(--color-surface-3)] disabled:opacity-50"
-          >
-            <Scissors size={12} />
-            {tr("fs_cut", undefined, "Cut")}
-          </button>
-          <button
-            type="button"
-            onClick={() => stageClipboard("copy")}
-            disabled={bulkOp.op !== null}
-            className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 hover:bg-[var(--color-surface-3)] disabled:opacity-50"
-          >
-            <Copy size={12} />
-            {tr("copy", undefined, "Copy")}
-          </button>
-          <button
-            type="button"
-            onClick={() => runBulkRename(Array.from(selected))}
-            disabled={bulkOp.op !== null || selected.size === 0}
-            title={tr(
-              "fs_bulk_rename_tooltip",
-              undefined,
-              "Bulk rename via pattern (s/old/new/, ^prefix_, _suffix$, lower, upper)",
-            )}
-            className="flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 hover:bg-[var(--color-surface-3)] disabled:opacity-50"
-          >
-            <Pencil size={12} />
-            {tr("fs_bulk_rename", undefined, "Bulk rename")}
-          </button>
-          <button
-            type="button"
-            onClick={runBulkDelete}
-            disabled={bulkOp.op !== null}
-            className="flex items-center gap-1 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface)] px-2 py-1 text-[var(--color-bad)] hover:bg-[var(--color-surface-3)] disabled:opacity-50"
-          >
-            <Trash2 size={12} />
-            {tr("library_delete", undefined, "Delete")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelected(new Set())}
-            className="ml-auto rounded-md border border-[var(--color-border)] p-1 hover:bg-[var(--color-surface-3)]"
-            title={tr("fs_clear_selection", undefined, "Clear selection")}
-          >
-            <X size={12} />
-          </button>
-        </div>
-      )}
+        {mkdirDraft !== null && (
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-sm">
+            <FolderPlus size={14} className="text-[var(--color-muted)]" />
+            <span className="text-xs text-[var(--color-muted)]">
+              {tr("fs_create_in", undefined, "Create in")}{" "}
+              <span className="font-mono">{path}</span>
+            </span>
+            <input
+              autoFocus
+              value={mkdirDraft}
+              placeholder={tr("fs_folder_name", undefined, "folder name")}
+              onChange={(e) => setMkdirDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") runMkdir();
+                if (e.key === "Escape") setMkdirDraft(null);
+              }}
+              className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs"
+            />
+            <button
+              type="button"
+              onClick={runMkdir}
+              className="rounded-md bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-[var(--color-accent-contrast)]"
+            >
+              {tr("fs_create", undefined, "Create")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMkdirDraft(null)}
+              className="rounded-md border border-[var(--color-border)] px-3 py-1 text-xs hover:bg-[var(--color-surface-3)]"
+            >
+              {tr("cancel", undefined, "Cancel")}
+            </button>
+          </div>
+        )}
 
-      {mkdirDraft !== null && (
-        <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-sm">
-          <FolderPlus size={14} className="text-[var(--color-muted)]" />
-          <span className="text-xs text-[var(--color-muted)]">
-            {tr("fs_create_in", undefined, "Create in")} <span className="font-mono">{path}</span>
-          </span>
-          <input
-            autoFocus
-            value={mkdirDraft}
-            placeholder={tr("fs_folder_name", undefined, "folder name")}
-            onChange={(e) => setMkdirDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") runMkdir();
-              if (e.key === "Escape") setMkdirDraft(null);
-            }}
-            className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs"
+        {bulkOpHere && bulkOp.op !== null && (
+          <BulkOpBanner
+            host={host}
+            op={bulkOp.op}
+            total={bulkOp.total}
+            done={bulkOp.done}
+            currentName={bulkOp.currentName}
+            currentSize={bulkOp.currentSize}
+            fromPath={bulkOp.fromPath}
+            toPath={bulkOp.toPath}
+            startedAtMs={bulkOp.startedAtMs}
           />
-          <button
-            type="button"
-            onClick={runMkdir}
-            className="rounded-md bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-[var(--color-accent-contrast)]"
-          >
-            {tr("fs_create", undefined, "Create")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMkdirDraft(null)}
-            className="rounded-md border border-[var(--color-border)] px-3 py-1 text-xs hover:bg-[var(--color-surface-3)]"
-          >
-            {tr("cancel", undefined, "Cancel")}
-          </button>
-        </div>
-      )}
+        )}
 
-      {bulkOp.op !== null && (
-        <BulkOpBanner
-          op={bulkOp.op}
-          total={bulkOp.total}
-          done={bulkOp.done}
-          currentName={bulkOp.currentName}
-          currentSize={bulkOp.currentSize}
-          fromPath={bulkOp.fromPath}
-          toPath={bulkOp.toPath}
-          startedAtMs={bulkOp.startedAtMs}
-        />
-      )}
+        {/* An op running on ANOTHER console no longer blocks this one (ops are
+          per-console now), but we still surface it so the user knows work is
+          happening elsewhere and where to look — without rendering the other
+          console's progress here as if it were this console's. */}
+        {(bulkOpElsewhere || downloadElsewhere) && (
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-muted)]">
+            <Loader2 size={12} className="animate-spin" />
+            <span>
+              {tr(
+                "fs_op_on_other_console",
+                {
+                  name: profileNameForHost(
+                    bulkOpElsewhereHost ?? downloadElsewhereHost ?? "",
+                    rosterProfiles,
+                  ),
+                },
+                "A file operation is running on {name} — switch to that console's tab to see its progress.",
+              )}
+            </span>
+          </div>
+        )}
 
-      {busyEntry && bulkOp.op === null && (
-        <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs">
-          <Loader2 size={12} className="animate-spin text-[var(--color-accent)]" />
-          <span className="font-medium">
-            {busyEntry.op === "rename"
-              ? tr("fs_busy_renaming", undefined, "Renaming")
-              : tr("fs_busy_creating_folder", undefined, "Creating folder")}
-          </span>
-          <span className="text-[var(--color-muted)]">
-            {busyEntry.name} · {formatDuration(elapsedMs / 1000)}
-          </span>
-        </div>
-      )}
+        {busyEntry && bulkOp.op === null && (
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs">
+            <Loader2
+              size={12}
+              className="animate-spin text-[var(--color-accent)]"
+            />
+            <span className="font-medium">
+              {busyEntry.op === "rename"
+                ? tr("fs_busy_renaming", undefined, "Renaming")
+                : tr("fs_busy_creating_folder", undefined, "Creating folder")}
+            </span>
+            <span className="text-[var(--color-muted)]">
+              {busyEntry.name} · {formatDuration(elapsedMs / 1000)}
+            </span>
+          </div>
+        )}
 
-      {downloadOp.active && (
-        <DownloadOpBanner
-          rootName={downloadOp.rootName}
-          rootSrcPath={downloadOp.rootSrcPath}
-          destDir={downloadOp.destDir}
-          bytesReceived={downloadOp.bytesReceived}
-          totalBytes={downloadOp.totalBytes}
-          startedAtMs={downloadOp.startedAtMs}
-        />
-      )}
+        {downloadHere && (
+          <DownloadOpBanner
+            host={host}
+            rootName={downloadOp.rootName}
+            rootSrcPath={downloadOp.rootSrcPath}
+            destDir={downloadOp.destDir}
+            startedAtMs={downloadOp.startedAtMs}
+          />
+        )}
 
-      {error && (
-        <div className="mb-3 flex items-start gap-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-2)] p-2 text-xs">
-          <AlertTriangle size={12} className="mt-0.5 text-[var(--color-bad)]" />
-          <span>{error}</span>
-        </div>
-      )}
+        {error && (
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-2)] p-2 text-xs">
+            <AlertTriangle
+              size={12}
+              className="mt-0.5 text-[var(--color-bad)]"
+            />
+            <span>{error}</span>
+          </div>
+        )}
 
-      {/* Errors written to the bulk-op or download stores are
+        {/* Errors written to the bulk-op or download stores are
           surfaced here too — local `error` state is lost on screen
           unmount, but the store survives navigation. Without this
           banner, a paste/delete/download that fails while the user
@@ -1623,263 +1815,271 @@ export default function FileSystemScreen() {
           gets no signal that the op finished badly. Each banner is
           dismissible (clearError) so it doesn't block subsequent
           operations. */}
-      {bulkOp.errorBanner && (
-        <div className="mb-3 flex items-start gap-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-2)] p-2 text-xs">
-          <AlertTriangle size={12} className="mt-0.5 text-[var(--color-bad)]" />
-          <span className="flex-1">{bulkOp.errorBanner}</span>
-          <button
-            type="button"
-            onClick={() => useFsBulkOpStore.getState().clearError()}
-            className="rounded px-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
-            aria-label={tr("dismiss", undefined, "Dismiss")}
-          >
-            ×
-          </button>
-        </div>
-      )}
-
-      {downloadOp.errorBanner && !downloadOp.active && (
-        <div className="mb-3 flex items-start gap-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-2)] p-2 text-xs">
-          <AlertTriangle size={12} className="mt-0.5 text-[var(--color-bad)]" />
-          <span className="flex-1">{downloadOp.errorBanner}</span>
-          <button
-            type="button"
-            onClick={() => useFsDownloadOpStore.getState().clearError()}
-            className="rounded px-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
-            aria-label={tr("dismiss", undefined, "Dismiss")}
-          >
-            ×
-          </button>
-        </div>
-      )}
-
-      {entries === null && !loading && !error && (
-        <EmptyState
-          fill
-          icon={FolderTree}
-          message={tr(
-            "fs_connect_first",
-            "Connect to your PS5 first — use the Connection tab.",
-          )}
-        />
-      )}
-
-      {entries && entries.length === 0 && (
-        <div className="rounded-md border border-dashed border-[var(--color-border)] p-4 text-center text-xs text-[var(--color-muted)]">
-          {tr("fs_empty_folder", "Empty folder.")}
-        </div>
-      )}
-
-      {entries && entries.length > 0 && (
-        <div className="mb-1 flex items-center gap-2 px-2 text-xs text-[var(--color-muted)]">
-          <input
-            type="checkbox"
-            checked={selected.size > 0 && selected.size === entries.length}
-            ref={(el) => {
-              if (el) el.indeterminate =
-                selected.size > 0 && selected.size < entries.length;
-            }}
-            onChange={toggleAll}
-            className="h-3.5 w-3.5 rounded border-[var(--color-border)]"
-            title={tr("fs_select_all", undefined, "Select all")}
-          />
-          <span>
-            {tr(
-              entries.length === 1 ? "fs_item_one" : "fs_item_many",
-              { count: entries.length },
-              `${entries.length} item${entries.length === 1 ? "" : "s"}`,
-            )}
-          </span>
-        </div>
-      )}
-
-      <ul className="grid gap-1">
-        {entries?.map((e) => {
-          const isDir = e.kind === "dir";
-          const Icon = isDir ? Folder : FileIcon;
-          const isRenaming = renaming === e.name;
-          const isSelected = selected.has(e.name);
-          return (
-            <li
-              key={e.name}
-              className={
-                "flex items-center gap-3 rounded-md border p-2 text-sm " +
-                (isSelected
-                  ? "border-[var(--color-accent)] bg-[var(--color-surface-2)]"
-                  : "border-[var(--color-border)] bg-[var(--color-surface-2)]")
-              }
+        {bulkOp.errorBanner && (
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-2)] p-2 text-xs">
+            <AlertTriangle
+              size={12}
+              className="mt-0.5 text-[var(--color-bad)]"
+            />
+            <span className="flex-1">{bulkOp.errorBanner}</span>
+            <button
+              type="button"
+              onClick={() => fsBulk.clearError()}
+              className="rounded px-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
+              aria-label={tr("dismiss", undefined, "Dismiss")}
             >
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => toggleSelected(e.name)}
-                className="h-3.5 w-3.5 shrink-0 rounded border-[var(--color-border)]"
-              />
-              <Icon
-                size={16}
+              ×
+            </button>
+          </div>
+        )}
+
+        {downloadOp.errorBanner && !downloadOp.active && (
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface-2)] p-2 text-xs">
+            <AlertTriangle
+              size={12}
+              className="mt-0.5 text-[var(--color-bad)]"
+            />
+            <span className="flex-1">{downloadOp.errorBanner}</span>
+            <button
+              type="button"
+              onClick={() => fsDownload.clearError()}
+              className="rounded px-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-3)]"
+              aria-label={tr("dismiss", undefined, "Dismiss")}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {entries === null && !loading && !error && (
+          <EmptyState
+            fill
+            icon={FolderTree}
+            message={tr(
+              "fs_connect_first",
+              "Connect to your PS5 first — use the Connection tab.",
+            )}
+          />
+        )}
+
+        {entries && entries.length === 0 && (
+          <div className="rounded-md border border-dashed border-[var(--color-border)] p-4 text-center text-xs text-[var(--color-muted)]">
+            {tr("fs_empty_folder", "Empty folder.")}
+          </div>
+        )}
+
+        {entries && entries.length > 0 && (
+          <div className="mb-1 flex items-center gap-2 px-2 text-xs text-[var(--color-muted)]">
+            <input
+              type="checkbox"
+              checked={selected.size > 0 && selected.size === entries.length}
+              ref={(el) => {
+                if (el)
+                  el.indeterminate =
+                    selected.size > 0 && selected.size < entries.length;
+              }}
+              onChange={toggleAll}
+              className="h-3.5 w-3.5 rounded border-[var(--color-border)]"
+              title={tr("fs_select_all", undefined, "Select all")}
+            />
+            <span>
+              {tr(
+                entries.length === 1 ? "fs_item_one" : "fs_item_many",
+                { count: entries.length },
+                `${entries.length} item${entries.length === 1 ? "" : "s"}`,
+              )}
+            </span>
+          </div>
+        )}
+
+        <ul className="grid gap-1">
+          {entries?.map((e) => {
+            const isDir = e.kind === "dir";
+            const Icon = isDir ? Folder : FileIcon;
+            const isRenaming = renaming === e.name;
+            const isSelected = selected.has(e.name);
+            return (
+              <li
+                key={e.name}
                 className={
-                  isDir
-                    ? "shrink-0 text-[var(--color-accent)]"
-                    : "shrink-0 text-[var(--color-muted)]"
+                  "flex items-center gap-3 rounded-md border p-2 text-sm " +
+                  (isSelected
+                    ? "border-[var(--color-accent)] bg-[var(--color-surface-2)]"
+                    : "border-[var(--color-border)] bg-[var(--color-surface-2)]")
                 }
-              />
-              {isRenaming ? (
-                <input
-                  autoFocus
-                  value={renameDraft}
-                  onChange={(ev) => setRenameDraft(ev.target.value)}
-                  onKeyDown={(ev) => {
-                    if (ev.key === "Enter") runRename(e.name);
-                    if (ev.key === "Escape") setRenaming(null);
-                  }}
-                  onBlur={() => setRenaming(null)}
-                  className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-sm"
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isDir) setPath(joinPath(path, e.name));
-                  }}
-                  className={
-                    "flex-1 truncate text-left font-mono text-sm " +
-                    (isDir ? "hover:text-[var(--color-accent)]" : "")
-                  }
-                  disabled={!isDir}
-                >
-                  {e.name}
-                </button>
-              )}
-              <span className="shrink-0 text-xs text-[var(--color-muted)] tabular-nums">
-                {isDir ? "—" : formatBytes(e.size)}
-              </span>
-              <div className="ml-2 flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => runDownload(e)}
-                  disabled={downloadOp.active}
-                  title={tr(
-                    "fs_download_tooltip",
-                    undefined,
-                    "Save a copy of this entry to a folder on this computer",
-                  )}
-                  className="rounded-md border border-[var(--color-border)] p-1 hover:bg-[var(--color-surface-3)] disabled:opacity-30"
-                >
-                  {downloadOp.active && downloadOp.rootName === e.name ? (
-                    <Loader2
-                      size={12}
-                      className="animate-spin text-[var(--color-accent)]"
-                    />
-                  ) : (
-                    <Download size={12} />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRenaming(e.name);
-                    setRenameDraft(e.name);
-                  }}
-                  title={tr("fs_rename", undefined, "Rename")}
-                  className="rounded-md border border-[var(--color-border)] p-1 hover:bg-[var(--color-surface-3)]"
-                >
-                  <Pencil size={12} />
-                </button>
-                {!isDir && e.size <= 256 * 1024 && (
-                  <button
-                    type="button"
-                    onClick={() => runPreview(e)}
-                    title={tr(
-                      "fs_preview_tooltip",
-                      undefined,
-                      "Preview small file inline (text or image)",
-                    )}
-                    className="rounded-md border border-[var(--color-border)] p-1 text-xs hover:bg-[var(--color-surface-3)]"
-                  >
-                    👁
-                  </button>
-                )}
-                {!isDir && (
-                  <button
-                    type="button"
-                    onClick={() => runCrc32(e)}
-                    title={tr(
-                      "fs_crc32_tooltip",
-                      undefined,
-                      "Compute CRC32 of this file (cheap integrity check)",
-                    )}
-                    className="rounded-md border border-[var(--color-border)] p-1 text-xs font-mono hover:bg-[var(--color-surface-3)]"
-                  >
-                    #
-                  </button>
-                )}
-                {!isDir && (
-                  <button
-                    type="button"
-                    onClick={() => runVerify(e)}
-                    title={tr(
-                      "fs_verify_tooltip",
-                      undefined,
-                      "BLAKE3 + CRC32 verification (slower, crypto-strength)",
-                    )}
-                    className="rounded-md border border-[var(--color-border)] p-1 text-xs font-mono hover:bg-[var(--color-surface-3)]"
-                  >
-                    ✓
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => runDelete(e.name)}
-                  title={tr("library_delete", undefined, "Delete")}
-                  className="rounded-md border border-[var(--color-bad)] p-1 text-[var(--color-bad)] hover:bg-[var(--color-surface-3)]"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      {preview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setPreview(null)}
-        >
-          <div
-            className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2">
-              <div>
-                <div className="text-sm font-semibold">{preview.name}</div>
-                <div className="text-xs text-[var(--color-muted)]">
-                  {formatBytes(preview.size)} · {preview.kind}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreview(null)}
-                className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
               >
-                ✕
-              </button>
-            </header>
-            <div className="flex-1 overflow-auto p-3">
-              {preview.kind === "image" ? (
-                <img
-                  src={preview.body}
-                  alt={preview.name}
-                  className="mx-auto max-h-full"
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleSelected(e.name)}
+                  className="h-3.5 w-3.5 shrink-0 rounded border-[var(--color-border)]"
                 />
-              ) : (
-                <pre className="whitespace-pre-wrap break-all font-mono text-xs">
-                  {preview.body}
-                </pre>
-              )}
+                <Icon
+                  size={16}
+                  className={
+                    isDir
+                      ? "shrink-0 text-[var(--color-accent)]"
+                      : "shrink-0 text-[var(--color-muted)]"
+                  }
+                />
+                {isRenaming ? (
+                  <input
+                    autoFocus
+                    value={renameDraft}
+                    onChange={(ev) => setRenameDraft(ev.target.value)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") runRename(e.name);
+                      if (ev.key === "Escape") setRenaming(null);
+                    }}
+                    onBlur={() => setRenaming(null)}
+                    className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-sm"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isDir) setPath(joinPath(path, e.name));
+                    }}
+                    className={
+                      "flex-1 truncate text-left font-mono text-sm " +
+                      (isDir ? "hover:text-[var(--color-accent)]" : "")
+                    }
+                    disabled={!isDir}
+                  >
+                    {e.name}
+                  </button>
+                )}
+                <span className="shrink-0 text-xs text-[var(--color-muted)] tabular-nums">
+                  {isDir ? "—" : formatBytes(e.size)}
+                </span>
+                <div className="ml-2 flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => runDownload(e)}
+                    disabled={downloadOp.active}
+                    title={tr(
+                      "fs_download_tooltip",
+                      undefined,
+                      "Save a copy of this entry to a folder on this computer",
+                    )}
+                    className="rounded-md border border-[var(--color-border)] p-1 hover:bg-[var(--color-surface-3)] disabled:opacity-30"
+                  >
+                    {downloadHere && downloadOp.rootName === e.name ? (
+                      <Loader2
+                        size={12}
+                        className="animate-spin text-[var(--color-accent)]"
+                      />
+                    ) : (
+                      <Download size={12} />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenaming(e.name);
+                      setRenameDraft(e.name);
+                    }}
+                    title={tr("fs_rename", undefined, "Rename")}
+                    className="rounded-md border border-[var(--color-border)] p-1 hover:bg-[var(--color-surface-3)]"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  {!isDir && e.size <= 256 * 1024 && (
+                    <button
+                      type="button"
+                      onClick={() => runPreview(e)}
+                      title={tr(
+                        "fs_preview_tooltip",
+                        undefined,
+                        "Preview small file inline (text or image)",
+                      )}
+                      className="rounded-md border border-[var(--color-border)] p-1 text-xs hover:bg-[var(--color-surface-3)]"
+                    >
+                      👁
+                    </button>
+                  )}
+                  {!isDir && (
+                    <button
+                      type="button"
+                      onClick={() => runCrc32(e)}
+                      title={tr(
+                        "fs_crc32_tooltip",
+                        undefined,
+                        "Compute CRC32 of this file (cheap integrity check)",
+                      )}
+                      className="rounded-md border border-[var(--color-border)] p-1 text-xs font-mono hover:bg-[var(--color-surface-3)]"
+                    >
+                      #
+                    </button>
+                  )}
+                  {!isDir && (
+                    <button
+                      type="button"
+                      onClick={() => runVerify(e)}
+                      title={tr(
+                        "fs_verify_tooltip",
+                        undefined,
+                        "BLAKE3 + CRC32 verification (slower, crypto-strength)",
+                      )}
+                      className="rounded-md border border-[var(--color-border)] p-1 text-xs font-mono hover:bg-[var(--color-surface-3)]"
+                    >
+                      ✓
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => runDelete(e.name)}
+                    title={tr("library_delete", undefined, "Delete")}
+                    className="rounded-md border border-[var(--color-bad)] p-1 text-[var(--color-bad)] hover:bg-[var(--color-surface-3)]"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        {preview && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            onClick={() => setPreview(null)}
+          >
+            <div
+              className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2">
+                <div>
+                  <div className="text-sm font-semibold">{preview.name}</div>
+                  <div className="text-xs text-[var(--color-muted)]">
+                    {formatBytes(preview.size)} · {preview.kind}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreview(null)}
+                  className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+                >
+                  ✕
+                </button>
+              </header>
+              <div className="flex-1 overflow-auto p-3">
+                {preview.kind === "image" ? (
+                  <img
+                    src={preview.body}
+                    alt={preview.name}
+                    className="mx-auto max-h-full"
+                  />
+                ) : (
+                  <pre className="whitespace-pre-wrap break-all font-mono text-xs">
+                    {preview.body}
+                  </pre>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </ConnectionGate>
     </div>
   );
 }
@@ -1980,6 +2180,7 @@ function RecentPathsDropdown({
 }
 
 function BulkOpBanner({
+  host,
   op,
   total,
   done,
@@ -1989,6 +2190,9 @@ function BulkOpBanner({
   toPath,
   startedAtMs,
 }: {
+  /** Console this banner belongs to — scopes the per-tick subscriptions
+   *  and the Stop button to this console's bulk-op slot. */
+  host: string;
   op: "delete" | "paste-move" | "paste-copy";
   total: number;
   done: number;
@@ -2005,7 +2209,8 @@ function BulkOpBanner({
     const id = window.setInterval(() => setNow(Date.now()), 500);
     return () => window.clearInterval(id);
   }, []);
-  const elapsedSec = startedAtMs > 0 ? Math.max(0, (now - startedAtMs) / 1000) : 0;
+  const elapsedSec =
+    startedAtMs > 0 ? Math.max(0, (now - startedAtMs) / 1000) : 0;
   const pctByFiles = total > 0 ? Math.min(100, (done / total) * 100) : 0;
   const verb =
     op === "delete"
@@ -2014,11 +2219,15 @@ function BulkOpBanner({
         ? tr("fs_busy_moving", undefined, "Moving")
         : tr("fs_busy_copying", undefined, "Copying");
 
-  const cancelRequested = useFsBulkOpStore((s) => s.cancelRequested);
+  const cancelRequested = useFsBulkOpStore(
+    (s) => bulkOpForHost(s, host).cancelRequested,
+  );
   // Per-item byte progress fed by the paste-loop poller via
   // FS_OP_STATUS. 0 for delete (no per-byte concept) and during
   // the brief window between item-start and the first poll reply.
-  const currentBytesCopied = useFsBulkOpStore((s) => s.currentBytesCopied);
+  const currentBytesCopied = useFsBulkOpStore(
+    (s) => bulkOpForHost(s, host).currentBytesCopied,
+  );
   const itemPct =
     currentSize !== null && currentSize > 0 && currentBytesCopied > 0
       ? Math.min(100, (currentBytesCopied / currentSize) * 100)
@@ -2036,7 +2245,10 @@ function BulkOpBanner({
   return (
     <div className="mb-3 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface-2)] p-3 text-xs">
       <div className="mb-2 flex items-center gap-2">
-        <Loader2 size={14} className="animate-spin text-[var(--color-accent)]" />
+        <Loader2
+          size={14}
+          className="animate-spin text-[var(--color-accent)]"
+        />
         <span className="font-semibold">{verb}</span>
         <span className="text-[var(--color-muted)]">
           {tr(
@@ -2055,7 +2267,7 @@ function BulkOpBanner({
             delete (no per-byte cancel concept). */}
         <button
           type="button"
-          onClick={() => useFsBulkOpStore.getState().requestCancel()}
+          onClick={() => useFsBulkOpStore.getState().requestCancel(host)}
           disabled={cancelRequested}
           className="ml-auto rounded-md border border-[var(--color-border)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)] disabled:opacity-50"
           title={tr(
@@ -2154,35 +2366,50 @@ function BulkOpBanner({
  * (the engine sums fs_read chunks into the shared progress AtomicU64).
  */
 function DownloadOpBanner({
+  host,
   rootName,
   rootSrcPath,
   destDir,
-  bytesReceived,
-  totalBytes,
   startedAtMs,
 }: {
+  /** Console this download belongs to — scopes the per-tick byte
+   *  subscriptions and the Stop button to this console's slot. */
+  host: string;
   rootName: string;
   rootSrcPath: string;
   destDir: string;
-  bytesReceived: number;
-  totalBytes: number;
   startedAtMs: number;
 }) {
   const tr = useTr();
+  // Byte progress is subscribed HERE rather than passed via props so
+  // the per-poll-tick store writes only re-render this banner, not the
+  // whole FileSystem screen (same pattern as BulkOpBanner's
+  // currentBytesCopied).
+  const bytesReceived = useFsDownloadOpStore(
+    (s) => downloadForHost(s, host).bytesReceived,
+  );
+  const totalBytes = useFsDownloadOpStore(
+    (s) => downloadForHost(s, host).totalBytes,
+  );
   const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
     setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 500);
     return () => window.clearInterval(id);
   }, []);
-  const elapsedSec = startedAtMs > 0 ? Math.max(0, (now - startedAtMs) / 1000) : 0;
-  const pct = totalBytes > 0 ? Math.min(100, (bytesReceived / totalBytes) * 100) : 0;
+  const elapsedSec =
+    startedAtMs > 0 ? Math.max(0, (now - startedAtMs) / 1000) : 0;
+  const pct =
+    totalBytes > 0 ? Math.min(100, (bytesReceived / totalBytes) * 100) : 0;
   const speed = elapsedSec > 0 ? bytesReceived / elapsedSec : 0;
 
   return (
     <div className="mb-3 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface-2)] p-3 text-xs">
       <div className="mb-2 flex items-center gap-2">
-        <Loader2 size={14} className="animate-spin text-[var(--color-accent)]" />
+        <Loader2
+          size={14}
+          className="animate-spin text-[var(--color-accent)]"
+        />
         <span className="font-semibold">
           {tr("fs_busy_downloading", undefined, "Downloading from PS5")}
         </span>
@@ -2196,7 +2423,7 @@ function DownloadOpBanner({
             previously-dead requestStop() action. */}
         <button
           type="button"
-          onClick={() => useFsDownloadOpStore.getState().requestStop()}
+          onClick={() => useFsDownloadOpStore.getState().requestStop(host)}
           className="ml-auto rounded-md border border-[var(--color-border)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
           title={tr(
             "fs_download_stop_tooltip",
@@ -2212,7 +2439,8 @@ function DownloadOpBanner({
         <span>{rootName}</span>
         {totalBytes > 0 ? (
           <span className="text-[var(--color-muted)]">
-            {formatBytes(bytesReceived)} / {formatBytes(totalBytes)} ({pct.toFixed(0)}%)
+            {formatBytes(bytesReceived)} / {formatBytes(totalBytes)} (
+            {pct.toFixed(0)}%)
           </span>
         ) : (
           <span className="text-[var(--color-muted)]">

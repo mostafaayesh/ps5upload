@@ -10,7 +10,10 @@ import { useConnectionStore } from "../state/connection";
 afterEach(() => {
   // Restore the shipped defaults so cross-test ordering can't leak state.
   useUploadSettingsStore.setState({ uploadStreams: 1 });
-  useConnectionStore.setState({ maxTransferStreams: undefined });
+  useConnectionStore.setState({
+    maxTransferStreams: undefined,
+    runtimeByHost: {},
+  });
 });
 
 describe("upload streams default", () => {
@@ -48,5 +51,41 @@ describe("effectiveUploadStreams", () => {
     useUploadSettingsStore.setState({ uploadStreams: 3 });
     useConnectionStore.setState({ maxTransferStreams: 4 });
     expect(effectiveUploadStreams()).toBe(3);
+  });
+
+  it("clamps to the TARGET console's advertised max, not the active tab's", () => {
+    // Two consoles uploading in parallel: the active tab (mirrored flat
+    // field) advertises 4 streams, but the transfer targets a console
+    // whose payload only services 1. Reading the active tab's capability
+    // for the background console's transfer was the multi-console bug.
+    useUploadSettingsStore.setState({ uploadStreams: 4 });
+    useConnectionStore.setState({
+      maxTransferStreams: 4,
+      runtimeByHost: {
+        "192.168.86.99": {
+          payloadStatus: "up",
+          payloadVersion: "2.30.0",
+          ps5Kernel: null,
+          ucredElevated: true,
+          maxTransferStreams: 1,
+        },
+        "192.168.86.100": {
+          payloadStatus: "up",
+          payloadVersion: "2.30.0",
+          ps5Kernel: null,
+          ucredElevated: true,
+          maxTransferStreams: 4,
+        },
+      },
+    });
+    // Port-tolerant: queue items pass `ip:9113` transfer addrs.
+    expect(effectiveUploadStreams("192.168.86.99:9113")).toBe(1);
+    expect(effectiveUploadStreams("192.168.86.100:9113")).toBe(4);
+  });
+
+  it("treats an addr the poller hasn't probed yet as single-stream", () => {
+    useUploadSettingsStore.setState({ uploadStreams: 4 });
+    useConnectionStore.setState({ maxTransferStreams: 4, runtimeByHost: {} });
+    expect(effectiveUploadStreams("10.0.0.7:9113")).toBe(1);
   });
 });

@@ -44,7 +44,11 @@ import type { Theme } from "../state/theme";
  *  in the footer doesn't need a chained ternary. */
 function themeLabel(
   theme: Theme,
-  tr: (key: string, vars?: Record<string, string | number>, fallback?: string) => string,
+  tr: (
+    key: string,
+    vars?: Record<string, string | number>,
+    fallback?: string,
+  ) => string,
 ): string {
   if (theme === "light") return tr("light_mode", undefined, "Light mode");
   if (theme === "oled") return tr("oled_mode", undefined, "OLED mode");
@@ -88,41 +92,120 @@ interface NavItem {
 // are separate commits that don't touch the sidebar shape.
 const items: NavItem[] = [
   // ─ Setup: orient, connect, get started ─
-  { to: "/whats-new", key: "whats_new", fallback: "What's new", icon: Sparkles, section: { key: "nav_section_setup", fallback: "Setup" } },
+  {
+    to: "/whats-new",
+    key: "whats_new",
+    fallback: "What's new",
+    icon: Sparkles,
+    section: { key: "nav_section_setup", fallback: "Setup" },
+  },
   { to: "/connection", key: "connect", fallback: "Connection", icon: Cable },
+  // Dashboard lives with Setup, not System: it's the "am I connected,
+  // what's running?" morning check — the thing you look at right after
+  // (or instead of) the Connection screen, not a hardware tool.
+  {
+    to: "/dashboard",
+    key: "dashboard",
+    fallback: "Dashboard",
+    icon: LayoutDashboard,
+  },
 
   // ─ Files: the "send things and install things" verbs ─
-  { to: "/upload", key: "upload", fallback: "Upload", icon: Upload, section: { key: "nav_section_files", fallback: "Files" } },
-  { to: "/install-package", key: "install_package", fallback: "Install Package", icon: PackageOpen },
+  {
+    to: "/upload",
+    key: "upload",
+    fallback: "Upload",
+    icon: Upload,
+    section: { key: "nav_section_files", fallback: "Files" },
+  },
+  {
+    to: "/install-package",
+    key: "install_package",
+    fallback: "Install Package",
+    icon: PackageOpen,
+  },
   { to: "/saves", key: "saves", fallback: "Save data", icon: Save },
-  { to: "/screenshots", key: "screenshots", fallback: "Screenshots", icon: ImageIcon },
+  {
+    to: "/screenshots",
+    key: "screenshots",
+    fallback: "Screenshots",
+    icon: ImageIcon,
+  },
 
   // ─ Browse PS5: navigate what's on the console ─
-  { to: "/library", key: "library", fallback: "Library", icon: LibraryBig, section: { key: "nav_section_browse", fallback: "Browse PS5" } },
-  { to: "/installed", key: "installed_apps", fallback: "Installed Apps", icon: Gamepad2 },
-  { to: "/file-system", key: "file_system", fallback: "File System", icon: FolderTree },
+  {
+    to: "/library",
+    key: "library",
+    fallback: "Library",
+    icon: LibraryBig,
+    section: { key: "nav_section_browse", fallback: "Browse PS5" },
+  },
+  {
+    to: "/installed",
+    key: "installed_apps",
+    fallback: "Installed Apps",
+    icon: Gamepad2,
+  },
+  {
+    to: "/file-system",
+    key: "file_system",
+    fallback: "File System",
+    icon: FolderTree,
+  },
   { to: "/search", key: "search", fallback: "Search", icon: Search },
   { to: "/volumes", key: "volumes", fallback: "Volumes", icon: HardDrive },
-  { to: "/disk-usage", key: "disk_usage", fallback: "Disk usage", icon: PieChart },
+  {
+    to: "/disk-usage",
+    key: "disk_usage",
+    fallback: "Disk usage",
+    icon: PieChart,
+  },
 
   // ─ System: observe + manage the PS5 itself ─
-  { to: "/dashboard", key: "dashboard", fallback: "Dashboard", icon: LayoutDashboard, section: { key: "nav_section_system", fallback: "System" } },
-  { to: "/hardware", key: "hardware", fallback: "Hardware", icon: Cpu },
+  {
+    to: "/hardware",
+    key: "hardware",
+    fallback: "Hardware",
+    icon: Cpu,
+    section: { key: "nav_section_system", fallback: "System" },
+  },
   { to: "/payloads", key: "payloads", fallback: "Payloads", icon: Boxes },
   { to: "/nanodns", key: "nanodns", fallback: "nanoDNS", icon: Globe },
   { to: "/shell", key: "shell", fallback: "Shell", icon: TerminalSquare },
 
   // ─ Diagnostics: history, logs, debugging ─
-  { to: "/activity", key: "activity", fallback: "Activity", icon: ActivityIcon, section: { key: "nav_section_diagnostics", fallback: "Diagnostics" } },
+  {
+    to: "/activity",
+    key: "activity",
+    fallback: "Activity",
+    icon: ActivityIcon,
+    section: { key: "nav_section_diagnostics", fallback: "Diagnostics" },
+  },
   { to: "/stats", key: "stats", fallback: "Stats", icon: BarChart3 },
   { to: "/logs", key: "logs", fallback: "Logs", icon: ScrollText },
-  { to: "/audit-log", key: "audit_log", fallback: "Audit log", icon: ShieldCheck },
+  {
+    to: "/audit-log",
+    key: "audit_log",
+    fallback: "Audit log",
+    icon: ShieldCheck,
+  },
   { to: "/bug-report", key: "bug_report", fallback: "Bug report", icon: Bug },
 
   // ─ Footer-style utility entries (still rendered inline for now;
   //   a future change could split them visually with a divider) ─
-  { to: "/faq", key: "faq", fallback: "FAQ", icon: HelpCircle, section: { key: "nav_section_help", fallback: "Help" } },
-  { to: "/settings", key: "settings", fallback: "Settings", icon: SettingsIcon },
+  {
+    to: "/faq",
+    key: "faq",
+    fallback: "FAQ",
+    icon: HelpCircle,
+    section: { key: "nav_section_help", fallback: "Help" },
+  },
+  {
+    to: "/settings",
+    key: "settings",
+    fallback: "Settings",
+    icon: SettingsIcon,
+  },
   { to: "/about", key: "about", fallback: "About", icon: Info },
 ];
 
@@ -138,9 +221,7 @@ export default function Sidebar({
   const errorCount = useLogsStore(
     (s) => s.entries.filter((e) => e.level === "error").length,
   );
-  const updateAvailable = useUpdateStore(
-    (s) => s.phase.kind === "available",
-  );
+  const updateAvailable = useUpdateStore((s) => s.phase.kind === "available");
   const [version, setVersion] = useState<string>("");
   useEffect(() => {
     getVersion()
@@ -155,7 +236,8 @@ export default function Sidebar({
       <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3.5">
         <img
           src="/logo-square.png"
-          alt="PS5Upload"
+          alt=""
+          aria-hidden
           className="h-11 w-11 shrink-0 rounded-lg"
         />
         <div className="flex min-w-0 flex-col leading-tight">
@@ -213,7 +295,9 @@ export default function Sidebar({
                   <span
                     className="rounded-full bg-[var(--color-bad)] px-1.5 py-0.5 text-xs font-semibold tabular-nums text-white group-[.active]:bg-white group-[.active]:text-[var(--color-bad)]"
                     title={tr(
-                      errorCount === 1 ? "logged_error_one" : "logged_error_many",
+                      errorCount === 1
+                        ? "logged_error_one"
+                        : "logged_error_many",
                       { count: errorCount },
                       `${errorCount} logged error${errorCount === 1 ? "" : "s"}`,
                     )}
@@ -224,7 +308,11 @@ export default function Sidebar({
                 {isSettings && updateAvailable && (
                   <span
                     className="h-2 w-2 rounded-full bg-[var(--color-accent)] group-[.active]:bg-[var(--color-accent-contrast)]"
-                    aria-label={tr("update_available_short", undefined, "Update available")}
+                    aria-label={tr(
+                      "update_available_short",
+                      undefined,
+                      "Update available",
+                    )}
                     title={tr(
                       "update_available_tooltip",
                       undefined,

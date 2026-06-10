@@ -1091,6 +1091,7 @@ mod tests {
             FrameType::SmpMetaStatsAck,
             FrameType::SyslogTail,
             FrameType::SyslogTailAck,
+            FrameType::ApplyProgress,
         ];
         for ft in variants {
             assert_eq!(FrameType::try_from_u16(ft as u16).unwrap(), ft);
@@ -1276,5 +1277,39 @@ mod tests {
             ShardAck::decode(&bytes),
             Err(DecodeError::UnknownAckState(0xFF))
         ));
+    }
+
+    /// Cross-check that the wire constants we use in Rust match the
+    /// hard-coded values in the C payload (payload/src/runtime.c and
+    /// payload/include/config.h). If any of these drift, the two sides
+    /// will fail to speak FTX2 and the symptoms are usually mysterious
+    /// "connection reset" or "bad magic" at runtime.
+    ///
+    /// When editing frame numbers, MAGIC, version, or the TX_FLAG_*
+    /// bits, update BOTH sides and this test.
+    #[test]
+    fn payload_c_wire_constants_match() {
+        // Magic and version (top of FrameHeader)
+        assert_eq!(FTX2_MAGIC, 0x32585446); // "FTX2" little-endian
+        assert_eq!(FTX2_VERSION_1, 1);
+
+        // TX meta flags (must match FTX2_TX_FLAG_* in runtime.c)
+        assert_eq!(TX_FLAG_RESUME, 0x1);
+        assert_eq!(TX_FLAG_APPLY_PROGRESS_REQUESTED, 0x4);
+
+        // Representative frame type values used by the C dispatcher
+        // and the takeover / shutdown paths (see runtime.c defines).
+        assert_eq!(FrameType::Hello as u16, 1);
+        assert_eq!(FrameType::HelloAck as u16, 2);
+        assert_eq!(FrameType::Error as u16, 3);
+        assert_eq!(FrameType::BeginTx as u16, 10);
+        assert_eq!(FrameType::TakeoverRequest as u16, 18);
+        assert_eq!(FrameType::Shutdown as u16, 22);
+        assert_eq!(FrameType::StreamShard as u16, 30);
+        assert_eq!(FrameType::ShardAck as u16, 31);
+        assert_eq!(FrameType::FsListDir as u16, 36);
+        assert_eq!(FrameType::HwInfo as u16, 64);
+        assert_eq!(FrameType::PkgInstall as u16, 82);
+        assert_eq!(FrameType::ApplyProgress as u16, 146);
     }
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 // useEffect is consumed inside SaveThumbnail below.
+import { useNavigate } from "react-router-dom";
 import {
   Save,
   RefreshCw,
@@ -24,7 +25,13 @@ import {
   type SaveEntry,
 } from "../../api/ps5";
 import { useConnectionStore, PS5_PAYLOAD_PORT } from "../../state/connection";
-import { PageHeader, Button, EmptyState, ErrorCard } from "../../components";
+import {
+  PageHeader,
+  Button,
+  EmptyState,
+  ErrorCard,
+  ConnectionGate,
+} from "../../components";
 // Direct import to avoid the barrel's circular-dep warning at build.
 import { useConfirm } from "../../components/ConfirmDialog";
 import { useTr } from "../../state/lang";
@@ -35,6 +42,7 @@ import { useStaleHostGuard } from "../../lib/staleHostGuard";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { pickPath } from "../../lib/pickPath";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 
 /**
  * Save data manager.
@@ -51,6 +59,7 @@ import { pushNotification } from "../../state/notifications";
  */
 export default function SavesScreen() {
   const tr = useTr();
+  const navigate = useNavigate();
   const host = useConnectionStore((s) => s.host);
   const payloadStatus = useConnectionStore((s) => s.payloadStatus);
   const guard = useStaleHostGuard();
@@ -62,10 +71,7 @@ export default function SavesScreen() {
   // two ops over the same PS5 save path (which would deletes-and-
   // uploads in undefined order and leave the live save corrupt).
   const [busy, setBusy] = useState<Set<string>>(() => new Set());
-  const isBusy = useCallback(
-    (path: string) => busy.has(path),
-    [busy],
-  );
+  const isBusy = useCallback((path: string) => busy.has(path), [busy]);
   const markBusy = useCallback((path: string, on: boolean) => {
     setBusy((prev) => {
       const next = new Set(prev);
@@ -137,11 +143,7 @@ export default function SavesScreen() {
       const destZip = await saveDialog({
         defaultPath: `${entry.title_id}.zip`,
         filters: [{ name: "ZIP archive", extensions: ["zip"] }],
-        title: tr(
-          "saves_download_picker",
-          undefined,
-          "Save backup as…",
-        ),
+        title: tr("saves_download_picker", undefined, "Save backup as…"),
       });
       if (!destZip || typeof destZip !== "string") return;
       // 1) Scratch dir under the OS temp root. The engine's download
@@ -162,13 +164,23 @@ export default function SavesScreen() {
       await saveArchiveBackupFinalize(tempDir, entry.title_id);
       // 4) Zip the cleaned `<scratch>/<title_id>/` → user-picked .zip.
       await saveArchiveZip(tempDir, entry.title_id, destZip);
-      pushNotification("success", `Backed up ${entry.title_id}`, {
-        body: `Saved to ${destZip}`,
-      });
+      pushNotification(
+        "success",
+        withConsolePrefix(host, `Backed up ${entry.title_id}`),
+        {
+          body: `Saved to ${destZip}`,
+        },
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      pushNotification("error", `Backup failed: ${entry.title_id}`, { body: msg });
+      pushNotification(
+        "error",
+        withConsolePrefix(host, `Backup failed: ${entry.title_id}`),
+        {
+          body: msg,
+        },
+      );
     } finally {
       // 4) Best-effort cleanup. The Rust side refuses any path outside
       // the OS temp root, so a stale `tempDir` reference can't trash
@@ -270,13 +282,23 @@ export default function SavesScreen() {
         [],
       );
       await waitForJob(jobId);
-      pushNotification("success", `Restored ${entry.title_id}`, {
-        body: `Uploaded ${entry.title_id}.zip back to ${entry.path}.`,
-      });
+      pushNotification(
+        "success",
+        withConsolePrefix(restoreHost, `Restored ${entry.title_id}`),
+        {
+          body: `Uploaded ${entry.title_id}.zip back to ${entry.path}.`,
+        },
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      pushNotification("error", `Restore failed: ${entry.title_id}`, { body: msg });
+      pushNotification(
+        "error",
+        withConsolePrefix(restoreHost, `Restore failed: ${entry.title_id}`),
+        {
+          body: msg,
+        },
+      );
     } finally {
       if (tempDir) await saveArchiveCleanupTemp(tempDir).catch(() => {});
       markBusy(entry.path, false);
@@ -309,111 +331,106 @@ export default function SavesScreen() {
         }
       />
 
-      {payloadStatus !== "up" && (
-        <EmptyState
-          fill
-          icon={Save}
-          message={tr(
-            "saves_no_payload",
-            undefined,
-            "Connect to your PS5 first — saves are read from the live console.",
-          )}
-        />
-      )}
+      <ConnectionGate require="payload">
+        {error && (
+          <div className="mb-4">
+            <ErrorCard
+              title={tr("saves_error", undefined, "Couldn't list saves")}
+              detail={error}
+            />
+          </div>
+        )}
 
-      {error && (
-        <div className="mb-4">
-          <ErrorCard
-            title={tr("saves_error", undefined, "Couldn't list saves")}
-            detail={error}
+        {saves && saves.length === 0 && (
+          <EmptyState
+            icon={Save}
+            message={tr(
+              "saves_empty",
+              undefined,
+              "No saves found. Either no users have ever saved a game, or the savedata folders aren't where we expect them.",
+            )}
+            action={
+              <Button variant="secondary" onClick={() => navigate("/library")}>
+                {tr("saves_empty_cta", "Browse Library")}
+              </Button>
+            }
           />
-        </div>
-      )}
+        )}
 
-      {saves && saves.length === 0 && payloadStatus === "up" && (
-        <EmptyState
-          icon={Save}
-          message={tr(
-            "saves_empty",
-            undefined,
-            "No saves found. Either no users have ever saved a game, or the savedata folders aren't where we expect them.",
-          )}
-        />
-      )}
-
-      <div className="mx-auto max-w-4xl space-y-3">
-        {grouped.map(({ title_id, entries }) => (
-          <section
-            key={title_id}
-            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4"
-          >
-            <header className="mb-2 flex items-center gap-2">
-              <SaveThumbnail
-                titleId={title_id}
-                userId={entries[0]?.user_id ?? 0}
-                mgmtAddr={host?.trim() ? mgmtAddr(host.trim()) : null}
-              />
-              <h3 className="text-sm font-semibold">{title_id}</h3>
-              <span className="text-xs text-[var(--color-muted)]">
-                {entries.length} {tr("saves_folder", undefined, "folder")}
-                {entries.length === 1 ? "" : "s"}
-              </span>
-            </header>
-            <ul className="space-y-1">
-              {entries.map((e) => (
-                <li
-                  key={e.path}
-                  className="flex items-center gap-3 rounded-md bg-[var(--color-surface)] px-2 py-1.5 text-xs"
-                >
-                  <span className="rounded bg-[var(--color-surface-3)] px-1.5 py-0.5 text-xs uppercase">
-                    {e.kind}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <code className="block truncate text-xs text-[var(--color-muted)]">
-                      {e.path}
-                    </code>
-                    <div className="text-xs text-[var(--color-muted)]">
-                      {tr("saves_user", undefined, "user")} {e.user_id} ·{" "}
-                      {formatBytes(e.size)} ·{" "}
-                      {new Date(e.mtime * 1000).toLocaleDateString()}
+        <div className="mx-auto max-w-4xl space-y-3">
+          {grouped.map(({ title_id, entries }) => (
+            <section
+              key={title_id}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4"
+            >
+              <header className="mb-2 flex items-center gap-2">
+                <SaveThumbnail
+                  titleId={title_id}
+                  userId={entries[0]?.user_id ?? 0}
+                  mgmtAddr={host?.trim() ? mgmtAddr(host.trim()) : null}
+                />
+                <h3 className="text-sm font-semibold">{title_id}</h3>
+                <span className="text-xs text-[var(--color-muted)]">
+                  {entries.length} {tr("saves_folder", undefined, "folder")}
+                  {entries.length === 1 ? "" : "s"}
+                </span>
+              </header>
+              <ul className="space-y-1">
+                {entries.map((e) => (
+                  <li
+                    key={e.path}
+                    className="flex items-center gap-3 rounded-md bg-[var(--color-surface)] px-2 py-1.5 text-xs"
+                  >
+                    <span className="rounded bg-[var(--color-surface-3)] px-1.5 py-0.5 text-xs uppercase">
+                      {e.kind}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <code className="block truncate text-xs text-[var(--color-muted)]">
+                        {e.path}
+                      </code>
+                      <div className="text-xs text-[var(--color-muted)]">
+                        {tr("saves_user", undefined, "user")} {e.user_id} ·{" "}
+                        {formatBytes(e.size)} ·{" "}
+                        {new Date(e.mtime * 1000).toLocaleDateString()}
+                      </div>
                     </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    leftIcon={<Download size={11} />}
-                    onClick={() => handleDownload(e)}
-                    disabled={isBusy(e.path)}
-                  >
-                    {tr("saves_download", undefined, "Backup")}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    leftIcon={<UploadIcon size={11} />}
-                    onClick={() => handleRestore(e)}
-                    disabled={isBusy(e.path)}
-                    title={tr(
-                      "saves_restore_tooltip",
-                      undefined,
-                      "Pick a .zip backup and upload its contents back to this save's PS5 path. Overwrites the live save.",
-                    )}
-                  >
-                    {tr("saves_restore", undefined, "Restore")}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-
-      {loading && saves === null && (
-        <div className="mt-4 text-center text-xs text-[var(--color-muted)]">
-          <Loader2 size={12} className="mr-2 inline animate-spin" />
-          {tr("saves_loading", undefined, "Reading saves…")}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      leftIcon={<Download size={11} />}
+                      onClick={() => handleDownload(e)}
+                      disabled={isBusy(e.path)}
+                    >
+                      {tr("saves_download", undefined, "Backup")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      leftIcon={<UploadIcon size={11} />}
+                      onClick={() => handleRestore(e)}
+                      disabled={isBusy(e.path)}
+                      title={tr(
+                        "saves_restore_tooltip",
+                        undefined,
+                        "Pick a .zip backup and upload its contents back to this save's PS5 path. Overwrites the live save.",
+                      )}
+                    >
+                      {tr("saves_restore", undefined, "Restore")}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
         </div>
-      )}
+
+        {loading && saves === null && (
+          <div className="mt-4 text-center text-xs text-[var(--color-muted)]">
+            <Loader2 size={12} className="mr-2 inline animate-spin" />
+            {tr("saves_loading", undefined, "Reading saves…")}
+          </div>
+        )}
+      </ConnectionGate>
     </div>
   );
 }

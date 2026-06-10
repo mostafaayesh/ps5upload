@@ -108,7 +108,7 @@ export function LocalPathPicker() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center"
+      className="anim-scrim fixed inset-0 z-50 flex items-end justify-center bg-[var(--overlay-scrim)] sm:items-center"
       style={{
         paddingTop: "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
@@ -118,7 +118,7 @@ export function LocalPathPicker() {
       <div
         role="dialog"
         aria-modal="true"
-        className="flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] sm:max-h-[80vh] sm:rounded-xl"
+        className="anim-sheet elev-3 flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] sm:max-h-[80vh] sm:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">

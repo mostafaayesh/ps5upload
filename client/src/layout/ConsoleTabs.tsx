@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useStore } from "zustand";
 import { Plus, X, Check } from "lucide-react";
 
-import { useRosterStore } from "../state/roster";
+import { useRosterStore, profileAccentForHost } from "../state/roster";
 import { useHostRuntime } from "../state/connection";
 import { useUploadQueueStore } from "../state/uploadQueue";
 import { pkgLibraryStore } from "../state/pkgLibrary";
@@ -49,12 +49,15 @@ function ConsoleTab({
   id,
   name,
   host,
+  accent,
   active,
   onClick,
 }: {
   id: string;
   name: string;
   host: string;
+  /** This console's identity color (roster-position palette). */
+  accent: string | null;
   active: boolean;
   onClick: () => void;
 }) {
@@ -66,17 +69,30 @@ function ConsoleTab({
       title={`${name} — ${host}`}
       aria-current={active ? "page" : undefined}
       data-console-id={id}
-      className={`flex max-w-[14rem] shrink-0 items-center gap-2 rounded-t-md border-x border-t px-3 py-1.5 text-sm ${
+      className={`flex max-w-[14rem] shrink-0 items-center gap-2 rounded-t-md border-x border-t-2 px-3 py-1.5 text-sm ${
         active
-          ? "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text)]"
-          : "border-transparent text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
+          ? "border-x-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text)]"
+          : "border-x-transparent text-[var(--color-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
       }`}
+      // Identity stripe: each console keeps its own color on the tab's top
+      // edge (full strength when active, dimmed otherwise). Two same-model
+      // consoles with similar default names stay tellable apart at a
+      // glance, and the same color repeats on activity chips so rows match
+      // tabs without reading names. Hex palette → append alpha for the dim.
+      style={{
+        borderTopColor: accent
+          ? active
+            ? accent
+            : `${accent}55`
+          : "transparent",
+      }}
     >
       <StatusDot host={host} />
       <span className="truncate">{name}</span>
       {busy && (
         <span
-          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-accent)]"
+          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full"
+          style={{ background: accent ?? "var(--color-accent)" }}
           aria-hidden
         />
       )}
@@ -121,6 +137,7 @@ export default function ConsoleTabs() {
           id={p.id}
           name={p.name}
           host={p.host}
+          accent={profileAccentForHost(p.host, profiles)}
           active={p.id === activeId}
           onClick={() => setActive(p.id)}
         />

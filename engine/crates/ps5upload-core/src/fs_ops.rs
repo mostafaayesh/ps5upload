@@ -990,6 +990,11 @@ fn acquire_reconcile_gate(keys: Vec<String>, block: bool) -> Result<ReconcileGat
 /// still-correct choice. Normal games are far below this.
 const MAX_RECONCILE_PARENT_DIRS: usize = 12_000;
 
+// Hard compile-time bounds so a bad edit is caught immediately (even
+// without running the unit test). Matches the "reconcile_dir_cap_is_sane" test.
+const _: () = assert!(MAX_RECONCILE_PARENT_DIRS >= 2_000);
+const _: () = assert!(MAX_RECONCILE_PARENT_DIRS <= 100_000);
+
 /// Build the scoped remote inventory. The caller (`reconcile`) already holds
 /// this console's `addr:` reconcile key (see RECONCILE_KEYS), so at most one
 /// scan runs against any single console at a time — at most one mgmt connection
@@ -1461,10 +1466,14 @@ mod tests {
     /// The pathological-tree safety valve constant must stay sane: large
     /// enough that real games (hundreds of dirs) still reconcile, small
     /// enough to bound a worst-case sequential walk.
+    /// (The actual numeric bounds are hard-enforced with `const _: () = assert!(...)`
+    /// right next to the const definition, so bad values fail the *build*.)
     #[test]
     fn reconcile_dir_cap_is_sane() {
-        assert!(MAX_RECONCILE_PARENT_DIRS >= 2_000);
-        assert!(MAX_RECONCILE_PARENT_DIRS <= 100_000);
+        // Test retained purely for documentation / discoverability.
+        // No runtime assert here (would trigger clippy::assertions-on-constants
+        // and is redundant with the module-level const checks).
+        let _ = MAX_RECONCILE_PARENT_DIRS;
     }
 
     #[test]

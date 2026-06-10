@@ -373,6 +373,7 @@ fn usage() -> ! {
     eprintln!("  register     SRC_PATH      register a game folder");
     eprintln!("  unregister   TITLE_ID      reverse registration");
     eprintln!("  launch       TITLE_ID      sceLncUtilLaunchApp");
+    eprintln!("  power        tick|standby|reboot|shutdown  (mgmt port; tick = keep-awake)");
     eprintln!("  apps                       list titles present in app.db");
     eprintln!("  saves                      list save-data folders + sizes (:9114)");
     eprintln!("  shell       SESSION CWD CMD...   run shell command via :9114");
@@ -514,6 +515,32 @@ fn main() -> Result<()> {
         // kernel-R/W path that must serialize against installs. Used to stress
         // the kernel_rw_lock concurrently from many connections.
         "hw-info" => do_hw_info(addr),
+        // power <tick|standby|reboot|shutdown>: drives the SystemControl
+        // mgmt frame. `tick` (sceSystemServicePowerTick) is the keep-awake
+        // primitive — non-destructive, resets the console's auto-standby
+        // idle timer. Added for real-hardware verification of the client's
+        // keep-PS5-awake feature.
+        "power" => {
+            let action = match rest.get(1).map(|s| s.as_str()) {
+                Some("tick") => ps5upload_core::system_control::PowerAction::Tick,
+                Some("standby") => ps5upload_core::system_control::PowerAction::Standby,
+                Some("reboot") => ps5upload_core::system_control::PowerAction::Reboot,
+                Some("shutdown") => ps5upload_core::system_control::PowerAction::Shutdown,
+                _ => usage(),
+            };
+            let ack = ps5upload_core::system_control::system_control(addr, action)?;
+            println!(
+                "power ack: ok={} action={} err={} code={}",
+                ack.ok,
+                ack.action.as_deref().unwrap_or("-"),
+                ack.err.as_deref().unwrap_or("-"),
+                ack.code.map_or("-".to_string(), |c| c.to_string()),
+            );
+            if !ack.ok {
+                bail!("power action failed");
+            }
+            Ok(())
+        }
         "hw-temps" => do_hw_temps(addr, false),
         "hw-temps-x" => do_hw_temps(addr, true),
         "saves" => do_saves(addr),

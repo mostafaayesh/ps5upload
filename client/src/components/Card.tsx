@@ -38,7 +38,7 @@ export function Card({
   const pad = padded ? "p-4" : "";
   return (
     <section
-      className={`rounded-lg border ${border} bg-[var(--color-surface-2)] ${pad} ${className}`}
+      className={`elev-1 rounded-lg border ${border} bg-[var(--color-surface-2)] ${pad} ${className}`}
     >
       {title && (
         <header className="mb-3 flex items-center justify-between gap-2">

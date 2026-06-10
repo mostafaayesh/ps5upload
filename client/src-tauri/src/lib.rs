@@ -350,7 +350,7 @@ pub fn run() {
             commands::fs_write_bytes_run,
             commands::fs_read_preview,
             commands::fs_blake3_hash,
-            // ── Persistence (send-payload history) ──────────────────
+            // ── Persistence (Payloads → Send recent history) ────────
             commands::send_payload_history_load,
             commands::send_payload_history_add,
             commands::send_payload_history_clear,

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TerminalSquare,
   Send,
@@ -9,7 +9,7 @@ import {
 import { shellRun, type ShellRunResult } from "../../api/ps5";
 import { useConnectionStore } from "../../state/connection";
 import { mgmtAddr } from "../../lib/addr";
-import { PageHeader, Button, EmptyState } from "../../components";
+import { PageHeader, Button, ConnectionGate } from "../../components";
 import { useTr } from "../../state/lang";
 import { splitShellSequence } from "./shellSequence";
 
@@ -36,10 +36,24 @@ export default function ShellScreen() {
   const outputRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef("");
 
+  // The shell session (id, working directory, scrollback) belongs to ONE
+  // console. Switching tabs must start fresh: console B has its own payload
+  // process, its own filesystem layout, and must never receive console A's
+  // session id or inherit a cwd that may not exist on it.
+  useEffect(() => {
+    sessionIdRef.current = "";
+    setHistory([]);
+    setHistoryCursor(null);
+    setCwd("/");
+  }, [host]);
+
   const send = useCallback(async () => {
     const trimmed = cmd.trim();
     if (!trimmed || busy) return;
     if (!host?.trim() || payloadStatus !== "up") return;
+    // Capture the host this command targets; if the user switches console
+    // mid-flight, the late result must not write into the new console's view.
+    const sentHost = host;
     if (!sessionIdRef.current) {
       sessionIdRef.current = `shell-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     }
@@ -90,6 +104,10 @@ export default function ShellScreen() {
       const durationMs = performance.now() - t0;
       if (!lastResult) throw new Error("No shell command to run");
       const result: ShellRunResult = { ...lastResult, stdout, cwd: currentCwd };
+      // Stale-host guard: the host-switch effect above already cleared the
+      // scrollback; don't resurrect the old console's cwd/result into the
+      // new console's session.
+      if (useConnectionStore.getState().host !== sentHost) return;
       setCwd(currentCwd);
       setHistory((prev) =>
         prev.map((h) => (h.id === id ? { ...h, result, durationMs } : h)),
@@ -97,6 +115,7 @@ export default function ShellScreen() {
     } catch (e) {
       const durationMs = performance.now() - t0;
       const error = e instanceof Error ? e.message : String(e);
+      if (useConnectionStore.getState().host !== sentHost) return;
       setHistory((prev) =>
         prev.map((h) => (h.id === id ? { ...h, error, durationMs } : h)),
       );
@@ -122,7 +141,10 @@ export default function ShellScreen() {
       e.preventDefault();
       const cmds = history.map((h) => h.cmd);
       if (cmds.length === 0) return;
-      const next = historyCursor === null ? cmds.length - 1 : Math.max(0, historyCursor - 1);
+      const next =
+        historyCursor === null
+          ? cmds.length - 1
+          : Math.max(0, historyCursor - 1);
       setHistoryCursor(next);
       setCmd(cmds[next] ?? "");
     } else if (e.key === "ArrowDown") {
@@ -163,17 +185,7 @@ export default function ShellScreen() {
         }
       />
 
-      {payloadStatus !== "up" ? (
-        <EmptyState
-          fill
-          icon={TerminalSquare}
-          message={tr(
-            "shell_no_payload",
-            undefined,
-            "Connect to your PS5 first — shell needs the payload to be running.",
-          )}
-        />
-      ) : (
+      <ConnectionGate require="payload">
         <div className="flex min-h-0 flex-1 flex-col gap-3">
           <div
             ref={outputRef}
@@ -234,7 +246,7 @@ export default function ShellScreen() {
             </Button>
           </div>
         </div>
-      )}
+      </ConnectionGate>
     </div>
   );
 }
@@ -258,9 +270,7 @@ function ShellHistoryRow({ entry }: { entry: HistoryEntry }) {
         {entry.result && (
           <span
             className={
-              ok
-                ? "text-[var(--color-good)]"
-                : "text-[var(--color-warn)]"
+              ok ? "text-[var(--color-good)]" : "text-[var(--color-warn)]"
             }
           >
             {tr("shell_exit", "· exit")} {exit ?? "?"}

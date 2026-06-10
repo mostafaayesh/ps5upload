@@ -13,7 +13,7 @@ import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { getVersion } from "@tauri-apps/api/app";
 
 import { useTr } from "../../state/lang";
-import { Card } from "../../components";
+import { Button, Card } from "../../components";
 
 const AUTHOR_EMAIL = "phantomptr@gmail.com";
 
@@ -46,28 +46,32 @@ const FEATURES: {
     titleKey: "about_feat_fast_transfers_title",
     titleFallback: "Fast transfers",
     bodyKey: "about_feat_fast_transfers_body",
-    bodyFallback: "FTX2 binary protocol with BLAKE3 shard verification + pack-small-files optimization. Uses your LAN flat-out.",
+    bodyFallback:
+      "FTX2 binary protocol with BLAKE3 shard verification + pack-small-files optimization. Uses your LAN flat-out.",
   },
   {
     icon: HardDrive,
     titleKey: "about_feat_native_mount_title",
     titleFallback: "Native image mount",
     bodyKey: "about_feat_native_mount_body",
-    bodyFallback: "Attach .exfat and .ffpkg images to /mnt/ps5upload/ via MDIOCATTACH + nmount — no third-party helpers needed.",
+    bodyFallback:
+      "Attach .exfat and .ffpkg images to /mnt/ps5upload/ via MDIOCATTACH + nmount — no third-party helpers needed.",
   },
   {
     icon: Radio,
     titleKey: "about_feat_works_everything_title",
     titleFallback: "Works with everything",
     bodyKey: "about_feat_works_everything_body",
-    bodyFallback: "Send any PS5 payload ELF — homebrew loaders, kernel patches, custom utilities — over :9021 with a file-picker flow.",
+    bodyFallback:
+      "Send any PS5 payload ELF — homebrew loaders, kernel patches, custom utilities — over :9021 with a file-picker flow.",
   },
   {
     icon: Cpu,
     titleKey: "about_feat_hardware_title",
     titleFallback: "Live hardware view",
     bodyKey: "about_feat_hardware_body",
-    bodyFallback: "Model, serial, uptime, CPU frequency, RAM, and fan-threshold control — all without touching Sony's UI.",
+    bodyFallback:
+      "Model, serial, uptime, CPU frequency, RAM, and fan-threshold control — all without touching Sony's UI.",
   },
 ];
 
@@ -91,7 +95,7 @@ export default function AboutScreen() {
           src="/logo-square.png"
           alt=""
           aria-hidden
-          className="mb-5 h-24 w-24 rounded-2xl shadow-[0_12px_40px_-10px_rgba(0,0,0,0.5)]"
+          className="mb-5 h-24 w-24 rounded-2xl shadow-[var(--shadow-logo)]"
         />
         <h1 className="text-4xl font-semibold tracking-tight">PS5Upload</h1>
         <div className="mt-2 flex items-center gap-2">
@@ -135,7 +139,9 @@ export default function AboutScreen() {
       {/* Features — 2×2 grid on sm+, 4-wide on lg+. Compact icon
           cards so the page doesn't turn into a wall of words. */}
       <section className="mb-10">
-        <SectionTitle icon={Sparkles}>{tr("about_what_it_does", undefined, "What it does")}</SectionTitle>
+        <SectionTitle icon={Sparkles}>
+          {tr("about_what_it_does", undefined, "What it does")}
+        </SectionTitle>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map((f) => (
             <FeatureTile
@@ -172,14 +178,15 @@ export default function AboutScreen() {
                 )}
               </p>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<Mail size={12} />}
               onClick={() => openExternal(URLS.email)}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
+              className="shrink-0"
             >
-              <Mail size={12} />
               {AUTHOR_EMAIL}
-            </button>
+            </Button>
           </div>
         </Card>
       </section>
@@ -223,7 +230,7 @@ function SectionTitle({
   children: React.ReactNode;
 }) {
   return (
-    <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+    <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
       {Icon && <Icon size={13} />}
       <span>{children}</span>
     </h2>
@@ -250,7 +257,8 @@ function FeatureTile({
   );
 }
 
-
+/** Hero links are the shared Button primitive (md so they read as
+ *  CTAs); `accent` maps to the primary variant for the coffee link. */
 function PrimaryLink({
   icon,
   label,
@@ -263,19 +271,14 @@ function PrimaryLink({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant={accent ? "primary" : "secondary"}
+      size="md"
+      leftIcon={icon}
       onClick={onClick}
-      className={
-        "inline-flex items-center gap-2 rounded-lg border px-3.5 py-1.5 text-sm transition-colors " +
-        (accent
-          ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:opacity-90"
-          : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)]")
-      }
     >
-      {icon}
       {label}
-    </button>
+    </Button>
   );
 }
 

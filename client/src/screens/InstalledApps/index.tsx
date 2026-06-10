@@ -24,11 +24,20 @@ import {
   type InstalledTitle,
   type SmpStatus,
 } from "../../api/ps5";
-import { PageHeader, EmptyState, ErrorCard, WarningCard, Button } from "../../components";
+import {
+  PageHeader,
+  EmptyState,
+  ErrorCard,
+  WarningCard,
+  Button,
+  ConnectionGate,
+  Skeleton,
+} from "../../components";
 // Direct import to avoid the barrel's circular-dep warning at build.
 import { useConfirm } from "../../components/ConfirmDialog";
 import { humanizePs5Error } from "../../lib/humanizeError";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 import { useTr } from "../../state/lang";
 import { transferAddr, mgmtAddr, hostOf } from "../../lib/addr";
 import { useStaleHostGuard } from "../../lib/staleHostGuard";
@@ -75,13 +84,13 @@ function PlatformBadge({ title }: { title: InstalledTitle }) {
   const p = platformOf(title);
   if (p === "ps4")
     return (
-      <span className="rounded bg-[#1d4ed822] px-1.5 py-0.5 text-xs font-semibold text-[#60a5fa]">
+      <span className="rounded bg-[var(--color-ps4-soft)] px-1.5 py-0.5 text-xs font-semibold text-[var(--color-ps4)]">
         {tr("installed_badge_ps4", undefined, "PS4")}
       </span>
     );
   if (p === "ps5")
     return (
-      <span className="rounded bg-[#7c3aed22] px-1.5 py-0.5 text-xs font-semibold text-[#a78bfa]">
+      <span className="rounded bg-[var(--color-ps5-soft)] px-1.5 py-0.5 text-xs font-semibold text-[var(--color-ps5)]">
         {tr("installed_badge_ps5", undefined, "PS5")}
       </span>
     );
@@ -95,7 +104,7 @@ function KindBadge({ title }: { title: InstalledTitle }) {
     "inline-flex items-center gap-1 rounded bg-[var(--color-surface-3)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-muted)]";
   if (k === "system")
     return (
-      <span className="inline-flex items-center gap-1 rounded bg-[var(--color-danger-soft,#7f1d1d33)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-danger,#ef4444)]">
+      <span className="inline-flex items-center gap-1 rounded bg-[var(--color-bad-soft)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-bad)]">
         <AlertTriangle size={11} />
         {tr("installed_badge_system", undefined, "System")}
       </span>
@@ -200,7 +209,10 @@ function AppCard({
           rows of cards line their buttons up regardless of name length. */}
       <div className="flex flex-1 flex-col gap-2 p-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold" title={title.titleName}>
+          <div
+            className="truncate text-sm font-semibold"
+            title={title.titleName}
+          >
             {title.titleName}
           </div>
           <div
@@ -359,7 +371,7 @@ export default function InstalledAppsScreen() {
         await appLaunch(transferAddr(probe.host), t.titleId);
         if (probe.isStale()) return;
         // Toast (not inline) so the card grid stays a uniform height.
-        pushNotification("info", t.titleName, {
+        pushNotification("info", withConsolePrefix(probe.host, t.titleName), {
           body: tr(
             "installed_launch_sent",
             undefined,
@@ -369,7 +381,7 @@ export default function InstalledAppsScreen() {
       } catch (e) {
         if (probe.isStale()) return;
         const raw = e instanceof Error ? e.message : String(e);
-        pushNotification("error", t.titleName, {
+        pushNotification("error", withConsolePrefix(probe.host, t.titleName), {
           body: humanizePs5Error(raw),
         });
       } finally {
@@ -461,7 +473,14 @@ export default function InstalledAppsScreen() {
           ),
         );
       } else {
-        setSmpMsg(res?.error || tr("installed_smp_send_failed", undefined, "Couldn't send ShadowMount+."));
+        setSmpMsg(
+          res?.error ||
+            tr(
+              "installed_smp_send_failed",
+              undefined,
+              "Couldn't send ShadowMount+.",
+            ),
+        );
       }
     } catch (e) {
       setSmpMsg(humanizePs5Error(e instanceof Error ? e.message : String(e)));
@@ -472,10 +491,19 @@ export default function InstalledAppsScreen() {
 
   // Group by kind.
   const all = useMemo(() => titles ?? [], [titles]);
-  const installed = useMemo(() => all.filter((t) => kindOf(t) === "installed"), [all]);
+  const installed = useMemo(
+    () => all.filter((t) => kindOf(t) === "installed"),
+    [all],
+  );
   const discs = useMemo(() => all.filter((t) => kindOf(t) === "disc"), [all]);
-  const folders = useMemo(() => all.filter((t) => kindOf(t) === "folder"), [all]);
-  const system = useMemo(() => all.filter((t) => kindOf(t) === "system"), [all]);
+  const folders = useMemo(
+    () => all.filter((t) => kindOf(t) === "folder"),
+    [all],
+  );
+  const system = useMemo(
+    () => all.filter((t) => kindOf(t) === "system"),
+    [all],
+  );
 
   const smpRunning = smp?.running === true;
   const discNeedsSmp = discs.length > 0 && !smpRunning;
@@ -494,7 +522,7 @@ export default function InstalledAppsScreen() {
   });
 
   return (
-    <div className="flex flex-col gap-5 p-5">
+    <div className="flex flex-col gap-5 p-6">
       <PageHeader
         icon={Gamepad2}
         title={tr("installed_apps_title", undefined, "Installed Apps")}
@@ -507,194 +535,209 @@ export default function InstalledAppsScreen() {
         right={
           <Button
             variant="secondary"
+            size="sm"
+            leftIcon={<RefreshCw size={12} />}
             onClick={() => void refresh()}
             disabled={loading || !host?.trim()}
+            loading={loading}
           >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             {tr("refresh", undefined, "Refresh")}
           </Button>
         }
       />
 
-      {/* kstuff status — games can't install or launch without kernel R/W. */}
-      {host?.trim() && ucredElevated === false ? (
-        <WarningCard
-          title={tr(
-            "installed_kstuff_off_title",
-            undefined,
-            "kstuff isn't active — games won't launch",
-          )}
-          detail={tr(
-            "installed_kstuff_off_body",
-            undefined,
-            "The payload doesn't have kernel read/write, which means a jailbreak/kstuff entry point isn't loaded. Launching (and installing) fpkg games will fail until you load the console through kstuff and reconnect.",
-          )}
-        />
-      ) : host?.trim() && ucredElevated === true ? (
-        <div className="flex items-center gap-2 rounded-lg border border-[var(--color-good)]/40 bg-[var(--color-good)]/5 px-3 py-2 text-xs text-[var(--color-good)]">
-          <ShieldCheck size={14} className="shrink-0" />
-          {tr(
-            "installed_kstuff_on",
-            undefined,
-            "kstuff active (kernel R/W) — installs and launches are good to go.",
-          )}
-        </div>
-      ) : null}
+      <ConnectionGate require="payload">
+        {/* kstuff status — games can't install or launch without kernel R/W.
+          The gate guarantees a connected console here, so we key off the
+          probe result alone. */}
+        {ucredElevated === false ? (
+          <WarningCard
+            title={tr(
+              "installed_kstuff_off_title",
+              undefined,
+              "kstuff isn't active — games won't launch",
+            )}
+            detail={tr(
+              "installed_kstuff_off_body",
+              undefined,
+              "The payload doesn't have kernel read/write, which means a jailbreak/kstuff entry point isn't loaded. Launching (and installing) fpkg games will fail until you load the console through kstuff and reconnect.",
+            )}
+          />
+        ) : ucredElevated === true ? (
+          <div className="flex items-center gap-2 rounded-lg border border-[var(--color-good)]/40 bg-[var(--color-good)]/5 px-3 py-2 text-xs text-[var(--color-good)]">
+            <ShieldCheck size={14} className="shrink-0" />
+            {tr(
+              "installed_kstuff_on",
+              undefined,
+              "kstuff active (kernel R/W) — installs and launches are good to go.",
+            )}
+          </div>
+        ) : null}
 
-      {/* ShadowMount+ — required for disc-image titles. */}
-      {host?.trim() && discNeedsSmp ? (
-        <WarningCard
-          title={tr(
-            "installed_smp_off_title",
-            { count: discs.length },
-            `${discs.length} disc image${discs.length === 1 ? "" : "s"} need ShadowMount+ running`,
-          )}
-          detail={tr(
-            "installed_smp_off_body",
-            undefined,
-            "Disc-image titles are mounted from /mnt/shadowmnt by ShadowMount+. It doesn't look like it's running, so those titles won't mount or launch. Send it to the console, wait a few seconds, then Refresh.",
-          )}
-          action={
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={smpSending}
-                onClick={() => void handleSendSmp()}
-              >
-                {smpSending ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Download size={14} />
+        {/* ShadowMount+ — required for disc-image titles. */}
+        {discNeedsSmp ? (
+          <WarningCard
+            title={tr(
+              "installed_smp_off_title",
+              { count: discs.length },
+              `${discs.length} disc image${discs.length === 1 ? "" : "s"} need ShadowMount+ running`,
+            )}
+            detail={tr(
+              "installed_smp_off_body",
+              undefined,
+              "Disc-image titles are mounted from /mnt/shadowmnt by ShadowMount+. It doesn't look like it's running, so those titles won't mount or launch. Send it to the console, wait a few seconds, then Refresh.",
+            )}
+            action={
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={smpSending}
+                  onClick={() => void handleSendSmp()}
+                >
+                  {smpSending ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Download size={14} />
+                  )}
+                  {tr("installed_smp_send", undefined, "Send ShadowMount+")}
+                </Button>
+                {smpMsg ? (
+                  <span className="text-xs text-[var(--color-muted)]">
+                    {smpMsg}
+                  </span>
+                ) : null}
+              </div>
+            }
+          />
+        ) : null}
+
+        {error ? (
+          <ErrorCard
+            title={tr(
+              "installed_error_title",
+              undefined,
+              "Couldn't read installed apps",
+            )}
+            detail={error}
+          />
+        ) : loading && titles === null ? (
+          // Skeleton tiles hold the grid's shape while /user/appmeta is
+          // enumerated — arrival doesn't reflow the page, and the shimmer
+          // says "working" without a modal spinner.
+          <div
+            aria-hidden
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+          >
+            {Array.from({ length: 10 }, (_, i) => (
+              <Skeleton key={i} className="aspect-square" />
+            ))}
+          </div>
+        ) : titles && titles.length === 0 ? (
+          <EmptyState
+            icon={Gamepad2}
+            size="hero"
+            title={tr(
+              "installed_empty_title",
+              undefined,
+              "No installed titles found",
+            )}
+            message={tr(
+              "installed_empty_body",
+              undefined,
+              "Nothing under /user/appmeta. Install a package or register a game first.",
+            )}
+          />
+        ) : (
+          <div className="flex flex-col gap-6">
+            {registeredUnavailable ? (
+              <WarningCard
+                title={tr(
+                  "installed_registered_unavailable",
+                  undefined,
+                  "Couldn't read the mounted/registered set from the payload — everything is shown under Installed. Reload the payload to fix grouping.",
                 )}
-                {tr("installed_smp_send", undefined, "Send ShadowMount+")}
-              </Button>
-              {smpMsg ? (
-                <span className="text-xs text-[var(--color-muted)]">{smpMsg}</span>
-              ) : null}
-            </div>
-          }
-        />
-      ) : null}
+              />
+            ) : null}
 
-      {!host?.trim() ? (
-        <EmptyState
-          icon={Gamepad2}
-          size="hero"
-          title={tr("installed_no_host_title", undefined, "Not connected")}
-          message={tr(
-            "installed_no_host_body",
-            undefined,
-            "Connect to a PS5 on the Connection tab to see installed apps.",
-          )}
-        />
-      ) : error ? (
-        <ErrorCard
-          title={tr("installed_error_title", undefined, "Couldn't read installed apps")}
-          detail={error}
-        />
-      ) : loading && titles === null ? (
-        <EmptyState
-          icon={RefreshCw}
-          title={tr("installed_loading", undefined, "Reading installed titles…")}
-          message={tr(
-            "installed_loading_hint",
-            undefined,
-            "Enumerating /user/appmeta on the PS5.",
-          )}
-        />
-      ) : titles && titles.length === 0 ? (
-        <EmptyState
-          icon={Gamepad2}
-          size="hero"
-          title={tr("installed_empty_title", undefined, "No installed titles found")}
-          message={tr(
-            "installed_empty_body",
-            undefined,
-            "Nothing under /user/appmeta. Install a package or register a game first.",
-          )}
-        />
-      ) : (
-        <div className="flex flex-col gap-6">
-          {registeredUnavailable ? (
-            <WarningCard
-              title={tr(
-                "installed_registered_unavailable",
-                undefined,
-                "Couldn't read the mounted/registered set from the payload — everything is shown under Installed. Reload the payload to fix grouping.",
-              )}
-            />
-          ) : null}
+            {installed.length > 0 ? (
+              <Section
+                icon={Package}
+                title={tr(
+                  "installed_section_installed",
+                  undefined,
+                  "Games & apps",
+                )}
+                hint={tr(
+                  "installed_section_installed_hint",
+                  undefined,
+                  "Installed via Sony's installer from a .pkg (or shipped with the console). No source path.",
+                )}
+                count={installed.length}
+              >
+                {installed.map((t) => (
+                  <AppCard key={t.titleId} {...cardProps(t)} />
+                ))}
+              </Section>
+            ) : null}
 
-          {installed.length > 0 ? (
-            <Section
-              icon={Package}
-              title={tr("installed_section_installed", undefined, "Games & apps")}
-              hint={tr(
-                "installed_section_installed_hint",
-                undefined,
-                "Installed via Sony's installer from a .pkg (or shipped with the console). No source path.",
-              )}
-              count={installed.length}
-            >
-              {installed.map((t) => (
-                <AppCard key={t.titleId} {...cardProps(t)} />
-              ))}
-            </Section>
-          ) : null}
+            {discs.length > 0 ? (
+              <Section
+                icon={Disc3}
+                title={tr("installed_section_disc", undefined, "Disc images")}
+                hint={tr(
+                  "installed_section_disc_hint",
+                  undefined,
+                  "Mounted from /mnt/shadowmnt by ShadowMount+. They only mount + launch while ShadowMount+ is running.",
+                )}
+                count={discs.length}
+              >
+                {discs.map((t) => (
+                  <AppCard key={t.titleId} {...cardProps(t)} />
+                ))}
+              </Section>
+            ) : null}
 
-          {discs.length > 0 ? (
-            <Section
-              icon={Disc3}
-              title={tr("installed_section_disc", undefined, "Disc images")}
-              hint={tr(
-                "installed_section_disc_hint",
-                undefined,
-                "Mounted from /mnt/shadowmnt by ShadowMount+. They only mount + launch while ShadowMount+ is running.",
-              )}
-              count={discs.length}
-            >
-              {discs.map((t) => (
-                <AppCard key={t.titleId} {...cardProps(t)} />
-              ))}
-            </Section>
-          ) : null}
+            {folders.length > 0 ? (
+              <Section
+                icon={FolderOpen}
+                title={tr(
+                  "installed_section_folder",
+                  undefined,
+                  "Folder homebrew",
+                )}
+                hint={tr(
+                  "installed_section_folder_hint",
+                  undefined,
+                  "Registered from a /data/homebrew/<id>-app folder on the console.",
+                )}
+                count={folders.length}
+              >
+                {folders.map((t) => (
+                  <AppCard key={t.titleId} {...cardProps(t)} />
+                ))}
+              </Section>
+            ) : null}
 
-          {folders.length > 0 ? (
-            <Section
-              icon={FolderOpen}
-              title={tr("installed_section_folder", undefined, "Folder homebrew")}
-              hint={tr(
-                "installed_section_folder_hint",
-                undefined,
-                "Registered from a /data/homebrew/<id>-app folder on the console.",
-              )}
-              count={folders.length}
-            >
-              {folders.map((t) => (
-                <AppCard key={t.titleId} {...cardProps(t)} />
-              ))}
-            </Section>
-          ) : null}
-
-          {system.length > 0 ? (
-            <Section
-              icon={AlertTriangle}
-              title={tr("installed_section_system", undefined, "System")}
-              hint={tr(
-                "installed_section_system_hint",
-                undefined,
-                "Sony system apps. Don't remove these unless you know exactly what they are.",
-              )}
-              count={system.length}
-            >
-              {system.map((t) => (
-                <AppCard key={t.titleId} {...cardProps(t)} />
-              ))}
-            </Section>
-          ) : null}
-        </div>
-      )}
+            {system.length > 0 ? (
+              <Section
+                icon={AlertTriangle}
+                title={tr("installed_section_system", undefined, "System")}
+                hint={tr(
+                  "installed_section_system_hint",
+                  undefined,
+                  "Sony system apps. Don't remove these unless you know exactly what they are.",
+                )}
+                count={system.length}
+              >
+                {system.map((t) => (
+                  <AppCard key={t.titleId} {...cardProps(t)} />
+                ))}
+              </Section>
+            ) : null}
+          </div>
+        )}
+      </ConnectionGate>
 
       {confirmDialogNode}
     </div>

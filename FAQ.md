@@ -628,6 +628,31 @@ the app for the rest.
 
 ## Transferring
 
+**Q: How do I stop my PS5 from going into rest mode?**
+**Settings → Upload → "Keep the PS5 awake"** has three modes:
+
+- **Off** — the PS5 rests on its own schedule.
+- **During transfers** (default) — while an upload is running, the app
+  periodically resets the console's auto-standby timer so a long
+  transfer can't be killed by rest mode.
+- **Always while connected** — for as long as the app is open, every
+  console whose helper is running is kept out of auto-rest entirely. A
+  small ⚡ "keeping awake" indicator appears in the status bar so you
+  always know it's active.
+
+In every mode, putting the PS5 to rest manually (controller / console
+button) still works immediately — the app only defers the *idle* timer,
+it never blocks an explicit rest request. Closing the app returns the
+console to its normal power schedule.
+
+**Q: Do I still have to "Register" a game after uploading it?**
+Not anymore. When you upload a game folder, **"Add to PS5 home screen
+when done"** is on by default — the game is registered automatically the
+moment the transfer finishes (also from the upload queue), ready to
+launch. If that step ever fails the upload itself is unaffected; open
+the **Library** and choose **"Add to home screen"** on the row (this is
+the action formerly called "Register").
+
 **Q: Where do uploads go by default?**
 Under `/data/homebrew/` unless you pick a different drive in the Upload
 screen. Common presets are offered: `homebrew` (recommended),

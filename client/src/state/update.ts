@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 
 import {
   updateCheck,
@@ -6,6 +7,7 @@ import {
   type UpdateCheck,
   type UpdateDownload,
 } from "../api/ps5";
+import { isMobile } from "../lib/platform";
 
 // Shared store for update check + download state.
 //
@@ -24,6 +26,10 @@ import {
 
 const CHECK_TTL_MS = 24 * 60 * 60 * 1000; // 1 day
 const CACHE_KEY = "ps5upload.update-check-v2";
+
+/** Browser fallback when the manifest has no asset for this platform
+ *  (mobile only — the user can grab the APK from the release page). */
+const RELEASES_URL = "https://github.com/phantomptr/ps5upload/releases/latest";
 
 interface CachedCheck {
   at_ms: number;
@@ -53,7 +59,9 @@ interface UpdateStore {
   checkNow: () => Promise<void>;
   /** Download the update archive to ~/Downloads and reveal the folder.
    *  Transitions through `downloading` → `downloaded` (success) or
-   *  `download-failed`. Only valid when current phase is `available`. */
+   *  `download-failed`. Only valid when current phase is `available`.
+   *  Mobile: opens the APK download URL (or the GitHub release page)
+   *  in the system browser instead — no in-app download. */
   download: () => Promise<void>;
   /** Reset to the cached `available` state so the Download button is
    *  clickable again after a failure or after the user dismissed the
@@ -166,13 +174,34 @@ export const useUpdateStore = create<UpdateStore>((set, get) => {
       // field per the discriminated union, so the narrowing here is
       // exhaustive — no conditional needed.
       const result = phase.result;
+      // Mobile (Android): the desktop "stream to ~/Downloads + reveal in
+      // file manager" flow can't work — Downloads is sandboxed and there
+      // is no file manager to reveal into. Hand the APK URL (or the
+      // GitHub release page when the manifest has no APK asset) to the
+      // system browser instead; Android's own download manager takes it
+      // from there. Phase stays `available` so the button remains usable.
+      if (isMobile()) {
+        const target = result.download_url || RELEASES_URL;
+        try {
+          await openExternal(target);
+          set({ phase: { kind: "available", result } });
+        } catch (e) {
+          set({
+            phase: {
+              kind: "download-failed",
+              result,
+              message: e instanceof Error ? e.message : String(e),
+            },
+          });
+        }
+        return;
+      }
       if (!result.download_url || !result.download_filename) {
         set({
           phase: {
             kind: "download-failed",
             result,
-            message:
-              "No download bundle for your platform in this release.",
+            message: "No download bundle for your platform in this release.",
           },
         });
         return;
@@ -197,10 +226,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => {
 
     dismissDownload() {
       const phase = get().phase;
-      if (
-        phase.kind === "downloaded" ||
-        phase.kind === "download-failed"
-      ) {
+      if (phase.kind === "downloaded" || phase.kind === "download-failed") {
         set({ phase: { kind: "available", result: phase.result } });
       }
     },

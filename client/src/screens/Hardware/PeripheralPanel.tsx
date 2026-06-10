@@ -15,6 +15,7 @@ import {
 import { Button } from "../../components";
 import { useTr } from "../../state/lang";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 
 /**
  * Peripheral control: BD drive eject / power.
@@ -52,10 +53,13 @@ export default function PeripheralPanel({ mgmtAddr }: { mgmtAddr: string }) {
       } else {
         pushNotification(
           "info",
-          tr(
-            "peripheral_action_done",
-            { action: ack.action ?? kind },
-            `BD ${ack.action ?? kind} requested`,
+          withConsolePrefix(
+            mgmtAddr,
+            tr(
+              "peripheral_action_done",
+              { action: ack.action ?? kind },
+              `BD ${ack.action ?? kind} requested`,
+            ),
           ),
         );
       }

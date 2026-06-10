@@ -29,6 +29,8 @@
 #include <unistd.h>
 
 #include <sys/mman.h>
+#include <sys/ptrace.h>
+#include <sys/syscall.h>
 #include <sys/sysctl.h>
 #include <sys/types.h>
 
@@ -143,13 +145,26 @@ void shellui_rpc_emergency_detach(void) {
      * use pthread_mutex (it's not async-signal-safe) — we just
      * peek the volatile flag and the cached pid, both
      * sig_atomic_t / int. If we believe a target is attached,
-     * attempt PT_DETACH directly without touching the mutex.
+     * attempt PT_DETACH directly without touching ANY mutex.
+     *
+     * MUST NOT route through pt_detach()/sys_ptrace(): that path
+     * takes kernel_rw_lock for the authid swap, and if the fatal
+     * signal fired while another thread held that lock (mid-install
+     * authid swap, sensor read, another ptrace), locking it here
+     * deadlocks the signal handler forever — the listener ports are
+     * never released and the console needs a reboot. A raw
+     * syscall(2) is async-signal-safe; PT_DETACH of our own tracee
+     * doesn't need the elevated-authid swap (the attach already
+     * established the tracer relationship), and if the kernel
+     * rejects it anyway we're no worse off — this is a dying
+     * process's last courtesy to ShellUI, not a guaranteed path.
+     *
      * Worst case: another thread also detaches, ours fails with
      * EBUSY, no harm done. Better case: we crashed solo while
      * holding the attach, our detach unfreezes ShellUI before
      * the kernel cleans us up. */
     if (g_attached && g_shellui_pid > 0) {
-        (void)pt_detach_tracked(g_shellui_pid, 0);
+        (void)syscall(SYS_ptrace, PT_DETACH, g_shellui_pid, (caddr_t)0, 0);
         g_attached = 0;
     }
 }

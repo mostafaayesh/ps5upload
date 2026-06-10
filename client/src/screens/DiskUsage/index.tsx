@@ -38,7 +38,12 @@ async function listDirAll(addr: string, path: string): Promise<RawEntry[]> {
   return all;
 }
 import { useConnectionStore } from "../../state/connection";
-import { PageHeader, Button, EmptyState } from "../../components";
+import {
+  PageHeader,
+  Button,
+  EmptyState,
+  ConnectionGate,
+} from "../../components";
 import { useTr } from "../../state/lang";
 import { formatBytes } from "../../lib/format";
 import { mgmtAddr } from "../../lib/addr";
@@ -177,17 +182,7 @@ export default function DiskUsageScreen() {
           </Button>
         }
       />
-      {payloadStatus !== "up" ? (
-        <EmptyState
-          fill
-          icon={PieChart}
-          message={tr(
-            "disk_usage_no_payload",
-            undefined,
-            "Connect to your PS5 first.",
-          )}
-        />
-      ) : (
+      <ConnectionGate require="payload">
         <div className="min-w-0 space-y-3">
           {/* Breadcrumb row: Up button + truncated path + total. The path
            * uses min-w-0 + truncate so a deep path can't push the right
@@ -209,7 +204,9 @@ export default function DiskUsageScreen() {
             >
               {path}
             </span>
-            <span className="shrink-0 tabular-nums">{formatBytes(totalBytes)}</span>
+            <span className="shrink-0 tabular-nums">
+              {formatBytes(totalBytes)}
+            </span>
           </div>
           <div className="flex flex-wrap gap-1">
             {PRESET_PATHS.map((p) => (
@@ -289,7 +286,7 @@ export default function DiskUsageScreen() {
             </div>
           )}
         </div>
-      )}
+      </ConnectionGate>
     </div>
   );
 }
@@ -312,9 +309,18 @@ function Treemap({
   const top = nodes.slice(0, TOP_N);
   const rest = nodes.slice(TOP_N);
   const restTotal = rest.reduce((acc, n) => acc + n.totalSize, 0);
-  const display = restTotal > 0
-    ? [...top, { name: `(+${rest.length} more)`, size: 0, isDir: false, totalSize: restTotal }]
-    : top;
+  const display =
+    restTotal > 0
+      ? [
+          ...top,
+          {
+            name: `(+${rest.length} more)`,
+            size: 0,
+            isDir: false,
+            totalSize: restTotal,
+          },
+        ]
+      : top;
 
   // Simple row-packing: walk through items in size-desc order, each
   // row gets entries until we hit a heuristic threshold.
@@ -373,7 +379,9 @@ function Treemap({
                   disabled={!n.isDir}
                   title={`${n.name} — ${formatBytes(n.totalSize)}`}
                   className={`flex min-w-0 flex-col justify-center overflow-hidden rounded px-1.5 py-0.5 text-xs text-white transition ${
-                    n.isDir ? "cursor-pointer hover:opacity-80" : "cursor-default"
+                    n.isDir
+                      ? "cursor-pointer hover:opacity-80"
+                      : "cursor-default"
                   }`}
                   /* flex-grow with size as weight: row width is shared
                    * proportional to size while gaps come out of the

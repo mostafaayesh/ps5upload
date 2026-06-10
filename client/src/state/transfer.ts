@@ -8,6 +8,7 @@ import {
   fsMount,
   fsUnmount,
   jobStatus,
+  appRegister,
   smpManualInstall,
   smpStatus,
   resumeTxidLookup,
@@ -38,7 +39,11 @@ import { effectiveUploadStreams } from "../lib/uploadStreams";
  *  store. Pure passthrough; no business logic added. */
 function recordHostMetrics(
   addr: string,
-  metrics: { throughputMibps: number; commitMsPerFile?: number; measuredAtMs: number },
+  metrics: {
+    throughputMibps: number;
+    commitMsPerFile?: number;
+    measuredAtMs: number;
+  },
 ): void {
   useRecentHostMetricsStore.getState().record(addr, metrics);
 }
@@ -109,6 +114,14 @@ export type TransferPhase =
        *  absent on non-mount completions or on pre-2.2.52 payloads
        *  that didn't emit the diagnostic fields. */
       mountWarnings?: string[];
+      /** When `registerAfterUpload` ran and succeeded: the game's
+       *  display name (falls back to title id) — the Upload done card
+       *  shows "On your PS5 home screen as <name>". */
+      registeredAs?: string;
+      /** When `registerAfterUpload` ran and FAILED: a human-readable
+       *  reason. Non-fatal by design — the upload itself succeeded, and
+       *  the user can still register manually from the Library. */
+      registerWarning?: string;
     }
   | { kind: "failed"; error: string };
 
@@ -132,6 +145,13 @@ interface StartArgs {
    *  the source file on disk and ruin re-mount on next boot). Set false
    *  only when the user explicitly wants RW for editable scratch images. */
   mountReadOnly?: boolean;
+  /** Game-folder-only: after the upload commits, register the game with
+   *  the PS5 OS so it appears on the home screen — collapsing the old
+   *  upload → Library → Register journey into one step. Best-effort:
+   *  a registration failure does NOT fail the upload (the files are
+   *  safely on the console); it surfaces as `registerWarning` on the
+   *  done phase instead. */
+  registerAfterUpload?: boolean;
 }
 
 /** Stable idle reference — returned by `phaseForHost`/selectors when a console
@@ -160,7 +180,10 @@ const POLL_INITIAL_DELAY_MS = 200;
 
 /** Read one console's phase from a store snapshot. Falls back to the shared
  *  IDLE_PHASE singleton so selectors stay referentially stable. */
-export function phaseForHost(s: TransferState, host: string | null | undefined): TransferPhase {
+export function phaseForHost(
+  s: TransferState,
+  host: string | null | undefined,
+): TransferPhase {
   // Empty/absent host → "" sentinel key. The Upload screen stores its
   // "set your PS5's IP first" pre-host error under "" so it can still render
   // when no console is selected; everything else keys by the real host.
@@ -211,6 +234,7 @@ export const useTransferStore = create<TransferState>((set) => {
       excludes = [],
       mountAfterUpload = false,
       mountReadOnly = true,
+      registerAfterUpload = false,
     }) {
       // Per-console key: everything below (gen, poll timer, phase write) is
       // scoped to this host so a concurrent one-shot on another console runs
@@ -245,7 +269,10 @@ export const useTransferStore = create<TransferState>((set) => {
       const host = hostFromAddr(addr);
       // Friendly name for the PS5-side toasts (start + complete).
       const uploadName =
-        srcPath.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "files";
+        srcPath
+          .replace(/[\\/]+$/, "")
+          .split(/[\\/]/)
+          .pop() || "files";
       let txId: string | null = null;
       if (isFolder || isArchive) {
         const persistedMode =
@@ -289,7 +316,11 @@ export const useTransferStore = create<TransferState>((set) => {
           // the engine's retry loop still fires. Log so a
           // permanent failure (corrupt store, perms) surfaces.
           console.warn("[transfer] resumeTxidRemember failed:", e);
-          log.warn("upload", "resumeTxidRemember failed (cross-session resume degraded)", e);
+          log.warn(
+            "upload",
+            "resumeTxidRemember failed (cross-session resume degraded)",
+            e,
+          );
         }
       }
 
@@ -303,12 +334,11 @@ export const useTransferStore = create<TransferState>((set) => {
       // setting was previously wired into the UI but never threaded
       // through here, so users believed throttling was active when
       // it wasn't.
-      const bandwidthCap =
-        useUploadSettingsStore.getState().bandwidthCapMbps;
+      const bandwidthCap = useUploadSettingsStore.getState().bandwidthCapMbps;
       // Resolve parallel streams once at start (min of user setting +
       // payload's advertised max). Only the reconcile/resume folder path
       // is multi-stream today; everything else stays single-stream.
-      const streams = effectiveUploadStreams();
+      const streams = effectiveUploadStreams(addr);
       let jobId: string;
       try {
         if (isFolder && strategy === "resume") {
@@ -431,68 +461,109 @@ export const useTransferStore = create<TransferState>((set) => {
             // Only mount it ourselves when SMP didn't take it.
             if (!handedToSmp)
               try {
-              // Mount point lives next to the source file: strip the
-              // image extension from finalDest. So an upload to
-              // `/data/homebrew/MyGame.ffpkg` mounts at
-              // `/data/homebrew/MyGame/`. Source + mount in the same
-              // conventional folder — both discoverable by third-party
-              // PS5 game scanners that walk /data/homebrew/.
-              // The payload auto-derives the same name when mountPoint
-              // is omitted but lands it under /mnt/ps5upload/<name>;
-              // setting mountPoint explicitly keeps it where the user
-              // dropped the file.
-              const mountPoint = finalDest.replace(/\.(exfat|ffpkg|ffpfs)$/i, "");
-              const mounted = await fsMount(addr, finalDest, {
-                mountPoint,
-                readOnly: mountReadOnly,
-              });
-              mountedAt = mounted.mount_point;
-              // Surface non-fatal mount diagnostics — same warnings
-              // the Library row's manual Mount button shows. Pre-2.2.52
-              // this single-shot upload path swallowed them silently
-              // when `mountAfterUpload` was on.
-              if (mounted.layout_valid === false) {
-                mountWarnings.push(
-                  "Image is missing sce_sys/param.json at root — Register/Launch will fail. Re-build the image with files at root (no extra folder).",
+                // Mount point lives next to the source file: strip the
+                // image extension from finalDest. So an upload to
+                // `/data/homebrew/MyGame.ffpkg` mounts at
+                // `/data/homebrew/MyGame/`. Source + mount in the same
+                // conventional folder — both discoverable by third-party
+                // PS5 game scanners that walk /data/homebrew/.
+                // The payload auto-derives the same name when mountPoint
+                // is omitted but lands it under /mnt/ps5upload/<name>;
+                // setting mountPoint explicitly keeps it where the user
+                // dropped the file.
+                const mountPoint = finalDest.replace(
+                  /\.(exfat|ffpkg|ffpfs)$/i,
+                  "",
                 );
-              }
-              if (mounted.kernel_ro && !mountReadOnly) {
-                mountWarnings.push(
-                  "Kernel mounted this read-only despite the RW pick — common for UFS .ffpkg images on some firmwares. Reads work; writes through the mount will fail.",
-                );
-              }
-              // Stop / reset / new-run can land between fsMount
-              // completing and the set({phase:"done"}) below. Two
-              // bad shapes if we just `return` here:
-              //   1) UI flips to idle/failed via stop handler but the
-              //      mount is real on the PS5 — divergent state.
-              //   2) (worse — 2.9.0 race-audit finding F2) a second
-              //      Upload kicked off with DIFFERENT mountReadOnly
-              //      races the first's in-flight fsMount; the older
-              //      mount may land second and silently win the same
-              //      mount point, leaving the user with RW when they
-              //      asked for RO (or vice versa) — irreversible save-
-              //      corruption window for the wrong-direction case.
-              // Mitigation: best-effort unmount the superseded mount
-              // before returning. Drop errors — the most common
-              // failure is "already gone" from the new run's own
-              // unmount-and-remount, which is exactly what we want.
-              if (!isLive()) {
-                if (mountedAt) {
-                  await fsUnmount(addr, mountedAt).catch(() => {});
+                const mounted = await fsMount(addr, finalDest, {
+                  mountPoint,
+                  readOnly: mountReadOnly,
+                });
+                mountedAt = mounted.mount_point;
+                // Surface non-fatal mount diagnostics — same warnings
+                // the Library row's manual Mount button shows. Pre-2.2.52
+                // this single-shot upload path swallowed them silently
+                // when `mountAfterUpload` was on.
+                if (mounted.layout_valid === false) {
+                  mountWarnings.push(
+                    "Image is missing sce_sys/param.json at root — Register/Launch will fail. Re-build the image with files at root (no extra folder).",
+                  );
                 }
+                if (mounted.kernel_ro && !mountReadOnly) {
+                  mountWarnings.push(
+                    "Kernel mounted this read-only despite the RW pick — common for UFS .ffpkg images on some firmwares. Reads work; writes through the mount will fail.",
+                  );
+                }
+                // Stop / reset / new-run can land between fsMount
+                // completing and the set({phase:"done"}) below. Two
+                // bad shapes if we just `return` here:
+                //   1) UI flips to idle/failed via stop handler but the
+                //      mount is real on the PS5 — divergent state.
+                //   2) (worse — 2.9.0 race-audit finding F2) a second
+                //      Upload kicked off with DIFFERENT mountReadOnly
+                //      races the first's in-flight fsMount; the older
+                //      mount may land second and silently win the same
+                //      mount point, leaving the user with RW when they
+                //      asked for RO (or vice versa) — irreversible save-
+                //      corruption window for the wrong-direction case.
+                // Mitigation: best-effort unmount the superseded mount
+                // before returning. Drop errors — the most common
+                // failure is "already gone" from the new run's own
+                // unmount-and-remount, which is exactly what we want.
+                if (!isLive()) {
+                  if (mountedAt) {
+                    await fsUnmount(addr, mountedAt).catch(() => {});
+                  }
+                  return;
+                }
+              } catch (e) {
+                if (!isLive()) return;
+                setPhase(key, {
+                  kind: "failed",
+                  error: `upload completed, but mount failed: ${
+                    e instanceof Error ? e.message : String(e)
+                  }`,
+                });
                 return;
               }
+          }
+          // Register-after-upload: put the game on the PS5 home screen
+          // right here instead of making the user discover the Library's
+          // overflow-menu Register. Best-effort by design — the upload
+          // already committed, so a registration failure must NOT turn the
+          // done card into a failure; it lands as `registerWarning` and
+          // the user can register manually from the Library. Mirrors the
+          // Library flow's DRM-type-patch retry for the firmwares where
+          // the plain register is rejected.
+          let registeredAs: string | undefined;
+          let registerWarning: string | undefined;
+          if (isLive() && sourceKind === "game-folder" && registerAfterUpload) {
+            try {
+              let res;
+              try {
+                res = await appRegister(addr, finalDest);
+              } catch {
+                res = await appRegister(addr, finalDest, {
+                  patchDrmType: true,
+                });
+              }
+              registeredAs = res.title_name?.trim()
+                ? res.title_name
+                : res.title_id;
+              log.info(
+                "upload",
+                `registered "${uploadName}" as ${res.title_id} after upload`,
+              );
             } catch (e) {
-              if (!isLive()) return;
-              setPhase(key, {
-                kind: "failed",
-                error: `upload completed, but mount failed: ${
-                  e instanceof Error ? e.message : String(e)
-                }`,
-              });
-              return;
+              registerWarning = `Couldn't add it to the home screen automatically: ${
+                e instanceof Error ? e.message : String(e)
+              }. You can still do it from the Library.`;
             }
+            // A Stop that landed during the register round-trip: the phase
+            // writes below are gated on isLive(), so state stays honest —
+            // the registration itself is already durable on the PS5 either
+            // way (same contract as a manual Library register).
+            if (!isLive()) return;
           }
           // Tx is committed on the payload — the tx_id we persisted at
           // start can be evicted, since there's nothing to resume. A
@@ -548,6 +619,8 @@ export const useTransferStore = create<TransferState>((set) => {
             skippedBytes: snap.skipped_bytes ?? 0,
             mountedAt,
             mountWarnings: mountWarnings.length > 0 ? mountWarnings : undefined,
+            registeredAs,
+            registerWarning,
           });
           log.info(
             "upload",
@@ -564,7 +637,10 @@ export const useTransferStore = create<TransferState>((set) => {
             "upload",
             `engine reported failure for "${uploadName}" (job ${jobId}): ${snap.error ?? "upload failed"}`,
           );
-          setPhase(key, { kind: "failed", error: snap.error ?? "upload failed" });
+          setPhase(key, {
+            kind: "failed",
+            error: snap.error ?? "upload failed",
+          });
         } else {
           const now = Date.now();
           const bytesSent = snap.bytes_sent ?? 0;

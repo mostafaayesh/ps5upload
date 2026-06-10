@@ -276,12 +276,12 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[15vh]"
+      className="anim-scrim fixed inset-0 z-50 flex items-start justify-center bg-[var(--overlay-scrim)] pt-[15vh]"
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
-      <div className="w-[560px] max-w-[90vw] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-xl">
+      <div className="anim-pop elev-3 w-[560px] max-w-[90vw] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]">
         <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
           <Search size={14} className="text-[var(--color-muted)]" />
           <input

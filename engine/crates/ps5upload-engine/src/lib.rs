@@ -2455,21 +2455,29 @@ async fn transfer_file_handler(
     // missing source produced "Running, 0 bytes total" for several
     // seconds before the actual transfer attempt failed. Returning
     // 400 here surfaces the user error immediately at the API level.
-    let total_bytes = match std::fs::metadata(&req.src) {
-        Ok(m) if m.is_file() => m.len(),
-        Ok(_) => {
+    // Stat via spawn_blocking — sources can live on network mounts
+    // where a blocking stat would stall the reactor for every console.
+    let src_for_stat = req.src.clone();
+    let total_bytes = match tokio::task::spawn_blocking(move || std::fs::metadata(&src_for_stat))
+        .await
+    {
+        Ok(Ok(m)) if m.is_file() => m.len(),
+        Ok(Ok(_)) => {
             return json_err(
                 StatusCode::BAD_REQUEST,
                 format!("source is not a regular file: {}", req.src),
             )
             .into_response();
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             return json_err(
                 StatusCode::BAD_REQUEST,
                 format!("cannot read source {}: {e}", req.src),
             )
             .into_response();
+        }
+        Err(e) => {
+            return json_err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into_response()
         }
     };
     let src_basename = std::path::Path::new(&req.src)
@@ -3525,10 +3533,13 @@ async fn transfer_download_handler(
     }
 
     let dest_dir = std::path::PathBuf::from(&req.dest_dir);
-    let basename = trimmed_src
-        .rsplit('/')
-        .next()
-        .expect("src_path emptiness already validated");
+    // rsplit on a non-empty string always yields at least one piece,
+    // but a panic in a handler kills every console's transfers — fail
+    // soft with a 400 rather than expecting the invariant holds.
+    let Some(basename) = trimmed_src.rsplit('/').next() else {
+        return json_err(StatusCode::BAD_REQUEST, "src_path cannot be empty or '/'")
+            .into_response();
+    };
     if basename == "." || basename == ".." || basename.contains('/') || basename.contains('\\') {
         return json_err(
             StatusCode::BAD_REQUEST,
@@ -3538,21 +3549,27 @@ async fn transfer_download_handler(
         )
         .into_response();
     }
-    match std::fs::metadata(&dest_dir) {
-        Ok(md) if md.is_dir() => {}
-        Ok(_) => {
+    // Stat via spawn_blocking — dest_dir can be a network mount where
+    // a blocking stat would stall the reactor for every console.
+    let dest_dir_for_stat = dest_dir.clone();
+    match tokio::task::spawn_blocking(move || std::fs::metadata(&dest_dir_for_stat)).await {
+        Ok(Ok(md)) if md.is_dir() => {}
+        Ok(Ok(_)) => {
             return json_err(
                 StatusCode::BAD_REQUEST,
                 format!("dest_dir is not a directory: {}", dest_dir.display()),
             )
             .into_response();
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             return json_err(
                 StatusCode::BAD_REQUEST,
                 format!("cannot access dest_dir {}: {e}", dest_dir.display()),
             )
             .into_response();
+        }
+        Err(e) => {
+            return json_err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into_response()
         }
     }
     // `dest_root` is the LOGICAL landing path (dest_dir/<basename>) reported
@@ -4430,7 +4447,11 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
 
     let ps5_addr = cfg.ps5_addr.clone();
 
-    let (events_tx, _) = broadcast::channel(512);
+    // 2048, not 512: one process fans events for up to 12 consoles, and
+    // a lagging SSE consumer that falls more than `capacity` behind
+    // silently drops events — including terminal job events the UI
+    // never recovers from. Headroom is cheap; lost terminals aren't.
+    let (events_tx, _) = broadcast::channel(2048);
 
     let state = AppState {
         jobs: Arc::new(Mutex::new(HashMap::new())),

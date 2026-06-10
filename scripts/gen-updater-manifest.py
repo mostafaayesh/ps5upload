@@ -47,6 +47,9 @@ PLATFORM_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("windows-aarch64", re.compile(r".*-win-arm64\.zip$")),
     ("linux-x86_64",    re.compile(r".*-linux-x64\.zip$")),
     ("linux-aarch64",   re.compile(r".*-linux-arm64\.zip$")),
+    # Single universal APK (built --target aarch64 --target armv7), so one
+    # "android" key — matches current_platform_key() in commands/updates.rs.
+    ("android",         re.compile(r".*-android\.apk$")),
 ]
 
 

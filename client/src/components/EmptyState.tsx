@@ -58,7 +58,17 @@ export function EmptyState({
   }
   return (
     <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] p-6 text-center text-sm text-[var(--color-muted)]">
+      {Icon && (
+        <Icon
+          size={20}
+          className="mx-auto mb-2 text-[var(--color-muted)] opacity-60"
+          aria-hidden
+        />
+      )}
       {message}
+      {action && (
+        <div className="mt-3 flex justify-center">{action}</div>
+      )}
     </div>
   );
 }

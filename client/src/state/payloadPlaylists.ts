@@ -242,7 +242,9 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
         const stepHost = step.ip && step.ip.trim() ? step.ip.trim() : host;
         const stepPort =
           typeof step.port === "number" && step.port > 0 ? step.port : port;
-        set({ runStatus: { kind: "running", playlistId: id, stepIndex: i } });
+        set({
+          runStatus: { kind: "running", playlistId: id, stepIndex: i, host },
+        });
 
         try {
           await sendPayload(stepHost, step.path, stepPort);
@@ -257,6 +259,7 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
                 runStatus: {
                   kind: "failed",
                   playlistId: id,
+                  host,
                   stepIndex: i,
                   error: errMsg,
                 },
@@ -272,6 +275,7 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
             runStatus: {
               kind: "sleeping",
               playlistId: id,
+              host,
               stepIndex: i,
               sleepStartedAtMs: Date.now(),
               sleepDurationMs: step.sleepMs,
@@ -290,6 +294,7 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
           runStatus: {
             kind: "done",
             playlistId: id,
+            host,
             successCount,
             failureCount,
             failures,

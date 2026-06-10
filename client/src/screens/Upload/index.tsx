@@ -42,8 +42,9 @@ import {
   type UploadStrategy,
 } from "../../state/transfer";
 import { useConnectionStore, PS5_PAYLOAD_PORT } from "../../state/connection";
+import { hostOf } from "../../lib/addr";
 import { pushNotification } from "../../state/notifications";
-import { useRosterStore } from "../../state/roster";
+import { useRosterStore, profileNameForHost } from "../../state/roster";
 import { useNavigate } from "react-router-dom";
 import { PageHeader, WarningCard, Button } from "../../components";
 import FfpkgInspectorPanel from "./FfpkgInspectorPanel";
@@ -66,7 +67,10 @@ import { useTr } from "../../state/lang";
 // formatBytes moved to lib/format.ts.
 
 /** Map discriminated SourceKind to its one-line "Detected: ..." string. */
-function detectedLabel(source: PickedSource): { icon: LucideIcon; label: string } {
+function detectedLabel(source: PickedSource): {
+  icon: LucideIcon;
+  label: string;
+} {
   switch (source.kind) {
     case "file":
       return { icon: FileIcon, label: "Plain file" };
@@ -98,6 +102,7 @@ export default function UploadScreen() {
     zipInspectEntries,
     mountAfterUpload,
     mountReadOnly,
+    registerAfterUpload,
     destinationVolume,
     destinationSubpath,
     excludeMode,
@@ -107,6 +112,7 @@ export default function UploadScreen() {
     reset,
     setMountAfterUpload,
     setMountReadOnly,
+    setRegisterAfterUpload,
     setDestination,
     setExcludeMode,
     toggleExclude,
@@ -141,6 +147,7 @@ export default function UploadScreen() {
   //     circuit on `cancelled` at entry.
   useEffect(() => {
     if (!isTauriEnv()) return; // browser dev/test contexts skip Tauri-only APIs
+    if (isAndroid()) return; // no drag-and-drop on Android; pickers below cover it
     let unlisten: (() => void) | null = null;
     let cancelled = false;
     const p = getCurrentWebview().onDragDropEvent(async (e) => {
@@ -221,7 +228,10 @@ export default function UploadScreen() {
     );
     const addr = `${host}:${PS5_PAYLOAD_PORT}`;
     const displayName =
-      source.path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? source.path;
+      source.path
+        .replace(/[\\/]+$/, "")
+        .split(/[\\/]/)
+        .pop() ?? source.path;
     queueAdd({
       sourceKind: source.kind,
       sourcePath: source.path,
@@ -233,6 +243,8 @@ export default function UploadScreen() {
       excludes: activeExcludes,
       mountAfterUpload: source.kind === "image" && mountAfterUpload,
       mountReadOnly,
+      registerAfterUpload:
+        source.kind === "game-folder" && registerAfterUpload,
     });
   };
 
@@ -264,9 +276,13 @@ export default function UploadScreen() {
   // pick, or source cleared). The error is tied to the OLD source's
   // destination probe and would otherwise stick around as a misleading
   // banner over an entirely different upload.
+  // Destination changes clear it too: the error names a specific probed
+  // path ("…/old-dest not found"), so after the user picks a different
+  // volume/subpath to FIX the problem, the stale banner would still
+  // accuse the new destination.
   useEffect(() => {
     setPreflightError(null);
-  }, [source?.path, source?.kind]);
+  }, [source?.path, source?.kind, destinationVolume, destinationSubpath]);
   useEffect(() => {
     if (!host?.trim()) {
       setAvailableVolumes([]);
@@ -306,6 +322,8 @@ export default function UploadScreen() {
       excludes: activeExcludes,
       mountAfterUpload: source.kind === "image" && mountAfterUpload,
       mountReadOnly,
+      registerAfterUpload:
+        source.kind === "game-folder" && registerAfterUpload,
     });
   };
 
@@ -355,7 +373,9 @@ export default function UploadScreen() {
         strategy: "overwrite",
         excludes: activeExcludes,
         mountAfterUpload: source.kind === "image" && mountAfterUpload,
-      mountReadOnly,
+        mountReadOnly,
+        registerAfterUpload:
+          source.kind === "game-folder" && registerAfterUpload,
       });
       return;
     }
@@ -424,6 +444,7 @@ export default function UploadScreen() {
           zipInspectEntries={zipInspectEntries}
           mountAfterUpload={mountAfterUpload}
           mountReadOnly={mountReadOnly}
+          registerAfterUpload={registerAfterUpload}
           archiveExtractMode={archiveExtractMode}
           onSetArchiveExtractMode={setArchiveExtractMode}
           destinationVolume={destinationVolume}
@@ -446,6 +467,7 @@ export default function UploadScreen() {
           onUseWrappedHint={(p) => pickFolder(p)}
           onSetMountAfterUpload={setMountAfterUpload}
           onSetMountReadOnly={setMountReadOnly}
+          onSetRegisterAfterUpload={setRegisterAfterUpload}
           onSetDestination={setDestination}
           onSetExcludeMode={setExcludeMode}
           onToggleExclude={toggleExclude}
@@ -482,7 +504,7 @@ function Step1Picker({
         dropActive
           ? "border-[var(--color-accent)] bg-[var(--color-surface-3)]"
           : "border-[var(--color-border)] bg-[var(--color-surface-2)]",
-        !active && "opacity-70"
+        !active && "opacity-70",
       )}
     >
       <div className="mb-3 flex items-center justify-center gap-3 text-[var(--color-muted)]">
@@ -491,23 +513,21 @@ function Step1Picker({
         <FolderOpen size={22} />
       </div>
       <div className="text-sm">
-        {tr("upload_drop_here", undefined, "Drop a file or folder here")}
+        {isAndroid()
+          ? tr(
+              "upload_pick_here_mobile",
+              undefined,
+              "Pick a file or folder to upload",
+            )
+          : tr("upload_drop_here", undefined, "Drop a file or folder here")}
       </div>
       <div className="mt-4 flex items-center justify-center gap-2">
-        <button
-          type="button"
-          onClick={onFile}
-          className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs hover:bg-[var(--color-surface-3)]"
-        >
+        <Button variant="secondary" size="sm" onClick={onFile}>
           {tr("upload_choose_file", undefined, "Choose file")}
-        </button>
-        <button
-          type="button"
-          onClick={onFolder}
-          className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs hover:bg-[var(--color-surface-3)]"
-        >
+        </Button>
+        <Button variant="secondary" size="sm" onClick={onFolder}>
           {tr("upload_choose_folder", undefined, "Choose folder")}
-        </button>
+        </Button>
       </div>
       <p className="mx-auto mt-3 max-w-md text-xs text-[var(--color-muted)]">
         {tr(
@@ -529,6 +549,7 @@ function Step2Options(props: {
   zipInspectEntries: number | null;
   mountAfterUpload: boolean;
   mountReadOnly: boolean;
+  registerAfterUpload: boolean;
   archiveExtractMode: "subfolder" | "flat";
   onSetArchiveExtractMode: (m: "subfolder" | "flat") => void;
   destinationVolume: string | null;
@@ -543,6 +564,7 @@ function Step2Options(props: {
   onUseWrappedHint: (path: string) => void;
   onSetMountAfterUpload: (on: boolean) => void;
   onSetMountReadOnly: (on: boolean) => void;
+  onSetRegisterAfterUpload: (on: boolean) => void;
   onSetDestination: (v: string | null, s?: string) => void;
   onSetExcludeMode: (m: ExcludeMode) => void;
   onToggleExclude: (p: string) => void;
@@ -558,6 +580,7 @@ function Step2Options(props: {
     zipInspectEntries,
     mountAfterUpload,
     mountReadOnly,
+    registerAfterUpload,
     archiveExtractMode,
     onSetArchiveExtractMode,
     destinationVolume,
@@ -572,6 +595,7 @@ function Step2Options(props: {
     onUseWrappedHint,
     onSetMountAfterUpload,
     onSetMountReadOnly,
+    onSetRegisterAfterUpload,
     onSetDestination,
     onSetExcludeMode,
     onToggleExclude,
@@ -603,14 +627,30 @@ function Step2Options(props: {
   // doesn't realise will take twice as long. Disable both Upload
   // buttons while the queue runs; QueuePanel does the symmetric
   // disable of its Start button while a one-shot is in flight.
-  const queueRunning = useUploadQueueStore((s) => s.running);
+  //
+  // (2.31.0) Scoped per console: the single-client constraint is per
+  // PS5, and the queue drains each console independently. Console B's
+  // queue running must not grey out console A's one-shot Upload — they
+  // are different consoles with different transfer ports.
+  const stepHost = useConnectionStore((s) => s.host);
+  const queueRunning = useUploadQueueStore(
+    (s) => !!s.runningHosts[hostOf(stepHost)],
+  );
+  // With two consoles mid-anything, "Upload now" is ambiguous about WHERE
+  // it sends. Name the target console on the primary button whenever more
+  // than one console is in the roster — the form is shared across tabs,
+  // so this is the one place the user confirms the destination console.
+  const rosterProfiles = useRosterStore((s) => s.profiles);
+  const multiConsole = rosterProfiles.length > 1;
+  const targetName = multiConsole
+    ? profileNameForHost(stepHost, rosterProfiles)
+    : null;
   // An install streams the DPI loader to the single-payload loader, which
   // replaces the payload that owns the transfer port — so starting an upload
   // mid-install would just fail (or race the payload swap). Disable while an
   // install is running, symmetric to InstallPackage disabling install during
   // an upload. Per-console store: disable upload only when THIS PS5 is
   // mid-install, not when some other console is.
-  const stepHost = useConnectionStore((s) => s.host);
   const installing = usePkgLibrary(stepHost, (s) => s.installing);
   const uploadDisabled =
     detecting ||
@@ -674,7 +714,10 @@ function Step2Options(props: {
                             "{count}",
                             zipInspectEntries.toLocaleString(),
                           )
-                        : tr("upload_scanning_archive_title", "Scanning archive…")
+                        : tr(
+                            "upload_scanning_archive_title",
+                            "Scanning archive…",
+                          )
                       : tr("upload_scanning_title", "Scanning game folder…")}
                   </div>
                   <div className="text-[var(--color-muted)]">
@@ -772,6 +815,33 @@ function Step2Options(props: {
         />
       )}
 
+      {source.kind === "game-folder" && (
+        <section className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5">
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={registerAfterUpload}
+              onChange={(e) => onSetRegisterAfterUpload(e.target.checked)}
+              className="mt-0.5 accent-[var(--color-accent)]"
+            />
+            <div>
+              <div className="font-medium">
+                {tr(
+                  "upload_register_after_title",
+                  "Add to PS5 home screen when done",
+                )}
+              </div>
+              <div className="mt-0.5 text-xs text-[var(--color-muted)]">
+                {tr(
+                  "upload_register_after_desc",
+                  "Registers the game with the PS5 right after the upload finishes, so it's ready to launch — no Library visit needed. If this step fails the upload itself is unaffected and you can still add it from the Library.",
+                )}
+              </div>
+            </div>
+          </label>
+        </section>
+      )}
+
       <DestinationCard
         volume={destinationVolume}
         subpath={destinationSubpath}
@@ -833,7 +903,13 @@ function Step2Options(props: {
                 )
           }
         >
-          {tr("upload_add_to_queue", "Add to queue")}
+          {multiConsole && targetName
+            ? tr(
+                "upload_add_to_queue_for",
+                { name: targetName },
+                `Queue for ${targetName}`,
+              )
+            : tr("upload_add_to_queue", "Add to queue")}
         </button>
         <button
           type="button"
@@ -847,12 +923,12 @@ function Step2Options(props: {
                   "Scanning game folder — wait for the scan to finish, then this button enables.",
                 )
               : queueRunning
-              ? tr(
-                  "upload_disabled_queue_running",
-                  undefined,
-                  "Upload queue is running — pause the queue to start a one-shot upload, or use 'Add to queue' to append.",
-                )
-              : undefined
+                ? tr(
+                    "upload_disabled_queue_running",
+                    undefined,
+                    "Upload queue is running — pause the queue to start a one-shot upload, or use 'Add to queue' to append.",
+                  )
+                : undefined
           }
           className="rounded-md bg-[var(--color-accent)] px-6 py-2 text-sm font-medium text-[var(--color-accent-contrast)] disabled:opacity-50"
         >
@@ -862,7 +938,13 @@ function Step2Options(props: {
               ? transferPhase.kind === "starting"
                 ? "Starting…"
                 : "Uploading…"
-              : "Upload now"}
+              : multiConsole && targetName
+                ? tr(
+                    "upload_now_to",
+                    { name: targetName },
+                    `Upload to ${targetName}`,
+                  )
+                : "Upload now"}
         </button>
       </div>
       {preflightError && (
@@ -926,8 +1008,12 @@ function MirrorToRosterButton({
   async function fanOut() {
     setBusy(true);
     try {
-      const { startTransferDir, startTransferFile, startTransferZip, waitForJob } =
-        await import("../../api/ps5");
+      const {
+        startTransferDir,
+        startTransferFile,
+        startTransferZip,
+        waitForJob,
+      } = await import("../../api/ps5");
       // Same path rule as the one-shot upload, so a mirror lands exactly
       // where the primary PS5 got it — including the archive subfolder /
       // flat-extract choice.
@@ -1113,6 +1199,7 @@ function ExistingDestinationDialog({
 }
 
 function TransferStatus({ phase }: { phase: TransferPhase }) {
+  const navigate = useNavigate();
   const tr = useTr();
   // The parent binds `phase` to the ACTIVE console's slot, so the Stop button
   // resets that same console's one-shot. Read the active host here rather than
@@ -1132,7 +1219,10 @@ function TransferStatus({ phase }: { phase: TransferPhase }) {
   if (phase.kind === "starting") {
     return (
       <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
-        <Loader2 size={14} className="animate-spin text-[var(--color-accent)]" />
+        <Loader2
+          size={14}
+          className="animate-spin text-[var(--color-accent)]"
+        />
         {tr("upload_status_preparing", "Preparing upload…")}
       </div>
     );
@@ -1220,10 +1310,7 @@ function TransferStatus({ phase }: { phase: TransferPhase }) {
             />
             <span className="font-medium">
               {isFinalizing
-                ? tr(
-                    "upload_status_finalizing",
-                    "Finalizing on PS5",
-                  )
+                ? tr("upload_status_finalizing", "Finalizing on PS5")
                 : tr("upload_status_uploading", "Uploading")}
             </span>
             <span className="text-xs text-[var(--color-muted)]">
@@ -1234,8 +1321,7 @@ function TransferStatus({ phase }: { phase: TransferPhase }) {
                 <>
                   {" · "}
                   {filesCompleted.toLocaleString()}{" "}
-                  {tr("upload_status_of", "of")}{" "}
-                  {files.length.toLocaleString()}{" "}
+                  {tr("upload_status_of", "of")} {files.length.toLocaleString()}{" "}
                   {tr("upload_status_files", "files")}
                 </>
               )}
@@ -1324,15 +1410,11 @@ function TransferStatus({ phase }: { phase: TransferPhase }) {
 
   if (phase.kind === "done") {
     const avg =
-      phase.elapsedMs > 0
-        ? (phase.bytesSent * 1000) / phase.elapsedMs
-        : 0;
+      phase.elapsedMs > 0 ? (phase.bytesSent * 1000) / phase.elapsedMs : 0;
     // Reconcile "nothing to do" — everything was already on the PS5.
     // A "0 B sent across 0 files" line would read like a failure.
     const allSkipped =
-      phase.bytesSent === 0 &&
-      phase.filesSent === 0 &&
-      phase.skippedFiles > 0;
+      phase.bytesSent === 0 && phase.filesSent === 0 && phase.skippedFiles > 0;
     return (
       <div className="mb-3 rounded-md border border-[var(--color-good)] bg-[var(--color-surface-2)] p-4 text-sm">
         <div className="mb-2 font-medium text-[var(--color-good)]">
@@ -1377,9 +1459,7 @@ function TransferStatus({ phase }: { phase: TransferPhase }) {
             )}
           </dd>
           <dt>{tr("upload_done_destination", "Destination")}</dt>
-          <dd className="font-mono text-[var(--color-text)]">
-            {phase.dest}
-          </dd>
+          <dd className="font-mono text-[var(--color-text)]">{phase.dest}</dd>
           {phase.mountedAt && (
             <>
               <dt>{tr("upload_done_mounted_at", "Mounted at")}</dt>
@@ -1396,6 +1476,38 @@ function TransferStatus({ phase }: { phase: TransferPhase }) {
             ))}
           </ul>
         )}
+        {phase.registerWarning && (
+          <div className="mt-2 rounded-md border border-[var(--color-warn)] bg-[var(--color-surface)] p-2 text-xs text-[var(--color-warn)]">
+            ⚠ {phase.registerWarning}
+          </div>
+        )}
+        {/* The #1 post-upload question is "why isn't it on my home
+            screen?" — either it already IS (register-after-upload ran),
+            or we point at the Library to finish the job. */}
+        <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)] pt-3">
+          <span className="text-xs text-[var(--color-muted)]">
+            {phase.registeredAs
+              ? tr(
+                  "upload_done_registered",
+                  { name: phase.registeredAs },
+                  `On your PS5 home screen as "${phase.registeredAs}" — ready to launch.`,
+                )
+              : tr(
+                  "upload_done_next_hint",
+                  "Next: open the Library to register or mount it so it shows up on the PS5 home screen.",
+                )}
+          </span>
+          {!phase.registeredAs && (
+            <Button
+              variant="primary"
+              size="sm"
+              className="ml-auto shrink-0"
+              onClick={() => navigate("/library")}
+            >
+              {tr("upload_done_open_library", "Open Library")}
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
@@ -1567,11 +1679,13 @@ function FileListPanel({
           {windowed && (
             <>
               {" · "}
-              <span title={tr(
-                "upload_file_list_windowed_hint",
-                undefined,
-                "Showing a window around the current file; rendering every entry of a 50k+ folder would freeze the app.",
-              )}>
+              <span
+                title={tr(
+                  "upload_file_list_windowed_hint",
+                  undefined,
+                  "Showing a window around the current file; rendering every entry of a 50k+ folder would freeze the app.",
+                )}
+              >
                 {tr(
                   "upload_file_list_windowed",
                   { shown: rows.length },
@@ -1627,9 +1741,7 @@ function FileListPanel({
                 {status === "done" ? "✓" : status === "current" ? "▶" : "○"}
               </span>
               <span className="flex-1 truncate">{rel_path}</span>
-              <span className="shrink-0 tabular-nums">
-                {formatBytes(size)}
-              </span>
+              <span className="shrink-0 tabular-nums">{formatBytes(size)}</span>
             </li>
           );
         })}
@@ -1651,7 +1763,6 @@ function formatDuration(sec: number): string {
   return `${h}h ${m % 60}m`;
 }
 
-
 function WrappedHintChip({
   hint,
   onUse,
@@ -1670,10 +1781,7 @@ function WrappedHintChip({
           "This folder isn't a game on its own, but it contains a game folder inside:",
         )}{" "}
         <span className="font-medium">{name}</span>
-        {tr(
-          "upload_wrapped_hint_suffix",
-          ". Did you mean to upload that one?",
-        )}
+        {tr("upload_wrapped_hint_suffix", ". Did you mean to upload that one?")}
       </div>
       <button
         type="button"
@@ -1703,7 +1811,7 @@ function GameMetaCard({
   const tr = useTr();
   const coverSrc = useMemo(
     () => (meta.icon0_path ? convertFileSrc(meta.icon0_path) : null),
-    [meta.icon0_path]
+    [meta.icon0_path],
   );
   const [coverFailed, setCoverFailed] = useState(false);
 
@@ -1715,7 +1823,9 @@ function GameMetaCard({
             <img
               src={coverSrc}
               alt={tr("upload_game_cover_alt", "cover")}
-              className="h-full w-full object-cover"
+              // `contain`, not `cover`: PS4 cover art isn't always square
+              // (matches InstalledApps' treatment of the same artwork).
+              className="h-full w-full object-contain"
               onError={() => setCoverFailed(true)}
             />
           ) : (
@@ -1738,7 +1848,8 @@ function GameMetaCard({
             {tr("upload_game_meta_files", "files")}
           </div>
           <div className="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]">
-            <Info size={12} /> {tr("upload_game_meta_parsed_from", "parsed from")}{" "}
+            <Info size={12} />{" "}
+            {tr("upload_game_meta_parsed_from", "parsed from")}{" "}
             <code>{meta.meta_source}</code>
           </div>
         </div>
@@ -1796,9 +1907,7 @@ function PreflightEtaBanner({
   const host = useConnectionStore((s) => s.host);
   const mode = useMemo(() => pickBannerMode(fileCount), [fileCount]);
   const hostMetrics = useRecentHostMetricsStore((s) =>
-    host?.trim()
-      ? s.lookup(`${host}:${PS5_PAYLOAD_PORT}`)
-      : undefined,
+    host?.trim() ? s.lookup(`${host}:${PS5_PAYLOAD_PORT}`) : undefined,
   );
   // Staleness aging (MAX_AGE_MS, 7 days) is intentionally not applied
   // here — Date.now() in render trips the react-hooks/purity rule, and
@@ -1851,12 +1960,15 @@ function PreflightEtaBanner({
     <section className="mb-4 rounded-lg border border-[var(--color-warn)]/40 bg-[var(--color-warn)]/5 p-4 text-sm">
       <div className="mb-1 flex items-center gap-2 font-medium text-[var(--color-warn)]">
         <span aria-hidden>ⓘ</span>
-        {tr("upload_eta_banner_title", undefined, "This is a large folder upload.")}
+        {tr(
+          "upload_eta_banner_title",
+          undefined,
+          "This is a large folder upload.",
+        )}
       </div>
       <div className="mb-3 text-[var(--color-muted)]">
-        {fileCount.toLocaleString()}{" "}
-        {tr("upload_folder_stats_files", "files")} ·{" "}
-        {formatBytes(totalBytes)}
+        {fileCount.toLocaleString()} {tr("upload_folder_stats_files", "files")}{" "}
+        · {formatBytes(totalBytes)}
       </div>
       <div className="mb-2 text-xs uppercase tracking-wide text-[var(--color-muted)]">
         {tr("upload_eta_section_title", undefined, "Estimated time")}
@@ -1921,10 +2033,9 @@ function ZipArchiveCard({ info }: { info: ZipInspect }) {
   // zero/over-100% reading (already-compressed game data can make a "zip"
   // marginally larger than its contents).
   const savedPct =
-    info.total_uncompressed > 0 && info.compressed_size < info.total_uncompressed
-      ? Math.round(
-          (1 - info.compressed_size / info.total_uncompressed) * 100,
-        )
+    info.total_uncompressed > 0 &&
+    info.compressed_size < info.total_uncompressed
+      ? Math.round((1 - info.compressed_size / info.total_uncompressed) * 100)
       : 0;
   const isGame = !!(info.title || info.title_id);
   return (
@@ -1946,7 +2057,9 @@ function ZipArchiveCard({ info }: { info: ZipInspect }) {
             </>
           )}
           <div className="mt-0.5 text-sm">
-            <span className="font-medium">{formatBytes(info.compressed_size)}</span>{" "}
+            <span className="font-medium">
+              {formatBytes(info.compressed_size)}
+            </span>{" "}
             {tr("upload_zip_zipped", "zipped")}
             {/* The extracted size is only shown when known. inspect_zip
                 reports total_uncompressed=0 for archives whose entries use
@@ -2091,7 +2204,9 @@ function ArchiveExtractModeCard({
                 </span>
                 <span className="mt-1 block truncate font-mono text-xs text-[var(--color-muted)]">
                   {tr("upload_zip_extract_lands_at", "Lands at:")}{" "}
-                  <span className="text-[var(--color-text)]">{opt.preview}</span>
+                  <span className="text-[var(--color-text)]">
+                    {opt.preview}
+                  </span>
                 </span>
               </span>
             </button>
@@ -2120,7 +2235,8 @@ function FolderDiffSlot({
   const host = useConnectionStore((s) => s.host);
   if (source.kind !== "folder" && source.kind !== "game-folder") return null;
   if (!destinationVolume || !host?.trim()) return null;
-  const leaf = source.path.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
+  const leaf =
+    source.path.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
   const dest =
     `${destinationVolume}` +
     (destinationSubpath ? `/${destinationSubpath}` : "") +
@@ -2263,17 +2379,30 @@ function MountAfterUploadCard({
  *  managers already look for, so uploads appear where users expect —
  *  but hint copy stays neutral and describes the destination in plain
  *  "what goes here" terms rather than naming specific managers. */
-const DESTINATION_PRESETS: { label: string; subpath: string; hint: string }[] = [
-  // homebrew is first because it's the community-standard scan path
-  // — most PS5 game scanners read from <volume>/homebrew, so files
-  // landed here are auto-discoverable.
-  { label: "homebrew", subpath: "homebrew", hint: "Homebrew apps & games (recommended)" },
-  // etaHEN's app loader scans <volume>/etaHEN/games — common for users who
-  // jailbreak via etaHEN/Backpork and launch from there. Requested by users.
-  { label: "etaHEN/games", subpath: "etaHEN/games", hint: "etaHEN game folder (etaHEN app loader scans here)" },
-  { label: "exfat", subpath: "exfat", hint: "Disk images" },
-  { label: "ps5upload", subpath: "ps5upload", hint: "Tool-specific generic folder" },
-];
+const DESTINATION_PRESETS: { label: string; subpath: string; hint: string }[] =
+  [
+    // homebrew is first because it's the community-standard scan path
+    // — most PS5 game scanners read from <volume>/homebrew, so files
+    // landed here are auto-discoverable.
+    {
+      label: "homebrew",
+      subpath: "homebrew",
+      hint: "Homebrew apps & games (recommended)",
+    },
+    // etaHEN's app loader scans <volume>/etaHEN/games — common for users who
+    // jailbreak via etaHEN/Backpork and launch from there. Requested by users.
+    {
+      label: "etaHEN/games",
+      subpath: "etaHEN/games",
+      hint: "etaHEN game folder (etaHEN app loader scans here)",
+    },
+    { label: "exfat", subpath: "exfat", hint: "Disk images" },
+    {
+      label: "ps5upload",
+      subpath: "ps5upload",
+      hint: "Tool-specific generic folder",
+    },
+  ];
 
 function DestinationCard({
   volume,
@@ -2317,7 +2446,7 @@ function DestinationCard({
     freeBytesByPath.set(v.path, v.free_bytes);
   }
   const formatFree = (bytes: number) => {
-    const gib = bytes / (1024 ** 3);
+    const gib = bytes / 1024 ** 3;
     if (gib >= 1024) return `${(gib / 1024).toFixed(1)} TB free`;
     if (gib >= 10) return `${gib.toFixed(0)} GB free`;
     return `${gib.toFixed(1)} GB free`;
@@ -2372,7 +2501,7 @@ function DestinationCard({
                 "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
                 active
                   ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
-                  : "border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-3)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-3)]",
               )}
             >
               {p.label}
@@ -2513,7 +2642,7 @@ function ModeRadio({
         "cursor-pointer rounded-md border px-3 py-2 text-sm transition-colors",
         checked
           ? "border-[var(--color-accent)] bg-[var(--color-surface-3)]"
-          : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-muted)]"
+          : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-muted)]",
       )}
     >
       <div className="flex items-center gap-2">

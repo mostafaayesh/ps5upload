@@ -115,7 +115,30 @@ static void handle_fatal(int sig) {
      * PS5 UI for the duration. Best-effort detach first; the call
      * is signal-safe (no mutex; just a kernel ioctl path). */
     shellui_rpc_emergency_detach();
-    /* Close the listener immediately so the port is freed. */
+    /* Close the listener immediately so the port is freed for the next
+     * payload instance. Only safe operations here — this is a signal
+     * handler. Full TX/journal/pack-pool/direct-writer teardown (which
+     * takes per-slot mutexes and may pthread_join) is deliberately *not*
+     * attempted; it would risk deadlock or further corruption.
+     *
+     * Cooperative shutdown paths (FTX2 SHUTDOWN frame, TAKEOVER_REQUEST,
+     * normal client disconnects that hit the "while (!shutdown)" loops)
+     * *do* call runtime_mark_active_transactions(..., "interrupted") so
+     * that the on-disk journal correctly reflects resumable state and
+     * tmp files / mounts are left in a state the next payload's
+     * reconciliation + desktop-side logic can recover.
+     *
+     * On fatal we rely on:
+     *   - the 8-second runtime_shutdown_watchdog (armed on clean paths)
+     *   - startup reconciliation (runtime_reconcile_mounts, sweep of
+     *     stale pkg_temp, ownership record, etc.)
+     *   - explicit takeover from a fresh payload (which forces the
+     *     previous instance out and marks everything interrupted).
+     *   - desktop "replace payload" + re-send flow.
+     *
+     * This is the fundamental contract: the payload is a best-effort
+     * helper; anything left behind must be tolerable after a PS5
+     * reboot or a fresh send of a newer payload. */
     if (g_state) {
         runtime_cleanup_listener(g_state);
     }
@@ -471,7 +494,15 @@ int main(void) {
     /* Ask the mgmt thread to exit by closing its listener. accept()
      * returns with EBADF, mgmt loop sees shutdown_requested and
      * exits. Ordering matters: set shutdown_requested first so the
-     * mgmt loop's post-accept check short-circuits. */
+     * mgmt loop's post-accept check short-circuits.
+     *
+     * Note: when the shutdown was triggered by an explicit FTX2
+     * SHUTDOWN or TAKEOVER_REQUEST frame, the handler already called
+     * runtime_mark_active_transactions(..., "interrupted") before
+     * setting the flag (see runtime.c). That ensures the journal and
+     * any open direct-writer/pack-pool state are torn down cleanly
+     * for resume/reconciliation. Fatal signal paths cannot do the
+     * same (see handle_fatal). */
     state.shutdown_requested = 1;
     if (state.mgmt_listener_fd >= 0) {
         close(state.mgmt_listener_fd);

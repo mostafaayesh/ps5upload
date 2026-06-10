@@ -90,12 +90,14 @@ import {
 } from "../../lib/mountDest";
 import { useActivityHistoryStore } from "../../state/activityHistory";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 import {
   PageHeader,
   EmptyState,
   ErrorCard,
   Button,
   OverflowMenu,
+  SkeletonRows,
   type OverflowMenuItem,
 } from "../../components";
 import { useTr } from "../../state/lang";
@@ -267,10 +269,7 @@ export default function LibraryScreen() {
     }
     window.addEventListener("ps5upload:library:invalidate", onInvalidate);
     return () => {
-      window.removeEventListener(
-        "ps5upload:library:invalidate",
-        onInvalidate,
-      );
+      window.removeEventListener("ps5upload:library:invalidate", onInvalidate);
     };
   }, [payloadStatus, refresh]);
 
@@ -281,6 +280,18 @@ export default function LibraryScreen() {
   // Kept transient — closing + reopening the screen clears the
   // query, so a stale filter doesn't surprise the user later.
   const [query, setQuery] = useState("");
+
+  // Render cap (see CappedRows): big libraries (200+ entries) used to
+  // mount every LibraryRow at once — hundreds of components each with a
+  // metadata-fetch effect. Sections render the first chunk and a
+  // "Show all N" expander. Collapse again whenever the console or the
+  // filter changes, so a narrowed search never stays stuck expanded.
+  const [gamesExpanded, setGamesExpanded] = useState(false);
+  const [imagesExpanded, setImagesExpanded] = useState(false);
+  useEffect(() => {
+    setGamesExpanded(false);
+    setImagesExpanded(false);
+  }, [host, query]);
 
   // Filter, then split by kind so games and disk images render in
   // their own sections. Memoization keys on the entries array
@@ -409,11 +420,23 @@ export default function LibraryScreen() {
         />
       )}
 
+      {/* First scan in flight: hold the list's shape with shimmering row
+          placeholders instead of dead space — a 200k-file console can take
+          seconds, and a blank page reads as "broken". Refreshes of an
+          already-loaded list keep showing the stale list (no flicker). */}
+      {entries === null && loading && (
+        <SkeletonRows rows={8} rowClassName="h-14" />
+      )}
+
       {entries && entries.length === 0 && (
         <EmptyState
           icon={LibraryBig}
           size="hero"
-          title={tr("library_empty_title", undefined, "Nothing in the scan folders yet")}
+          title={tr(
+            "library_empty_title",
+            undefined,
+            "Nothing in the scan folders yet",
+          )}
           message={tr(
             "library_empty_message",
             undefined,
@@ -529,47 +552,103 @@ export default function LibraryScreen() {
                     title={tr("library_games", undefined, "Games")}
                     count={split.games.length}
                   />
-                  <div className="grid gap-2">
-                    {split.games.map((e, i) => (
-                      <LibraryRow
-                        key={`${e.path}-${i}`}
-                        entry={e}
-                        host={host}
-                        mountMap={mountMap}
-                        pendingMounts={pendingMounts}
-                        volumes={volumes}
-                        onChanged={refresh}
-                      />
-                    ))}
-                  </div>
+                  <CappedRows
+                    entries={split.games}
+                    expanded={gamesExpanded}
+                    onExpand={() => setGamesExpanded(true)}
+                    host={host}
+                    mountMap={mountMap}
+                    pendingMounts={pendingMounts}
+                    volumes={volumes}
+                    onChanged={refresh}
+                  />
                 </section>
               )}
               {split.images.length > 0 && (
                 <section>
                   <SectionHeader
                     icon={<FileArchive size={13} />}
-                    title={tr("library_disk_images", undefined, "Disk images (.exfat / .ffpkg / .ffpfs)")}
+                    title={tr(
+                      "library_disk_images",
+                      undefined,
+                      "Disk images (.exfat / .ffpkg / .ffpfs)",
+                    )}
                     count={split.images.length}
                   />
                   <FpkgKstuffTip />
-                  <div className="grid gap-2">
-                    {split.images.map((e, i) => (
-                      <LibraryRow
-                        key={`${e.path}-${i}`}
-                        entry={e}
-                        host={host}
-                        mountMap={mountMap}
-                        pendingMounts={pendingMounts}
-                        volumes={volumes}
-                        onChanged={refresh}
-                      />
-                    ))}
-                  </div>
+                  <CappedRows
+                    entries={split.images}
+                    expanded={imagesExpanded}
+                    onExpand={() => setImagesExpanded(true)}
+                    host={host}
+                    mountMap={mountMap}
+                    pendingMounts={pendingMounts}
+                    volumes={volumes}
+                    onChanged={refresh}
+                  />
                 </section>
               )}
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/** How many rows a section renders before collapsing behind "Show all".
+ *  Generous enough that most libraries never see the expander, small
+ *  enough that a 200k-file hoarder library doesn't mount hundreds of
+ *  metadata-fetching rows at once (same idea as Upload's
+ *  FILE_LIST_RENDER_CAP). */
+const LIBRARY_SECTION_RENDER_CAP = 100;
+
+function CappedRows({
+  entries,
+  expanded,
+  onExpand,
+  host,
+  mountMap,
+  pendingMounts,
+  volumes,
+  onChanged,
+}: {
+  entries: LibraryEntry[];
+  expanded: boolean;
+  onExpand: () => void;
+  host: string;
+  mountMap: Map<string, string>;
+  pendingMounts: Map<string, string>;
+  volumes: Volume[];
+  onChanged: () => void;
+}) {
+  const tr = useTr();
+  const capped =
+    !expanded && entries.length > LIBRARY_SECTION_RENDER_CAP
+      ? entries.slice(0, LIBRARY_SECTION_RENDER_CAP)
+      : entries;
+  const hiddenCount = entries.length - capped.length;
+  return (
+    <div className="grid gap-2">
+      {capped.map((e, i) => (
+        <LibraryRow
+          key={`${e.path}-${i}`}
+          entry={e}
+          host={host}
+          mountMap={mountMap}
+          pendingMounts={pendingMounts}
+          volumes={volumes}
+          onChanged={onChanged}
+        />
+      ))}
+      {hiddenCount > 0 && (
+        <Button variant="secondary" size="sm" onClick={onExpand}>
+          {tr(
+            "library_show_all",
+            { count: entries.length },
+            `Show all ${entries.length}`,
+          )}
+        </Button>
       )}
     </div>
   );
@@ -585,7 +664,7 @@ function SectionHeader({
   count: number;
 }) {
   return (
-    <header className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+    <header className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
       {icon}
       <span>{title}</span>
       <span className="text-xs font-normal normal-case">· {count}</span>
@@ -717,8 +796,10 @@ function LibraryRow({
   // Per-row Move progress (bytes copied from the in-flight PS5 fs_copy)
   // — fed by the FS_OP_STATUS poller spawned in runMove. null when no
   // move is in flight or the poller hasn't seen a reply yet.
-  const [moveProgress, setMoveProgress] =
-    useState<{ bytesCopied: number; totalBytes: number } | null>(null);
+  const [moveProgress, setMoveProgress] = useState<{
+    bytesCopied: number;
+    totalBytes: number;
+  } | null>(null);
   // Set when classifyMovePollError decides the running payload is
   // too old to drive byte-progress (predates the FS_OP_STATUS handler
   // in 2.2.7, or the FS_OP_STATUS_ACK body buffer fix in 2.2.16). The
@@ -727,8 +808,10 @@ function LibraryRow({
   // missing. Stays null on transient errors / current payloads —
   // we'd rather show no banner than gaslight a user on the latest
   // payload (the original bug this rework addresses).
-  const [moveProgressUnsupportedThreshold, setMoveProgressUnsupportedThreshold] =
-    useState<"2.2.7" | "2.2.16" | null>(null);
+  const [
+    moveProgressUnsupportedThreshold,
+    setMoveProgressUnsupportedThreshold,
+  ] = useState<"2.2.7" | "2.2.16" | null>(null);
   // Read the running-payload version from the Connection store so the
   // poller can decide whether a poll error reflects a real old-payload
   // (latch the banner) or just a transient hiccup on a current build
@@ -749,9 +832,10 @@ function LibraryRow({
    *  `pendingMounts` covers the post-fs_mount window where the
    *  probe hasn't caught up yet so the row immediately reflects a
    *  successful Mount click. */
-  const currentMount = entry.kind === "image"
-    ? mountMap.get(entry.path) ?? pendingMounts.get(entry.path) ?? null
-    : null;
+  const currentMount =
+    entry.kind === "image"
+      ? (mountMap.get(entry.path) ?? pendingMounts.get(entry.path) ?? null)
+      : null;
   const isMounted = currentMount !== null;
 
   // Metadata fetch: skipped for disk images (single file, no sce_sys
@@ -766,9 +850,7 @@ function LibraryRow({
     if (entry.kind === "image") return;
     if (!host?.trim()) return;
     let cancelled = false;
-    metaLimit(() =>
-      fetchGameMeta(`${host}:${PS5_PAYLOAD_PORT}`, entry.path),
-    )
+    metaLimit(() => fetchGameMeta(`${host}:${PS5_PAYLOAD_PORT}`, entry.path))
       .then((m) => {
         if (!cancelled) setMeta(m);
       })
@@ -795,6 +877,7 @@ function LibraryRow({
     const activityId = useActivityHistoryStore
       .getState()
       .start("library-delete", `Deleting ${entry.name}`, {
+        addr: `${host}:${PS5_PAYLOAD_PORT}`,
         fromPath: entry.path,
         files: 1,
       });
@@ -806,7 +889,16 @@ function LibraryRow({
     } catch (e) {
       okOutcome = false;
       errMsg = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(errMsg));
+      const human = humanizePs5Error(errMsg);
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_delete_failed", undefined, "Delete failed"),
+        ),
+        { body: human },
+      );
     } finally {
       useActivityHistoryStore
         .getState()
@@ -826,6 +918,7 @@ function LibraryRow({
     const activityId = useActivityHistoryStore
       .getState()
       .start("library-chmod", `Setting permissions on ${entry.name}`, {
+        addr: `${host}:${PS5_PAYLOAD_PORT}`,
         fromPath: entry.path,
       });
     let okOutcome = true;
@@ -835,13 +928,26 @@ function LibraryRow({
         `${host}:${PS5_PAYLOAD_PORT}`,
         entry.path,
         "0777",
-        entry.kind !== "image" // recursive on dirs, single-file on disk images
+        entry.kind !== "image", // recursive on dirs, single-file on disk images
       );
       onChanged();
     } catch (e) {
       okOutcome = false;
       errMsg = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(errMsg));
+      const human = humanizePs5Error(errMsg);
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr(
+            "notif_library_chmod_failed",
+            undefined,
+            "Permissions change failed",
+          ),
+        ),
+        { body: human },
+      );
     } finally {
       useActivityHistoryStore
         .getState()
@@ -895,6 +1001,7 @@ function LibraryRow({
     const activityId = useActivityHistoryStore
       .getState()
       .start("library-mount", `Mounting ${entry.name}`, {
+        addr: `${host}:${PS5_PAYLOAD_PORT}`,
         fromPath: entry.path,
         toPath: opts.mountPoint,
       });
@@ -942,7 +1049,8 @@ function LibraryRow({
       try {
         res = await fsMount(addr, entry.path, opts);
       } catch (firstErr) {
-        const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+        const msg =
+          firstErr instanceof Error ? firstErr.message : String(firstErr);
         const sourceUnstable = /fs_mount_source_unstable/i.test(msg);
         // Only retry on errors that are plausibly transient. A retry
         // for `path_not_allowed`, `disk_full`, `mount_point_busy`,
@@ -979,9 +1087,7 @@ function LibraryRow({
       // refreshes volumes. The volumes-driven authoritative state
       // overwrites this on the next setData(), but the user gets
       // an instantly-correct UI in the meantime.
-      useLibraryStore
-        .getState()
-        .addMount(entry.path, res.mount_point);
+      useLibraryStore.getState().addMount(entry.path, res.mount_point);
       // The activity entry started with toPath = opts.mountPoint
       // which is undefined on the legacy fall-through (no
       // user-chosen path — the payload picks
@@ -1081,7 +1187,16 @@ function LibraryRow({
     } catch (e) {
       okOutcome = false;
       errMsg = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(errMsg));
+      const human = humanizePs5Error(errMsg);
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_mount_failed", undefined, "Mount failed"),
+        ),
+        { body: human },
+      );
     } finally {
       useActivityHistoryStore
         .getState()
@@ -1209,7 +1324,10 @@ function LibraryRow({
           // run so we don't spam the console at 2 Hz on a sustained
           // outage.
           if (consecutiveFailures === 1) {
-            console.warn("[library] FS_OP_STATUS poll failed (will retry):", msg);
+            console.warn(
+              "[library] FS_OP_STATUS poll failed (will retry):",
+              msg,
+            );
           }
         }
         await new Promise((r) => setTimeout(r, 500));
@@ -1263,12 +1381,19 @@ function LibraryRow({
           error: "cancelled by user",
         });
       } else {
-        setError(
-          tr(
-            "library_move_copy_failed",
-            { error: msg },
-            "Couldn't copy to the new location: {error}. Source is unchanged.",
+        const friendly = tr(
+          "library_move_copy_failed",
+          { error: msg },
+          "Couldn't copy to the new location: {error}. Source is unchanged.",
+        );
+        setError(friendly);
+        pushNotification(
+          "error",
+          withConsolePrefix(
+            host,
+            tr("notif_library_move_failed", undefined, "Move failed"),
           ),
+          { body: friendly },
         );
         useActivityHistoryStore.getState().finish(activityId, "failed", {
           error: msg,
@@ -1290,16 +1415,23 @@ function LibraryRow({
       const lastErr = delResult.lastError;
       const lastErrMsg =
         lastErr instanceof Error ? lastErr.message : String(lastErr);
-      setError(
-        tr(
-          "library_move_delete_failed",
-          {
-            dest: destPath,
-            src: entry.path,
-            error: lastErrMsg,
-          },
-          "Copied to {dest}, but couldn't remove the source {src} after 3 attempts: {error}. Both copies now exist — delete the original yourself when ready.",
+      const friendly = tr(
+        "library_move_delete_failed",
+        {
+          dest: destPath,
+          src: entry.path,
+          error: lastErrMsg,
+        },
+        "Copied to {dest}, but couldn't remove the source {src} after 3 attempts: {error}. Both copies now exist — delete the original yourself when ready.",
+      );
+      setError(friendly);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_move_failed", undefined, "Move failed"),
         ),
+        { body: friendly },
       );
       // Treat a "copied but couldn't delete source" as a partial
       // failure so the Activity tab makes the duplicate-files
@@ -1312,11 +1444,7 @@ function LibraryRow({
       return;
     }
     setMountNote(
-      tr(
-        "library_move_succeeded",
-        { dest: destPath },
-        "Moved to {dest}.",
-      ),
+      tr("library_move_succeeded", { dest: destPath }, "Moved to {dest}."),
     );
     // Explicitly clear `error` on the success finish. The poller may
     // have written a "Live progress unavailable — payload predates
@@ -1348,7 +1476,7 @@ function LibraryRow({
       title: tr(
         "library_download_dialog_title",
         { name: entry.name },
-        "Pick a destination folder for \"{name}\"",
+        'Pick a destination folder for "{name}"',
       ),
     });
     if (typeof picked !== "string") return;
@@ -1358,8 +1486,7 @@ function LibraryRow({
     setDownloadProgress({ bytesReceived: 0, totalBytes: 0 });
     downloadStopRef.current = false;
     const addr = `${host}:${PS5_PAYLOAD_PORT}`;
-    const kind: "file" | "folder" =
-      entry.kind === "image" ? "file" : "folder";
+    const kind: "file" | "folder" = entry.kind === "image" ? "file" : "folder";
     // Track the download in the global activity log so the
     // ActivityBar shows live progress + "still running" while the
     // user is on another tab. Library Download has its own polling
@@ -1370,6 +1497,7 @@ function LibraryRow({
     const activityId = useActivityHistoryStore
       .getState()
       .start("library-download", `Downloading ${entry.name}`, {
+        addr: `${host}:${PS5_PAYLOAD_PORT}`,
         fromPath: entry.path,
         toPath: picked,
       });
@@ -1378,12 +1506,19 @@ function LibraryRow({
       jobId = await startTransferDownload(entry.path, picked, addr, kind);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(
-        tr(
-          "library_download_start_failed",
-          { error: msg },
-          "Couldn't start the download: {error}",
+      const friendly = tr(
+        "library_download_start_failed",
+        { error: msg },
+        "Couldn't start the download: {error}",
+      );
+      setError(friendly);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_download_failed", undefined, "Download failed"),
         ),
+        { body: friendly },
       );
       useActivityHistoryStore
         .getState()
@@ -1469,12 +1604,19 @@ function LibraryRow({
           useActivityHistoryStore
             .getState()
             .finish(activityId, "failed", { error: errMsg });
-          setError(
-            tr(
-              "library_download_failed",
-              { error: errMsg },
-              "Download failed: {error}",
+          const friendly = tr(
+            "library_download_failed",
+            { error: errMsg },
+            "Download failed: {error}",
+          );
+          setError(friendly);
+          pushNotification(
+            "error",
+            withConsolePrefix(
+              host,
+              tr("notif_library_download_failed", undefined, "Download failed"),
             ),
+            { body: friendly },
           );
           setBusy(null);
           setDownloadProgress(null);
@@ -1499,12 +1641,19 @@ function LibraryRow({
         useActivityHistoryStore
           .getState()
           .finish(activityId, "failed", { error: msg });
-        setError(
-          tr(
-            "library_download_poll_failed",
-            { error: msg },
-            "Lost contact with the engine while downloading: {error}",
+        const friendly = tr(
+          "library_download_poll_failed",
+          { error: msg },
+          "Lost contact with the engine while downloading: {error}",
+        );
+        setError(friendly);
+        pushNotification(
+          "error",
+          withConsolePrefix(
+            host,
+            tr("notif_library_download_failed", undefined, "Download failed"),
           ),
+          { body: friendly },
         );
         setBusy(null);
         setDownloadProgress(null);
@@ -1528,9 +1677,7 @@ function LibraryRow({
     let imageKey: string | null = entry.path;
     if (entry.kind === "game" && fromImagePath) {
       mountPointToUnmount =
-        mountMap.get(fromImagePath) ??
-        pendingMounts.get(fromImagePath) ??
-        null;
+        mountMap.get(fromImagePath) ?? pendingMounts.get(fromImagePath) ?? null;
       imageKey = fromImagePath;
     }
     if (!mountPointToUnmount) return;
@@ -1540,6 +1687,7 @@ function LibraryRow({
     const activityId = useActivityHistoryStore
       .getState()
       .start("library-unmount", `Unmounting ${entry.name}`, {
+        addr: `${host}:${PS5_PAYLOAD_PORT}`,
         fromPath: mountPointToUnmount,
       });
     let okOutcome = true;
@@ -1615,7 +1763,16 @@ function LibraryRow({
     } catch (e) {
       okOutcome = false;
       errMsg = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(errMsg));
+      const human = humanizePs5Error(errMsg);
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_unmount_failed", undefined, "Unmount failed"),
+        ),
+        { body: human },
+      );
     } finally {
       useActivityHistoryStore
         .getState()
@@ -1643,6 +1800,7 @@ function LibraryRow({
     const activityId = useActivityHistoryStore
       .getState()
       .start("library-launch", `Launching ${entry.name}`, {
+        addr: `${host}:${PS5_PAYLOAD_PORT}`,
         fromPath: entry.path,
       });
     let okOutcome = true;
@@ -1668,7 +1826,8 @@ function LibraryRow({
         // up before the register call is dispatched. Surface the
         // FIRST error if patch-DRM also fails so the user has the
         // root cause, not the secondary symptom.
-        const regMsg = regErr instanceof Error ? regErr.message : String(regErr);
+        const regMsg =
+          regErr instanceof Error ? regErr.message : String(regErr);
         // Idempotent re-register returns 0x80990002 ("already
         // registered") which the payload normalises to success;
         // if we somehow see it here, treat as success.
@@ -1705,7 +1864,16 @@ function LibraryRow({
     } catch (e) {
       okOutcome = false;
       errMsg = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(errMsg));
+      const human = humanizePs5Error(errMsg);
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_launch_failed", undefined, "Launch failed"),
+        ),
+        { body: human },
+      );
     } finally {
       useActivityHistoryStore
         .getState()
@@ -1734,6 +1902,7 @@ function LibraryRow({
     const activityId = useActivityHistoryStore
       .getState()
       .start("library-register", `Registering ${entry.name}`, {
+        addr: `${host}:${PS5_PAYLOAD_PORT}`,
         fromPath: entry.path,
       });
     let okOutcome = true;
@@ -1762,9 +1931,13 @@ function LibraryRow({
         handedToSmp = false; // SMP unreachable → register it ourselves
       }
       if (!handedToSmp) {
-        const res = await appRegister(`${host}:${PS5_PAYLOAD_PORT}`, entry.path, {
-          patchDrmType: opts.patchDrmType,
-        });
+        const res = await appRegister(
+          `${host}:${PS5_PAYLOAD_PORT}`,
+          entry.path,
+          {
+            patchDrmType: opts.patchDrmType,
+          },
+        );
         const drmSuffix = opts.patchDrmType
           ? " (DRM type patched to standard)"
           : "";
@@ -1776,7 +1949,16 @@ function LibraryRow({
     } catch (e) {
       okOutcome = false;
       errMsg = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(errMsg));
+      const human = humanizePs5Error(errMsg);
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_register_failed", undefined, "Register failed"),
+        ),
+        { body: human },
+      );
     } finally {
       useActivityHistoryStore
         .getState()
@@ -1801,11 +1983,24 @@ function LibraryRow({
       if (!dest || typeof dest !== "string") return;
       const addr = `${host}:${PS5_PAYLOAD_PORT}`;
       await startTransferDownload(entry.path, dest, addr, "folder");
-      pushNotification("info", `Backup started: ${entry.name}`, {
-        body: `Downloading ${entry.path} → ${dest}. Track progress in the Activity tab.`,
-      });
+      pushNotification(
+        "info",
+        withConsolePrefix(host, `Backup started: ${entry.name}`),
+        {
+          body: `Downloading ${entry.path} → ${dest}. Track progress in the Activity tab.`,
+        },
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_backup_failed", undefined, "Backup failed"),
+        ),
+        { body: msg },
+      );
     }
   };
 
@@ -1827,18 +2022,35 @@ function LibraryRow({
         setError(
           `Some files failed: ${firstErr?.error ?? "unknown error"} — see Logs for details.`,
         );
-        pushNotification("warning", `Heal partial: ${entry.titleId}`, {
-          body: `${res.copied} copied, ${res.errors} failed for ${entry.name}`,
-          link: "/library",
-        });
+        pushNotification(
+          "warning",
+          withConsolePrefix(host, `Heal partial: ${entry.titleId}`),
+          {
+            body: `${res.copied} copied, ${res.errors} failed for ${entry.name}`,
+            link: "/library",
+          },
+        );
       } else if (res.copied > 0) {
-        pushNotification("success", `Healed ${entry.name}`, {
-          body: `Restored ${res.copied} file${res.copied === 1 ? "" : "s"} for ${entry.titleId} — home-screen tile should refresh.`,
-          link: "/library",
-        });
+        pushNotification(
+          "success",
+          withConsolePrefix(host, `Healed ${entry.name}`),
+          {
+            body: `Restored ${res.copied} file${res.copied === 1 ? "" : "s"} for ${entry.titleId} — home-screen tile should refresh.`,
+            link: "/library",
+          },
+        );
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_heal_failed", undefined, "Heal failed"),
+        ),
+        { body: msg },
+      );
     } finally {
       setBusy(null);
     }
@@ -1852,6 +2064,7 @@ function LibraryRow({
     const activityId = useActivityHistoryStore
       .getState()
       .start("library-unregister", `Unregistering ${entry.name}`, {
+        addr: `${host}:${PS5_PAYLOAD_PORT}`,
         fromPath: entry.path,
       });
     let okOutcome = true;
@@ -1865,7 +2078,16 @@ function LibraryRow({
     } catch (e) {
       okOutcome = false;
       errMsg = e instanceof Error ? e.message : String(e);
-      setError(humanizePs5Error(errMsg));
+      const human = humanizePs5Error(errMsg);
+      setError(human);
+      pushNotification(
+        "error",
+        withConsolePrefix(
+          host,
+          tr("notif_library_unregister_failed", undefined, "Unregister failed"),
+        ),
+        { body: human },
+      );
     } finally {
       useActivityHistoryStore
         .getState()
@@ -2066,13 +2288,13 @@ function LibraryRow({
                 {tr("library_details", undefined, "Details")}
               </Button>
               {/* 2.2.55: Surface unmount on game rows whose backing
-                * image is currently mounted. Pre-fix the unmount
-                * affordance was only on the image row — once a game
-                * is registered, the user opens that game row and
-                * had no way back to unmount without switching to the
-                * Volumes screen. fromImagePath is non-null exactly
-                * when this game lives inside a mounted image; clicking
-                * Unmount calls fs_unmount on the image's mount point. */}
+               * image is currently mounted. Pre-fix the unmount
+               * affordance was only on the image row — once a game
+               * is registered, the user opens that game row and
+               * had no way back to unmount without switching to the
+               * Volumes screen. fromImagePath is non-null exactly
+               * when this game lives inside a mounted image; clicking
+               * Unmount calls fs_unmount on the image's mount point. */}
               {fromImagePath && (
                 <Button
                   variant="ghost"
@@ -2133,7 +2355,7 @@ function LibraryRow({
                 title: tr(
                   "library_register_drm_tooltip",
                   undefined,
-                  "Same as Register, but first patch the source's applicationDrmType to \"standard\" — modifies the source file. Use only when a normal Register fails with a DRM error.",
+                  'Same as Register, but first patch the source\'s applicationDrmType to "standard" — modifies the source file. Use only when a normal Register fails with a DRM error.',
                 ),
               });
               if (entry.titleId) {
@@ -2265,112 +2487,144 @@ function LibraryRow({
       </div>
 
       {busy && (
-        <div className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs">
-          <Loader2
-            size={12}
-            className="animate-spin text-[var(--color-accent)]"
-          />
-          <span className="font-medium">
-            {busy === "delete"
-              ? tr("library_busy_delete", undefined, "Deleting")
-              : busy === "chmod"
-                ? tr("library_busy_chmod", undefined, "Applying Permission 777")
-                : busy === "unmount"
-                  ? tr("library_busy_unmount", undefined, "Unmounting")
-                  : busy === "mount"
-                    ? tr("library_busy_mount", undefined, "Mounting")
-                    : busy === "move-copying"
-                      ? tr(
-                          "library_busy_move_copying",
-                          undefined,
-                          "Copying to new location",
-                        )
-                      : busy === "move-deleting"
+        <div className="flex flex-col gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs">
+          <div className="flex items-center gap-2">
+            <Loader2
+              size={12}
+              className="animate-spin text-[var(--color-accent)]"
+            />
+            <span className="font-medium">
+              {busy === "delete"
+                ? tr("library_busy_delete", undefined, "Deleting")
+                : busy === "chmod"
+                  ? tr(
+                      "library_busy_chmod",
+                      undefined,
+                      "Applying Permission 777",
+                    )
+                  : busy === "unmount"
+                    ? tr("library_busy_unmount", undefined, "Unmounting")
+                    : busy === "mount"
+                      ? tr("library_busy_mount", undefined, "Mounting")
+                      : busy === "move-copying"
                         ? tr(
-                            "library_busy_move_deleting",
+                            "library_busy_move_copying",
                             undefined,
-                            "Cleaning up source",
+                            "Copying to new location",
                           )
-                        : tr(
-                            "library_busy_download",
-                            undefined,
-                            "Downloading from PS5",
-                          )}
-          </span>
-          <span className="text-[var(--color-muted)]">
-            {entry.name} · {formatDuration(elapsedMs / 1000)}
-            {downloadProgress &&
-              downloadProgress.totalBytes > 0 &&
-              ` · ${formatBytes(downloadProgress.bytesReceived)} / ${formatBytes(downloadProgress.totalBytes)} (${(
-                (downloadProgress.bytesReceived /
-                  downloadProgress.totalBytes) *
-                100
-              ).toFixed(0)}%)`}
-            {downloadProgress &&
-              downloadProgress.totalBytes === 0 &&
-              ` · ${formatBytes(downloadProgress.bytesReceived)}`}
-            {/* Live throughput. Driven off `elapsedMs` (which the
+                        : busy === "move-deleting"
+                          ? tr(
+                              "library_busy_move_deleting",
+                              undefined,
+                              "Cleaning up source",
+                            )
+                          : tr(
+                              "library_busy_download",
+                              undefined,
+                              "Downloading from PS5",
+                            )}
+            </span>
+            <span className="text-[var(--color-muted)]">
+              {entry.name} · {formatDuration(elapsedMs / 1000)}
+              {downloadProgress &&
+                downloadProgress.totalBytes > 0 &&
+                ` · ${formatBytes(downloadProgress.bytesReceived)} / ${formatBytes(downloadProgress.totalBytes)} (${(
+                  (downloadProgress.bytesReceived /
+                    downloadProgress.totalBytes) *
+                  100
+                ).toFixed(0)}%)`}
+              {downloadProgress &&
+                downloadProgress.totalBytes === 0 &&
+                ` · ${formatBytes(downloadProgress.bytesReceived)}`}
+              {/* Live throughput. Driven off `elapsedMs` (which the
                 useElapsed hook ticks every 500 ms) so the value
                 refreshes naturally; computing it inline avoids a
                 separate state field for what's a derived value. */}
-            {busy === "download" &&
-              downloadProgress &&
-              downloadProgress.bytesReceived > 0 &&
-              elapsedMs > 0 &&
-              ` · ${formatBytes(
-                (downloadProgress.bytesReceived * 1000) / elapsedMs,
-              )}/s`}
-            {/* Same shape for the move's in-flight fs_copy: the
+              {busy === "download" &&
+                downloadProgress &&
+                downloadProgress.bytesReceived > 0 &&
+                elapsedMs > 0 &&
+                ` · ${formatBytes(
+                  (downloadProgress.bytesReceived * 1000) / elapsedMs,
+                )}/s`}
+              {/* Same shape for the move's in-flight fs_copy: the
                 FS_OP_STATUS poller writes bytesCopied/totalBytes
                 into moveProgress on a 500 ms cadence. */}
-            {busy === "move-copying" &&
-              moveProgress &&
-              moveProgress.totalBytes > 0 &&
-              ` · ${formatBytes(moveProgress.bytesCopied)} / ${formatBytes(moveProgress.totalBytes)} (${(
-                (moveProgress.bytesCopied /
-                  moveProgress.totalBytes) *
-                100
-              ).toFixed(0)}%)`}
-            {busy === "move-copying" &&
-              moveProgress &&
-              moveProgress.bytesCopied > 0 &&
-              elapsedMs > 0 &&
-              ` · ${formatBytes(
-                (moveProgress.bytesCopied * 1000) / elapsedMs,
-              )}/s`}
-          </span>
-          {busy === "download" && (
-            <button
-              type="button"
-              onClick={() => {
-                downloadStopRef.current = true;
-              }}
-              className="ml-auto rounded-md border border-[var(--color-border)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
-              title={tr(
-                "library_download_stop_tooltip",
-                undefined,
-                "Stop watching this download (engine job continues server-side)",
-              )}
-            >
-              {tr("fs_download_stop", undefined, "Stop")}
-            </button>
-          )}
-          {busy === "move-copying" && (
-            <button
-              type="button"
-              onClick={() => {
-                moveStopRef.current = true;
-              }}
-              className="ml-auto rounded-md border border-[var(--color-border)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
-              title={tr(
-                "library_move_stop_tooltip",
-                undefined,
-                "Cancel the in-flight copy. Source is unchanged; partial destination is removed.",
-              )}
-            >
-              {tr("fs_download_stop", undefined, "Stop")}
-            </button>
-          )}
+              {busy === "move-copying" &&
+                moveProgress &&
+                moveProgress.totalBytes > 0 &&
+                ` · ${formatBytes(moveProgress.bytesCopied)} / ${formatBytes(moveProgress.totalBytes)} (${(
+                  (moveProgress.bytesCopied / moveProgress.totalBytes) *
+                  100
+                ).toFixed(0)}%)`}
+              {busy === "move-copying" &&
+                moveProgress &&
+                moveProgress.bytesCopied > 0 &&
+                elapsedMs > 0 &&
+                ` · ${formatBytes(
+                  (moveProgress.bytesCopied * 1000) / elapsedMs,
+                )}/s`}
+            </span>
+            {busy === "download" && (
+              <button
+                type="button"
+                onClick={() => {
+                  downloadStopRef.current = true;
+                }}
+                className="ml-auto rounded-md border border-[var(--color-border)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
+                title={tr(
+                  "library_download_stop_tooltip",
+                  undefined,
+                  "Stop watching this download (engine job continues server-side)",
+                )}
+              >
+                {tr("fs_download_stop", undefined, "Stop")}
+              </button>
+            )}
+            {busy === "move-copying" && (
+              <button
+                type="button"
+                onClick={() => {
+                  moveStopRef.current = true;
+                }}
+                className="ml-auto rounded-md border border-[var(--color-border)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
+                title={tr(
+                  "library_move_stop_tooltip",
+                  undefined,
+                  "Cancel the in-flight copy. Source is unchanged; partial destination is removed.",
+                )}
+              >
+                {tr("fs_download_stop", undefined, "Stop")}
+              </button>
+            )}
+          </div>
+          {/* Thin determinate bar under the text — same pattern as the
+              Upload / Install Package screens. Only renders once the
+              total is known (totalBytes > 0); indeterminate phases keep
+              the spinner-only treatment. */}
+          {(() => {
+            const pct =
+              busy === "download" &&
+              downloadProgress &&
+              downloadProgress.totalBytes > 0
+                ? (downloadProgress.bytesReceived /
+                    downloadProgress.totalBytes) *
+                  100
+                : busy === "move-copying" &&
+                    moveProgress &&
+                    moveProgress.totalBytes > 0
+                  ? (moveProgress.bytesCopied / moveProgress.totalBytes) * 100
+                  : null;
+            if (pct === null) return null;
+            return (
+              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-3)]">
+                <div
+                  className="h-full bg-[var(--color-accent)] transition-[width] duration-300 ease-out"
+                  style={{ width: `${Math.min(100, pct)}%` }}
+                />
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2387,7 +2641,7 @@ function LibraryRow({
             {tr(
               "library_move_progress_unsupported_2_2_16",
               undefined,
-              "Live progress unavailable — running payload predates the 2.2.16 FS_OP_STATUS_ACK body fix. Click \"Replace payload\" on the Connection screen to enable per-byte progress + cancel.",
+              'Live progress unavailable — running payload predates the 2.2.16 FS_OP_STATUS_ACK body fix. Click "Replace payload" on the Connection screen to enable per-byte progress + cancel.',
             )}
           </div>
         )}
@@ -2397,7 +2651,7 @@ function LibraryRow({
             {tr(
               "library_move_progress_unsupported_2_2_7",
               undefined,
-              "Live progress unavailable — running payload predates 2.2.7 FS_OP_STATUS. Click \"Replace payload\" on the Connection screen to enable per-byte progress + cancel.",
+              'Live progress unavailable — running payload predates 2.2.7 FS_OP_STATUS. Click "Replace payload" on the Connection screen to enable per-byte progress + cancel.',
             )}
           </div>
         )}
@@ -2745,7 +2999,7 @@ function MoveModal({
           {tr(
             "library_move_modal_title",
             { name: entry.name },
-            "Move \"{name}\"",
+            'Move "{name}"',
           )}
         </header>
 
@@ -2811,18 +3065,14 @@ function MoveModal({
             {tr(
               "library_move_modal_name_hint",
               { default: sourceBasename(entry.path) },
-              "Leave blank or matching \"{default}\" to keep the original name. No slashes.",
+              'Leave blank or matching "{default}" to keep the original name. No slashes.',
             )}
           </p>
         </div>
 
         <div className="mb-4 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs">
           <div className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
-            {tr(
-              "library_move_modal_resolved",
-              undefined,
-              "Will move to",
-            )}
+            {tr("library_move_modal_resolved", undefined, "Will move to")}
           </div>
           <div className="mt-0.5 break-all font-mono">{resolved}</div>
         </div>
@@ -2832,7 +3082,7 @@ function MoveModal({
             {tr(
               "library_move_modal_name_invalid",
               undefined,
-              "Name can't contain / or \\ and can't be \".\" or \"..\". Use the subpath field above to nest into a folder.",
+              'Name can\'t contain / or \\ and can\'t be "." or "..". Use the subpath field above to nest into a folder.',
             )}
           </div>
         )}
@@ -3011,18 +3261,15 @@ function MountModal({
   // for that since the user always sees the result in the resolved
   // mount and can re-mount with the right toggle.
   const [readOnly, setReadOnly] = useState<boolean>(false);
-  const supportsReadOnly = useMemo(
-    () => {
-      // Reuse semver compare via the existing payloadSupportsMountPoint
-      // pattern — if the payload supports 2.2.25's mount_point it
-      // probably hasn't been upgraded to 2.2.26 yet either, but we
-      // surface the toggle anyway and let the payload silently ignore
-      // it on older builds. Effect: a checkbox the user can tick that
-      // becomes effective the moment they upgrade. No false-promise.
-      return payloadVersion ? true : false;
-    },
-    [payloadVersion],
-  );
+  const supportsReadOnly = useMemo(() => {
+    // Reuse semver compare via the existing payloadSupportsMountPoint
+    // pattern — if the payload supports 2.2.25's mount_point it
+    // probably hasn't been upgraded to 2.2.26 yet either, but we
+    // surface the toggle anyway and let the payload silently ignore
+    // it on older builds. Effect: a checkbox the user can tick that
+    // becomes effective the moment they upgrade. No false-promise.
+    return payloadVersion ? true : false;
+  }, [payloadVersion]);
 
   // Escape closes the modal — same standard-dialog UX as MoveModal.
   useEffect(() => {
@@ -3112,7 +3359,7 @@ function MountModal({
             {tr(
               "library_mount_modal_old_payload",
               undefined,
-              "Volume picker requires payload 2.2.25+. The running payload only supports naming the mount under /mnt/ps5upload/. Click \"Replace payload\" on the Connection screen to enable picking a different volume.",
+              'Volume picker requires payload 2.2.25+. The running payload only supports naming the mount under /mnt/ps5upload/. Click "Replace payload" on the Connection screen to enable picking a different volume.',
             )}
           </div>
         )}
@@ -3204,11 +3451,7 @@ function MountModal({
 
         <div className="mb-4 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs">
           <div className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
-            {tr(
-              "library_mount_modal_resolved",
-              undefined,
-              "Will mount at",
-            )}
+            {tr("library_mount_modal_resolved", undefined, "Will mount at")}
           </div>
           <div className="mt-0.5 break-all font-mono">{resolvedPath}</div>
         </div>
@@ -3287,7 +3530,7 @@ function MountModal({
             {tr(
               "library_mount_modal_name_invalid",
               undefined,
-              "Name can't be empty, contain / or \\, or be \".\" / \"..\".",
+              'Name can\'t be empty, contain / or \\, or be "." / "..".',
             )}
           </div>
         )}
@@ -3448,9 +3691,8 @@ function FpkgKstuffTip() {
     if (typeof window === "undefined") return false;
     try {
       return (
-        window.localStorage.getItem(
-          "ps5upload.fpkg-kstuff-tip.dismissed",
-        ) === "1"
+        window.localStorage.getItem("ps5upload.fpkg-kstuff-tip.dismissed") ===
+        "1"
       );
     } catch {
       return false;
@@ -3459,10 +3701,7 @@ function FpkgKstuffTip() {
   if (dismissed) return null;
   const dismiss = () => {
     try {
-      window.localStorage.setItem(
-        "ps5upload.fpkg-kstuff-tip.dismissed",
-        "1",
-      );
+      window.localStorage.setItem("ps5upload.fpkg-kstuff-tip.dismissed", "1");
     } catch {
       // best-effort persistence
     }
@@ -3497,7 +3736,11 @@ function FpkgKstuffTip() {
         type="button"
         onClick={dismiss}
         className="shrink-0 rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
-        title={tr("library_fpkg_kstuff_tip_dismiss", undefined, "Don't show again")}
+        title={tr(
+          "library_fpkg_kstuff_tip_dismiss",
+          undefined,
+          "Don't show again",
+        )}
       >
         ✕
       </button>

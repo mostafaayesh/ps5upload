@@ -21,4 +21,9 @@ export type {
   PromptOptions,
 } from "./ConfirmDialog";
 export { OverflowMenu, type OverflowMenuItem } from "./OverflowMenu";
+export { ConsoleChip } from "./ConsoleChip";
 export { RootErrorBoundary } from "./ErrorBoundary";
+export { ProgressBar } from "./ProgressBar";
+export { Skeleton, SkeletonRows } from "./Skeleton";
+export { ShapesLoader } from "./ShapesLoader";
+export { ConnectionGate } from "./ConnectionGate";

@@ -71,6 +71,7 @@ function addItem(addr: string, name: string): void {
     excludes: [],
     mountAfterUpload: false,
     mountReadOnly: false,
+    registerAfterUpload: false,
   };
   useUploadQueueStore.getState().add(input);
 }
@@ -428,6 +429,7 @@ describe("upload runner — ShadowMount+ hand-off (image + mountAfterUpload)", (
       excludes: [],
       mountAfterUpload: true,
       mountReadOnly: true,
+      registerAfterUpload: false,
     } as AddQueueItem);
   }
 

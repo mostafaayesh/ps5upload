@@ -9,7 +9,13 @@ import {
 
 import { useConnectionStore, PS5_PAYLOAD_PORT } from "../../state/connection";
 import { searchPS5, type SearchHit, type SearchProgress } from "../../api/ps5";
-import { PageHeader, ErrorCard, Button, EmptyState } from "../../components";
+import {
+  PageHeader,
+  ErrorCard,
+  Button,
+  EmptyState,
+  ConnectionGate,
+} from "../../components";
 // Direct import to avoid the barrel's circular-dep warning at build.
 import { usePrompt } from "../../components/ConfirmDialog";
 import { useTr } from "../../state/lang";
@@ -21,11 +27,27 @@ import { formatBytes } from "../../lib/format";
  *  here (rather than wrapping in tr at module load) is necessary
  *  because tr requires React context and module-level constants are
  *  evaluated outside any component. */
-const SIZE_OPTIONS: { labelKey: string; labelFallback: string; bytes: number }[] = [
+const SIZE_OPTIONS: {
+  labelKey: string;
+  labelFallback: string;
+  bytes: number;
+}[] = [
   { labelKey: "search_size_any", labelFallback: "any size", bytes: 0 },
-  { labelKey: "search_size_100mb", labelFallback: "> 100 MB", bytes: 100 * 1024 * 1024 },
-  { labelKey: "search_size_1gb", labelFallback: "> 1 GB", bytes: 1024 * 1024 * 1024 },
-  { labelKey: "search_size_10gb", labelFallback: "> 10 GB", bytes: 10 * 1024 * 1024 * 1024 },
+  {
+    labelKey: "search_size_100mb",
+    labelFallback: "> 100 MB",
+    bytes: 100 * 1024 * 1024,
+  },
+  {
+    labelKey: "search_size_1gb",
+    labelFallback: "> 1 GB",
+    bytes: 1024 * 1024 * 1024,
+  },
+  {
+    labelKey: "search_size_10gb",
+    labelFallback: "> 10 GB",
+    bytes: 10 * 1024 * 1024 * 1024,
+  },
 ];
 
 // formatBytes moved to lib/format.ts.
@@ -101,8 +123,23 @@ export default function SearchScreen() {
     };
   }, []);
 
+  // Results belong to the console they were searched on. On tab switch,
+  // abort any in-flight scan against the previous console and clear its
+  // results — otherwise console A's hits render under console B's tab
+  // (and a scan finishing after the switch would write A's results into
+  // B's view).
+  useEffect(() => {
+    abortRef.current?.abort();
+    setResult(null);
+    setError(null);
+    setProgress(null);
+  }, [host]);
+
   const run = async () => {
     if (!host?.trim() || !pattern.trim()) return;
+    // Capture the host this scan targets so the result write below can be
+    // dropped if the user switches console while the fan-out is running.
+    const searchedHost = host;
     // New controller per run so an old (already-aborted) controller
     // can't leak into a fresh search.
     const controller = new AbortController();
@@ -116,15 +153,17 @@ export default function SearchScreen() {
         // trim() to match the gate above and every other screen — a stored
         // host with stray whitespace would otherwise form a bad address
         // even though the Search button was enabled.
-        `${host.trim()}:${PS5_PAYLOAD_PORT}`,
+        `${searchedHost.trim()}:${PS5_PAYLOAD_PORT}`,
         pattern,
         minSize,
         setProgress,
         undefined,
-        controller.signal
+        controller.signal,
       );
+      if (useConnectionStore.getState().host !== searchedHost) return;
       setResult(res);
     } catch (e) {
+      if (useConnectionStore.getState().host !== searchedHost) return;
       setError(e instanceof Error ? e.message : String(e));
       setResult(null);
     } finally {
@@ -186,197 +225,211 @@ export default function SearchScreen() {
         )}
       />
 
-      <section className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-        <div className="flex items-center gap-2">
-          <input
-            value={pattern}
-            onChange={(e) => setPattern(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && run()}
-            placeholder="*.pkg  /  eboot.bin  /  PPSA*"
-            className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
-          />
-          <select
-            value={minSize}
-            onChange={(e) => setMinSize(Number(e.target.value))}
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
-          >
-            {SIZE_OPTIONS.map((o) => (
-              <option key={o.bytes} value={o.bytes}>
-                {tr(o.labelKey, undefined, o.labelFallback)}
-              </option>
-            ))}
-          </select>
-          {loading ? (
-            <Button
-              variant="secondary"
-              size="md"
-              leftIcon={<X size={14} />}
-              onClick={cancel}
-              title={tr("search_stop_tooltip", undefined, "Stop the current search")}
-            >
-              {tr("search_stop", undefined, "Stop")}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="md"
-              leftIcon={<SearchIcon size={14} />}
-              onClick={run}
-              disabled={!pattern.trim() || !host?.trim()}
-            >
-              {tr("search", undefined, "Search")}
-            </Button>
-          )}
-        </div>
-        {(saved.length > 0 || pattern.trim()) && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-            {pattern.trim() && (
-              <button
-                type="button"
-                onClick={saveCurrent}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 hover:bg-[var(--color-surface-3)]"
-              >
-                {tr("search_save", undefined, "Save current")}
-              </button>
-            )}
-            {saved.map((s) => (
-              <span
-                key={s.id}
-                className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] py-0.5 pl-2 pr-1"
-              >
-                <button
-                  type="button"
-                  onClick={() => applySaved(s)}
-                  title={`${s.pattern} (min ${s.minSize})`}
-                  className="hover:text-[var(--color-accent)]"
-                >
-                  {s.name}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeSaved(s.id)}
-                  className="px-1 text-[var(--color-muted)] hover:text-[var(--color-bad)]"
-                  title={tr("search_remove", undefined, "Remove saved search")}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {error && (
-        <div className="mb-4">
-          <ErrorCard
-            title={tr("search_failed", undefined, "Search failed")}
-            detail={error}
-          />
-        </div>
-      )}
-
-      {loading && progress && (
-        <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
+      <ConnectionGate require="payload">
+        <section className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
           <div className="flex items-center gap-2">
-            <Loader2
-              size={14}
-              className="animate-spin text-[var(--color-accent)]"
+            <input
+              value={pattern}
+              onChange={(e) => setPattern(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && run()}
+              placeholder="*.pkg  /  eboot.bin  /  PPSA*"
+              className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
             />
-            <span className="font-medium">
-              {tr("search_searching", undefined, "Searching")}
-            </span>
-            <span className="text-xs text-[var(--color-muted)]">
-              {progress.scanned.toLocaleString()}{" "}
-              {tr("search_entr", undefined, "entr")}
-              {progress.scanned === 1 ? "y" : "ies"}{" "}
-              {tr("search_scanned_progress", undefined, "scanned ·")}{" "}
-              {progress.hits.toLocaleString()}{" "}
-              {tr("search_match_progress", undefined, "match")}
-              {progress.hits === 1 ? "" : "es"}{" "}
-              {tr("search_so_far", undefined, "so far")}
-            </span>
+            <select
+              value={minSize}
+              onChange={(e) => setMinSize(Number(e.target.value))}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+            >
+              {SIZE_OPTIONS.map((o) => (
+                <option key={o.bytes} value={o.bytes}>
+                  {tr(o.labelKey, undefined, o.labelFallback)}
+                </option>
+              ))}
+            </select>
+            {loading ? (
+              <Button
+                variant="secondary"
+                size="md"
+                leftIcon={<X size={14} />}
+                onClick={cancel}
+                title={tr(
+                  "search_stop_tooltip",
+                  undefined,
+                  "Stop the current search",
+                )}
+              >
+                {tr("search_stop", undefined, "Stop")}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="md"
+                leftIcon={<SearchIcon size={14} />}
+                onClick={run}
+                disabled={!pattern.trim() || !host?.trim()}
+              >
+                {tr("search", undefined, "Search")}
+              </Button>
+            )}
           </div>
-          {progress.currentPath && (
-            <div className="mt-1 truncate font-mono text-xs text-[var(--color-muted)]">
-              {tr("search_in", undefined, "in")} {progress.currentPath}
+          {(saved.length > 0 || pattern.trim()) && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+              {pattern.trim() && (
+                <button
+                  type="button"
+                  onClick={saveCurrent}
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 hover:bg-[var(--color-surface-3)]"
+                >
+                  {tr("search_save", undefined, "Save current")}
+                </button>
+              )}
+              {saved.map((s) => (
+                <span
+                  key={s.id}
+                  className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] py-0.5 pl-2 pr-1"
+                >
+                  <button
+                    type="button"
+                    onClick={() => applySaved(s)}
+                    title={`${s.pattern} (min ${s.minSize})`}
+                    className="hover:text-[var(--color-accent)]"
+                  >
+                    {s.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeSaved(s.id)}
+                    className="px-1 text-[var(--color-muted)] hover:text-[var(--color-bad)]"
+                    title={tr(
+                      "search_remove",
+                      undefined,
+                      "Remove saved search",
+                    )}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
             </div>
           )}
-        </div>
-      )}
+        </section>
 
-      {!result && !loading && (
-        <EmptyState
-          fill
-          icon={SearchIcon}
-          message={tr(
-            "search_idle",
-            undefined,
-            "Enter a filename pattern above and hit Search to scan every writable drive on your PS5.",
-          )}
-        />
-      )}
-
-      {result && result.hits.length === 0 && !loading && (
-        <div className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
-          {result.cancelled
-            ? `Search stopped. Scanned ${result.scanned.toLocaleString()} entries before you cancelled.`
-            : `No matches. Scanned ${result.scanned.toLocaleString()} entries.`}
-          {result.truncated && " Stopped at 100,000 entries — try a narrower pattern."}
-        </div>
-      )}
-
-      {result && result.hits.length > 0 && (
-        <>
-          <div className="mb-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
-            <span>
-              {result.hits.length.toLocaleString()}{" "}
-              {tr("search_match_result", undefined, "match")}
-              {result.hits.length === 1 ? "" : "es"}{" "}
-              {tr("search_scanned_result", undefined, "· scanned")}{" "}
-              {result.scanned.toLocaleString()}{" "}
-              {tr("search_entries_result", undefined, "entries")}
-              {result.cancelled && " · you stopped the search"}
-              {result.truncated && " · stopped at 100k"}
-            </span>
-            <button
-              type="button"
-              onClick={() => exportSearchResults(result.hits, "csv")}
-              className="ml-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
-            >
-              {tr("search_export_csv", undefined, "Export CSV")}
-            </button>
-            <button
-              type="button"
-              onClick={() => exportSearchResults(result.hits, "json")}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
-            >
-              {tr("search_export_json", undefined, "Export JSON")}
-            </button>
+        {error && (
+          <div className="mb-4">
+            <ErrorCard
+              title={tr("search_failed", undefined, "Search failed")}
+              detail={error}
+            />
           </div>
-          <ul className="grid gap-1">
-            {result.hits.map((h, i) => {
-              const Icon = h.kind === "dir" ? Folder : FileIcon;
-              return (
-                <li
-                  key={`${h.path}-${i}`}
-                  className="flex items-center gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-sm"
-                >
-                  <Icon size={14} className="shrink-0 text-[var(--color-muted)]" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-mono text-sm">{h.name}</div>
-                    <div className="truncate font-mono text-xs text-[var(--color-muted)]">
-                      {h.path}
+        )}
+
+        {loading && progress && (
+          <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
+            <div className="flex items-center gap-2">
+              <Loader2
+                size={14}
+                className="animate-spin text-[var(--color-accent)]"
+              />
+              <span className="font-medium">
+                {tr("search_searching", undefined, "Searching")}
+              </span>
+              <span className="text-xs text-[var(--color-muted)]">
+                {progress.scanned.toLocaleString()}{" "}
+                {tr("search_entr", undefined, "entr")}
+                {progress.scanned === 1 ? "y" : "ies"}{" "}
+                {tr("search_scanned_progress", undefined, "scanned ·")}{" "}
+                {progress.hits.toLocaleString()}{" "}
+                {tr("search_match_progress", undefined, "match")}
+                {progress.hits === 1 ? "" : "es"}{" "}
+                {tr("search_so_far", undefined, "so far")}
+              </span>
+            </div>
+            {progress.currentPath && (
+              <div className="mt-1 truncate font-mono text-xs text-[var(--color-muted)]">
+                {tr("search_in", undefined, "in")} {progress.currentPath}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!result && !loading && (
+          <EmptyState
+            fill
+            icon={SearchIcon}
+            message={tr(
+              "search_idle",
+              undefined,
+              "Enter a filename pattern above and hit Search to scan every writable drive on your PS5.",
+            )}
+          />
+        )}
+
+        {result && result.hits.length === 0 && !loading && (
+          <div className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
+            {result.cancelled
+              ? `Search stopped. Scanned ${result.scanned.toLocaleString()} entries before you cancelled.`
+              : `No matches. Scanned ${result.scanned.toLocaleString()} entries.`}
+            {result.truncated &&
+              " Stopped at 100,000 entries — try a narrower pattern."}
+          </div>
+        )}
+
+        {result && result.hits.length > 0 && (
+          <>
+            <div className="mb-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
+              <span>
+                {result.hits.length.toLocaleString()}{" "}
+                {tr("search_match_result", undefined, "match")}
+                {result.hits.length === 1 ? "" : "es"}{" "}
+                {tr("search_scanned_result", undefined, "· scanned")}{" "}
+                {result.scanned.toLocaleString()}{" "}
+                {tr("search_entries_result", undefined, "entries")}
+                {result.cancelled && " · you stopped the search"}
+                {result.truncated && " · stopped at 100k"}
+              </span>
+              <button
+                type="button"
+                onClick={() => exportSearchResults(result.hits, "csv")}
+                className="ml-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
+              >
+                {tr("search_export_csv", undefined, "Export CSV")}
+              </button>
+              <button
+                type="button"
+                onClick={() => exportSearchResults(result.hits, "json")}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-xs hover:bg-[var(--color-surface-3)]"
+              >
+                {tr("search_export_json", undefined, "Export JSON")}
+              </button>
+            </div>
+            <ul className="grid gap-1">
+              {result.hits.map((h, i) => {
+                const Icon = h.kind === "dir" ? Folder : FileIcon;
+                return (
+                  <li
+                    key={`${h.path}-${i}`}
+                    className="flex items-center gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-sm"
+                  >
+                    <Icon
+                      size={14}
+                      className="shrink-0 text-[var(--color-muted)]"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-mono text-sm">{h.name}</div>
+                      <div className="truncate font-mono text-xs text-[var(--color-muted)]">
+                        {h.path}
+                      </div>
                     </div>
-                  </div>
-                  <span className="shrink-0 text-xs text-[var(--color-muted)] tabular-nums">
-                    {h.size > 0 ? formatBytes(h.size) : "—"}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      )}
+                    <span className="shrink-0 text-xs text-[var(--color-muted)] tabular-nums">
+                      {h.size > 0 ? formatBytes(h.size) : "—"}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </ConnectionGate>
     </div>
   );
 }
@@ -384,10 +437,7 @@ export default function SearchScreen() {
 /** Save the current hits to disk via the Tauri save dialog. CSV uses
  *  RFC 4180 quoting (double-quote both wrappers and embedded quotes);
  *  JSON serializes the entire SearchHit shape. */
-async function exportSearchResults(
-  hits: SearchHit[],
-  format: "csv" | "json",
-) {
+async function exportSearchResults(hits: SearchHit[], format: "csv" | "json") {
   const { save } = await import("@tauri-apps/plugin-dialog");
   const { writeTextFileToPath } = await import("../../lib/saveTextFile");
   const dest = await save({

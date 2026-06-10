@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../components";
+import { ConsoleChip } from "../../components/ConsoleChip";
 import { useTr } from "../../state/lang";
 import { usePayloadPlaylistsStore } from "../../state/payloadPlaylists";
 import { sanitiseSleepMs, type Playlist } from "../../lib/playlistOps";
@@ -233,6 +234,7 @@ function RunStatusBanner() {
       <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface)] p-2 text-xs">
         <Loader2 size={14} className="animate-spin text-[var(--color-accent)]" />
         <span className="font-medium">{name}</span>
+        <ConsoleChip addr={runStatus.host} />
         <span className="text-[var(--color-muted)]">
           {tr(
             "playlist_status_running",
@@ -252,6 +254,7 @@ function RunStatusBanner() {
       <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface)] p-2 text-xs">
         <Clock size={14} className="text-[var(--color-accent)]" />
         <span className="font-medium">{name}</span>
+        <ConsoleChip addr={runStatus.host} />
         <span className="text-[var(--color-muted)]">
           {tr(
             "playlist_status_sleeping",

@@ -37,6 +37,12 @@ export interface Schedule {
   oneShotMs?: number;
   /** Display name. */
   label: string;
+  /** Target console (bare host) for console-specific actions like
+   *  power_tick. Captured at creation from the active console so the tick
+   *  always hits the PS5 the schedule was made for — NOT whatever tab
+   *  happens to be active when it fires. Absent → fall back to the active
+   *  console (legacy schedules + non-console actions). */
+  host?: string;
   /** Optional payload for the action. */
   body?: string;
   /** Last fire ms (debounce — don't double-fire within 1 minute). */

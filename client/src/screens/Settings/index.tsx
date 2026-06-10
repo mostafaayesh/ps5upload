@@ -18,6 +18,7 @@ import {
   Bug,
   Zap,
   Trash2,
+  ExternalLink,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useThemeStore, type Theme } from "../../state/theme";
@@ -35,6 +36,7 @@ import {
 import { useConnectionStore } from "../../state/connection";
 import { userConfigPath, resetAllAppData } from "../../state/userConfig";
 import { useUpdateStore, type UpdatePhase } from "../../state/update";
+import { isMobile } from "../../lib/platform";
 import type { LanguageCode } from "../../i18n";
 // Static imports for stores already pulled into the main bundle by
 // AppShell / Connection — the prior dynamic `import()` form here
@@ -101,16 +103,18 @@ export default function SettingsScreen() {
     showTransferFiles,
     uploadStreams,
     autoResume,
-    keepPs5Awake,
+    keepPs5AwakeMode,
     bandwidthCapMbps,
     setAlwaysOverwrite,
     setShowTransferFiles,
     setUploadStreams,
     setAutoResume,
-    setKeepPs5Awake,
+    setKeepPs5AwakeMode,
     setBandwidthCapMbps,
   } = useUploadSettingsStore();
   const payloadMaxStreams = useConnectionStore((s) => s.maxTransferStreams);
+  // UA-based, stable for the whole session — safe to read during render.
+  const mobile = isMobile();
 
   const [cfgPath, setCfgPath] = useState<string | null>(null);
 
@@ -119,7 +123,9 @@ export default function SettingsScreen() {
     // Resolve the settings-mirror path so the Settings → Storage card
     // can show the user where their settings.json lives. One-shot per
     // mount — the path is stable once the OS tells us the home dir.
-    userConfigPath().then(setCfgPath).catch(() => setCfgPath(null));
+    userConfigPath()
+      .then(setCfgPath)
+      .catch(() => setCfgPath(null));
   }, [syncFromBackend]);
 
   return (
@@ -159,11 +165,26 @@ export default function SettingsScreen() {
           </label>
         </Section>
 
-        <Section title={tr("settings_section_appearance", undefined, "Appearance")}>
+        <Section
+          title={tr("settings_section_appearance", undefined, "Appearance")}
+        >
           <ThemePicker />
         </Section>
 
-        <Section title={tr("keep_awake", undefined, "Keep computer awake")}>
+        {/* Mobile wording: the keep-awake store drives a screen wake
+            lock on Android (state/keepAwake.ts), so the desktop
+            "keep computer awake" copy is wrong there. `supported` is
+            already accurate on Android — it reflects the WebView's
+            wake-lock API, not the desktop inhibitor — so the
+            "not supported" warning only shows when the wake lock is
+            genuinely unavailable. */}
+        <Section
+          title={
+            mobile
+              ? tr("keep_awake_mobile", undefined, "Keep screen on")
+              : tr("keep_awake", undefined, "Keep computer awake")
+          }
+        >
           <label className="flex items-start gap-3 text-sm">
             <input
               type="checkbox"
@@ -175,26 +196,44 @@ export default function SettingsScreen() {
             <div>
               <div className="flex items-center gap-2 font-medium">
                 <SleepIcon size={14} />
-                {tr(
-                  "keep_awake_on",
-                  undefined,
-                  "Keep the computer awake while PS5 Upload is open",
-                )}
+                {mobile
+                  ? tr(
+                      "keep_awake_on_mobile",
+                      undefined,
+                      "Keep the screen on while PS5 Upload is in the foreground",
+                    )
+                  : tr(
+                      "keep_awake_on",
+                      undefined,
+                      "Keep the computer awake while PS5 Upload is open",
+                    )}
               </div>
               <div className="mt-0.5 text-xs text-[var(--color-muted)]">
-                {tr(
-                  "keep_awake_hint",
-                  undefined,
-                  "Uploads, downloads, and installs already keep the computer awake automatically. Turn this on to also block sleep while the app is open but idle.",
-                )}
+                {mobile
+                  ? tr(
+                      "keep_awake_hint_mobile",
+                      undefined,
+                      "Stops the display from dimming and locking while the app is visible — useful during long uploads. Released automatically when you switch apps or turn the screen off.",
+                    )
+                  : tr(
+                      "keep_awake_hint",
+                      undefined,
+                      "Uploads, downloads, and installs already keep the computer awake automatically. Turn this on to also block sleep while the app is open but idle.",
+                    )}
               </div>
               {!supported && (
                 <div className="mt-1 text-xs text-[var(--color-warn)]">
-                  {tr(
-                    "keep_awake_unsupported",
-                    undefined,
-                    "Not yet supported on this platform.",
-                  )}
+                  {mobile
+                    ? tr(
+                        "keep_awake_unsupported_mobile",
+                        undefined,
+                        "Screen wake lock isn't available in this WebView.",
+                      )
+                    : tr(
+                        "keep_awake_unsupported",
+                        undefined,
+                        "Not yet supported on this platform.",
+                      )}
                 </div>
               )}
               {lastError && (
@@ -210,7 +249,9 @@ export default function SettingsScreen() {
           {tr("settings_group_uploads", undefined, "Uploads")}
         </GroupHeading>
 
-        <Section title={tr("settings_card_upload_behavior", undefined, "Behavior")}>
+        <Section
+          title={tr("settings_card_upload_behavior", undefined, "Behavior")}
+        >
           <div className="grid gap-3">
             <label className="flex items-start gap-3 text-sm">
               <input
@@ -222,7 +263,11 @@ export default function SettingsScreen() {
               <div>
                 <div className="flex items-center gap-2 font-medium">
                   <UploadIcon size={14} />
-                  {tr("always_overwrite", undefined, "Always overwrite without asking")}
+                  {tr(
+                    "always_overwrite",
+                    undefined,
+                    "Always overwrite without asking",
+                  )}
                 </div>
                 <div className="mt-0.5 text-xs text-[var(--color-muted)]">
                   {tr(
@@ -243,7 +288,11 @@ export default function SettingsScreen() {
               />
               <div>
                 <div className="font-medium">
-                  {tr("show_file_list", undefined, "Show file list during transfer")}
+                  {tr(
+                    "show_file_list",
+                    undefined,
+                    "Show file list during transfer",
+                  )}
                 </div>
                 <div className="mt-0.5 text-xs text-[var(--color-muted)]">
                   {tr(
@@ -280,31 +329,40 @@ export default function SettingsScreen() {
               </div>
             </label>
 
-            <label className="flex cursor-pointer items-start gap-3 text-sm">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-4 w-4"
-                checked={keepPs5Awake}
-                onChange={(e) => setKeepPs5Awake(e.target.checked)}
-              />
-              <div>
-                <div className="flex items-center gap-2 font-medium">
-                  <Zap size={14} />
-                  {tr(
-                    "keep_ps5_awake",
-                    undefined,
-                    "Keep the PS5 awake during uploads",
-                  )}
-                </div>
-                <div className="mt-0.5 text-xs text-[var(--color-muted)]">
-                  {tr(
-                    "keep_ps5_awake_hint",
-                    undefined,
-                    "While an upload is running, periodically reset the PS5's auto-standby timer so it can't drop into rest mode mid-transfer (a common cause of failed uploads). On by default.",
-                  )}
-                </div>
+            <div className="text-sm">
+              <div className="flex items-center gap-2 font-medium">
+                <Zap size={14} />
+                <label htmlFor="keep-ps5-awake-mode">
+                  {tr("keep_ps5_awake_mode", "Keep the PS5 awake")}
+                </label>
+                <select
+                  id="keep-ps5-awake-mode"
+                  value={keepPs5AwakeMode}
+                  onChange={(e) =>
+                    setKeepPs5AwakeMode(
+                      e.target.value as "off" | "transfers" | "always",
+                    )
+                  }
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs"
+                >
+                  <option value="off">
+                    {tr("keep_awake_mode_off", "Off")}
+                  </option>
+                  <option value="transfers">
+                    {tr("keep_awake_mode_transfers", "During transfers")}
+                  </option>
+                  <option value="always">
+                    {tr("keep_awake_mode_always", "Always while connected")}
+                  </option>
+                </select>
               </div>
-            </label>
+              <div className="mt-0.5 text-xs text-[var(--color-muted)]">
+                {tr(
+                  "keep_ps5_awake_mode_hint",
+                  "Periodically resets the PS5's auto-standby timer so it can't drop into rest mode. “During transfers” protects long uploads (a common cause of failed uploads; default). “Always while connected” keeps every console with a running helper out of rest mode for as long as the app is open. Putting the PS5 to rest manually still works in every mode.",
+                )}
+              </div>
+            </div>
           </div>
         </Section>
 
@@ -313,11 +371,7 @@ export default function SettingsScreen() {
             <div className="text-sm">
               <div className="flex items-center gap-3">
                 <label htmlFor="upload-streams" className="font-medium">
-                  {tr(
-                    "upload_streams",
-                    undefined,
-                    "Parallel upload streams",
-                  )}
+                  {tr("upload_streams", undefined, "Parallel upload streams")}
                 </label>
                 <select
                   id="upload-streams"
@@ -325,15 +379,16 @@ export default function SettingsScreen() {
                   onChange={(e) => setUploadStreams(Number(e.target.value))}
                   className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm"
                 >
-                  {Array.from({ length: MAX_UPLOAD_STREAMS }, (_, i) => i + 1).map(
-                    (n) => (
-                      <option key={n} value={n}>
-                        {n === 1
-                          ? tr("upload_streams_off", undefined, "1 (single)")
-                          : `${n}`}
-                      </option>
-                    ),
-                  )}
+                  {Array.from(
+                    { length: MAX_UPLOAD_STREAMS },
+                    (_, i) => i + 1,
+                  ).map((n) => (
+                    <option key={n} value={n}>
+                      {n === 1
+                        ? tr("upload_streams_off", undefined, "1 (single)")
+                        : `${n}`}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="mt-0.5 text-xs text-[var(--color-muted)]">
@@ -428,7 +483,9 @@ export default function SettingsScreen() {
               className="mt-0.5 shrink-0 text-[var(--color-muted)]"
             />
             <div className="min-w-0 flex-1">
-              <div className="font-medium">{tr("settings_file", undefined, "Settings file")}</div>
+              <div className="font-medium">
+                {tr("settings_file", undefined, "Settings file")}
+              </div>
               <div className="mt-0.5 text-xs text-[var(--color-muted)]">
                 {tr(
                   "settings_file_hint",
@@ -443,7 +500,10 @@ export default function SettingsScreen() {
           </div>
         </Section>
 
-        <Section title={tr("settings_section_backup", undefined, "Backup / restore")} full>
+        <Section
+          title={tr("settings_section_backup", undefined, "Backup / restore")}
+          full
+        >
           <BackupRestorePanel />
         </Section>
 
@@ -455,7 +515,10 @@ export default function SettingsScreen() {
           {tr("settings_section_diagnostic", undefined, "Diagnostics")}
         </GroupHeading>
 
-        <Section title={tr("settings_section_diagnostic", undefined, "Diagnostics")} full>
+        <Section
+          title={tr("settings_section_diagnostic", undefined, "Diagnostics")}
+          full
+        >
           <BugReportLink />
         </Section>
 
@@ -466,7 +529,10 @@ export default function SettingsScreen() {
         {/* 2.12.0: Audit log promoted out of Settings to its own
             top-level route (/audit-log) under Diagnostics. AuditLogPanel
             removed too. */}
-        <Section title={tr("settings_section_schedules", undefined, "Schedules")} full>
+        <Section
+          title={tr("settings_section_schedules", undefined, "Schedules")}
+          full
+        >
           <SchedulesPanel />
         </Section>
       </div>
@@ -485,7 +551,9 @@ function SchedulesPanel() {
   const schedules = useScheduleStore((s) => s.schedules);
   const [labelDraft, setLabelDraft] = useState("");
   const [hhmmDraft, setHhmmDraft] = useState("03:00");
-  const [actionDraft, setActionDraft] = useState<"power_tick" | "notif">("notif");
+  const [actionDraft, setActionDraft] = useState<"power_tick" | "notif">(
+    "notif",
+  );
 
   function add() {
     if (!labelDraft.trim() || !/^\d\d:\d\d$/.test(hhmmDraft)) return;
@@ -495,6 +563,13 @@ function SchedulesPanel() {
       action: actionDraft,
       hhmm: hhmmDraft,
       label: labelDraft.trim(),
+      // power_tick targets a specific console — capture the active one now
+      // so the tick fires against the PS5 this schedule was made for, not
+      // whatever tab happens to be active when it triggers.
+      host:
+        actionDraft === "power_tick"
+          ? useConnectionStore.getState().host?.trim() || undefined
+          : undefined,
     });
     setLabelDraft("");
   }
@@ -532,10 +607,12 @@ function SchedulesPanel() {
               <span className="text-[var(--color-muted)]">
                 {s.kind === "daily" && `daily at ${s.hhmm}`}
                 {s.kind === "weekly" && `weekly at ${s.hhmm}`}
-                {s.kind === "once" && s.oneShotMs &&
+                {s.kind === "once" &&
+                  s.oneShotMs &&
                   `once at ${new Date(s.oneShotMs).toLocaleString()}`}
                 {" · "}
                 {s.action}
+                {s.action === "power_tick" && s.host && ` → ${s.host}`}
               </span>
               <button
                 type="button"
@@ -567,10 +644,14 @@ function SchedulesPanel() {
         />
         <select
           value={actionDraft}
-          onChange={(e) => setActionDraft(e.target.value as "notif" | "power_tick")}
+          onChange={(e) =>
+            setActionDraft(e.target.value as "notif" | "power_tick")
+          }
           className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs"
         >
-          <option value="notif">{tr("settings_notify_only", "Notify only")}</option>
+          <option value="notif">
+            {tr("settings_notify_only", "Notify only")}
+          </option>
           <option value="power_tick">
             {tr("settings_ps5_power_tick", "PS5 power tick")}
           </option>
@@ -1059,7 +1140,6 @@ function BugReportLink() {
   );
 }
 
-
 /** Renders the update state + controls. Pulls straight from
  *  `useUpdateStore` so the same sidebar badge that indicates
  *  "available" also drives this card's main CTA. */
@@ -1069,6 +1149,12 @@ function UpdatesPanel() {
   const checkNow = useUpdateStore((s) => s.checkNow);
   const download = useUpdateStore((s) => s.download);
   const dismissDownload = useUpdateStore((s) => s.dismissDownload);
+  // Mobile: the store's download() opens the APK URL (or the release
+  // page) in the system browser instead of saving to ~/Downloads —
+  // that flow can't work in Android's sandbox. Relabel the CTA so it
+  // doesn't promise an in-app download, and show it even when the
+  // manifest has no APK asset (the release page is always a target).
+  const mobile = isMobile();
 
   const [busy, setBusy] = useState(false);
 
@@ -1103,8 +1189,7 @@ function UpdatesPanel() {
   const canDownload =
     phase.kind === "available" || phase.kind === "download-failed";
   const hasPlatformBundle =
-    resultForNotes?.download_url &&
-    resultForNotes.download_url.length > 0;
+    resultForNotes?.download_url && resultForNotes.download_url.length > 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -1119,17 +1204,21 @@ function UpdatesPanel() {
       {phase.kind === "downloaded" && (
         <div className="rounded-md border border-[var(--color-good)] bg-[var(--color-surface)] p-3 text-xs">
           <div className="mb-1 font-medium text-[var(--color-good)]">
-            {tr("update_downloaded_title", undefined, "Downloaded. Finish installing:")}
+            {tr(
+              "update_downloaded_title",
+              undefined,
+              "Downloaded. Finish installing:",
+            )}
           </div>
           <div className="mb-2 font-mono text-[var(--color-text)]">
             {phase.download.path}
           </div>
           <ol className="list-inside list-decimal space-y-0.5 text-[var(--color-muted)]">
             <li>{tr("update_step_quit", undefined, "Quit PS5Upload.")}</li>
+            <li>{pickInstallHint(phase.download.path, tr)}</li>
             <li>
-              {pickInstallHint(phase.download.path, tr)}
+              {tr("update_step_launch", undefined, "Launch the new version.")}
             </li>
-            <li>{tr("update_step_launch", undefined, "Launch the new version.")}</li>
           </ol>
           <button
             type="button"
@@ -1150,7 +1239,24 @@ function UpdatesPanel() {
           <RefreshCw size={12} className={busy ? "animate-spin" : ""} />
           {tr("check_updates", undefined, "Check for updates")}
         </button>
-        {canDownload && hasPlatformBundle && (
+        {canDownload && mobile && (
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent-contrast)] hover:opacity-90 disabled:opacity-50"
+          >
+            <ExternalLink size={12} />
+            {hasPlatformBundle
+              ? tr(
+                  "update_open_apk_button",
+                  { version: resultForNotes?.latest_version ?? "" },
+                  "Get v{version} APK in browser",
+                )
+              : tr("update_open_release_page", undefined, "Open download page")}
+          </button>
+        )}
+        {canDownload && !mobile && hasPlatformBundle && (
           <button
             type="button"
             onClick={handleDownload}
@@ -1165,7 +1271,7 @@ function UpdatesPanel() {
             )}
           </button>
         )}
-        {canDownload && !hasPlatformBundle && (
+        {canDownload && !mobile && !hasPlatformBundle && (
           <span className="text-xs text-[var(--color-muted)]">
             {tr(
               "update_no_platform_bundle",
@@ -1186,7 +1292,11 @@ function UpdatesPanel() {
  *  component and can't use the hook directly). */
 function pickInstallHint(
   downloadPath: string,
-  tr: (key: string, vars?: Record<string, string | number>, fallback?: string) => string,
+  tr: (
+    key: string,
+    vars?: Record<string, string | number>,
+    fallback?: string,
+  ) => string,
 ): string {
   const lower = downloadPath.toLowerCase();
   if (lower.endsWith(".dmg")) {
@@ -1237,7 +1347,13 @@ function StatusRow({ phase }: { phase: UpdatePhase }) {
     return (
       <div className="inline-flex items-start gap-2 text-xs text-[var(--color-bad)]">
         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-        <span>{tr("update_check_error", { message: phase.message }, `Couldn't check for updates: ${phase.message}`)}</span>
+        <span>
+          {tr(
+            "update_check_error",
+            { message: phase.message },
+            `Couldn't check for updates: ${phase.message}`,
+          )}
+        </span>
       </div>
     );
   }
@@ -1259,7 +1375,10 @@ function StatusRow({ phase }: { phase: UpdatePhase }) {
         <Download size={12} />
         {tr(
           "update_available_msg",
-          { latest: phase.result.latest_version, current: phase.result.current_version },
+          {
+            latest: phase.result.latest_version,
+            current: phase.result.current_version,
+          },
           `v${phase.result.latest_version} is available — you're on v${phase.result.current_version}.`,
         )}
       </div>
@@ -1293,7 +1412,13 @@ function StatusRow({ phase }: { phase: UpdatePhase }) {
   return (
     <div className="inline-flex items-start gap-2 text-xs text-[var(--color-bad)]">
       <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-      <span>{tr("update_download_error", { message: phase.message }, `Download failed: ${phase.message}`)}</span>
+      <span>
+        {tr(
+          "update_download_error",
+          { message: phase.message },
+          `Download failed: ${phase.message}`,
+        )}
+      </span>
     </div>
   );
 }
@@ -1312,7 +1437,9 @@ function ReleaseNotes({
   return (
     <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
       <div className="mb-1 flex items-center justify-between text-xs uppercase tracking-wide text-[var(--color-muted)]">
-        <span>{tr("whats_new_in", { version }, `What's new in v${version}`)}</span>
+        <span>
+          {tr("whats_new_in", { version }, `What's new in v${version}`)}
+        </span>
         {pubDate && (
           <span className="font-mono">
             {pubDate.slice(0, 10) /* YYYY-MM-DD */}

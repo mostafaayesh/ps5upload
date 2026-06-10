@@ -1,4 +1,6 @@
-//! JSON-file-backed persistence for send-payload history.
+//! JSON-file-backed persistence for the "Send payload" recent-history feature
+//! (used by the Payloads → Send tab to remember prior ELF/JS/etc. sends
+//! for one-click replay, including successes and failures).
 //!
 //! Historically this module also hosted `profiles_*`, `queue_*`,
 //! `history_*` (generic), and `config_*` handlers inherited from the
@@ -6,8 +8,9 @@
 //! and have been removed — user settings now flow through
 //! `user_config.rs`, and the renderer's state is in Zustand.
 //!
-//! What remains is the send-payload history (Connection → Send
-//! payload replays the last N sends). Schema is opaque JSON; the
+//! The on-disk file and the Tauri command names (`send_payload_history_*`)
+//! are kept for backward compatibility with any external tooling and
+//! with existing user data directories. Schema is opaque JSON; the
 //! renderer owns the shape.
 //!
 //! Store: `<app_data_dir>/send_payload_history.json`.

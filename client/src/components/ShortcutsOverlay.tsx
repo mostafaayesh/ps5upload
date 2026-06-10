@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Keyboard, X } from "lucide-react";
 
 import { useTr } from "../state/lang";
+import { isMobile } from "../lib/platform";
 
 /**
  * Press `?` to display every keybinding the app supports. Modeled
@@ -45,13 +46,23 @@ const SHORTCUTS: Array<{ section: string; items: Shortcut[] }> = [
 export function ShortcutsOverlay() {
   const tr = useTr();
   const [open, setOpen] = useState(false);
+  // Touch devices have no `?` key to press and no keyboard shortcuts
+  // worth documenting — don't register listeners or render anything.
+  // isMobile() is UA-based and stable for the session, so gating the
+  // effect body (rather than the hook calls) keeps hook order legal.
+  const mobile = isMobile();
 
   useEffect(() => {
+    if (mobile) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const target = e.target as HTMLElement | null;
         const tag = target?.tagName?.toLowerCase();
-        if (tag === "input" || tag === "textarea" || target?.isContentEditable) {
+        if (
+          tag === "input" ||
+          tag === "textarea" ||
+          target?.isContentEditable
+        ) {
           return;
         }
         e.preventDefault();
@@ -65,18 +76,18 @@ export function ShortcutsOverlay() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open]);
+  }, [open, mobile]);
 
-  if (!open) return null;
+  if (mobile || !open) return null;
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+      className="anim-scrim fixed inset-0 z-[60] flex items-center justify-center bg-[var(--overlay-scrim)]"
       onClick={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}
     >
-      <div className="w-[480px] max-w-[90vw] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-xl">
+      <div className="anim-pop elev-3 w-[480px] max-w-[90vw] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]">
         <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
           <div className="flex items-center gap-2">
             <Keyboard size={14} className="text-[var(--color-muted)]" />

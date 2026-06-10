@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import AppShell from "./layout/AppShell";
+import { useRosterStore } from "./state/roster";
 
 /**
  * Code-splitting strategy:
@@ -58,14 +59,28 @@ function ScreenLoader() {
   return <div className="flex h-full items-center justify-center" />;
 }
 
+/**
+ * Landing logic (v3): a fresh install — no console in the roster yet —
+ * goes straight to Connection, because nothing in the app works before
+ * a console is set up and "What's new" gave first-time users zero
+ * direction. Returning users keep the changelog landing, and AppShell's
+ * route-restore then takes them to wherever they last worked (it
+ * triggers on "/whats-new", not on "/connection", so this redirect
+ * stays out of its way).
+ */
+function LandingRedirect() {
+  const hasConsole = useRosterStore((s) => s.profiles.length > 0);
+  return <Navigate to={hasConsole ? "/whats-new" : "/connection"} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        {/* Landing page: Changelog. New users see "what is this app"
-         * framed as a fresh-changes list, and returning users catch
-         * up on updates before diving back into work. */}
-        <Route index element={<Navigate to="/whats-new" replace />} />
+        {/* Landing: fresh installs go to Connection (see LandingRedirect);
+         * returning users land on the changelog and route-restore takes
+         * them back to their last screen. */}
+        <Route index element={<LandingRedirect />} />
         <Route path="/whats-new" element={<ChangelogScreen />} />
         <Route path="/connection" element={<ConnectionScreen />} />
         <Route
@@ -132,13 +147,9 @@ export default function App() {
             </Suspense>
           }
         />
-        {/* 2.12.0: send-payload merged into /payloads?tab=send. Keep
-            the old route alive as a redirect so bookmarks survive.
-            TODO(2.13.0): delete once CommandPalette + FAQ are
-            verified to no longer reference /send-payload. As of
-            2.12.0 the palette already points at /payloads?tab=send
-            directly; this redirect is just for external bookmarks
-            of a desktop-only Tauri app, which is a very small set. */}
+        {/* Legacy deep link / bookmark support for pre-2.12 installs.
+            The Payloads tab now owns send functionality under ?tab=send.
+            Keep the redirect indefinitely for any external bookmarks. */}
         <Route
           path="/send-payload"
           element={<Navigate to="/payloads?tab=send" replace />}
@@ -191,11 +202,9 @@ export default function App() {
             </Suspense>
           }
         />
-        {/* 2.12.0: kernel log merged into /logs?tab=kernel. Keep
-            the old route alive as a redirect so bookmarks survive.
-            TODO(2.13.0): delete once CommandPalette + FAQ are
-            verified clean of /kernel-log; palette already targets
-            /logs?tab=kernel directly. */}
+        {/* Legacy deep link / bookmark support for pre-2.12 installs.
+            Kernel logs now live under the Logs tab ?tab=kernel.
+            Keep the redirect indefinitely for any external bookmarks. */}
         <Route
           path="/kernel-log"
           element={<Navigate to="/logs?tab=kernel" replace />}

@@ -4,6 +4,43 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 3.0.0
+
+The big redesign. Same tool, sharper look, fewer steps, fewer surprises.
+
+- **A fresh look across the whole app.** Deeper, richer dark theme with real
+  depth and a more vivid PlayStation blue; refreshed light and OLED themes;
+  smooth animations on dialogs, menus, and page changes (and the four
+  PlayStation shapes as the new loading mark). Every button and field now
+  shows a visible focus ring for keyboard users, and motion respects your
+  system's reduced-motion setting.
+- **Keep your PS5 awake — your choice.** Settings → Upload now has a
+  three-way "Keep the PS5 awake" option: **Off**, **During transfers**
+  (default, protects long uploads from rest mode), or **Always while
+  connected** — your PS5 never auto-enters rest mode while the app is open.
+  Putting the console to rest manually always still works. A small ⚡ in the
+  status bar shows when always-on is active. Verified on real consoles.
+- **Games go straight to your home screen.** Upload a game folder and it's
+  registered on the PS5 automatically when the transfer finishes (works from
+  the queue too) — no more hunting for "Register" in the Library. You can
+  turn this off per upload, and the menu is now called **"Add to home
+  screen"** so it says what it does.
+- **No more dead ends.** Every screen now tells you exactly what's wrong and
+  how to fix it — no console set up yet, console offline, helper not
+  running, or the engine not responding — with a button that takes you
+  there. New installs land directly on the Connection screen.
+- **Errors can't slip past you anymore.** When a delete, move, mount, rename
+  or download fails, the error now also lands in the notification inbox —
+  navigating away no longer makes it vanish.
+- **Quality of life.** Loading screens show smooth placeholders instead of
+  blank space; huge game libraries render instantly ("Show all" expands the
+  rest); scheduled power-ticks now always target the console you created
+  them for; Dashboard moved next to Connection where you'd look for it.
+- **Fully translated.** Every string in the app is now translated in all
+  18 languages — no English fallbacks left anywhere.
+
+---
+
 ## 2.30.0
 
 - **Running several PS5s hard at once won't crash a console.** When work

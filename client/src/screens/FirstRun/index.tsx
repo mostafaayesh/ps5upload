@@ -22,13 +22,11 @@ import {
   portCheck,
   type PayloadReleaseInfo,
 } from "../../api/ps5";
-import {
-  useConnectionStore,
-  PS5_LOADER_PORT,
-} from "../../state/connection";
+import { useConnectionStore, PS5_LOADER_PORT } from "../../state/connection";
 import { PageHeader, Button } from "../../components";
 import { useTr } from "../../state/lang";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 
 /**
  * First-run setup wizard.
@@ -219,12 +217,18 @@ export default function FirstRunScreen() {
           elfPath = local.path;
         }
         if (!elfPath) {
-          updateStep(id, { state: "fail", note: "no local ELF after download" });
+          updateStep(id, {
+            state: "fail",
+            note: "no local ELF after download",
+          });
           throw new Error(`no path for ${id}`);
         }
 
         if (cancelled.current) return;
-        updateStep(id, { state: "busy", note: `sending to ${host}:${PS5_LOADER_PORT}…` });
+        updateStep(id, {
+          state: "busy",
+          note: `sending to ${host}:${PS5_LOADER_PORT}…`,
+        });
         await sendPayload(host, elfPath);
         updateStep(id, { state: "ok", note: `sent ${release.tag}` });
 
@@ -295,7 +299,10 @@ export default function FirstRunScreen() {
       );
       pushNotification(
         "success",
-        tr("notif_first_run_done_title", undefined, "PS5 setup complete"),
+        withConsolePrefix(
+          host,
+          tr("notif_first_run_done_title", undefined, "PS5 setup complete"),
+        ),
         {
           body: tr(
             "notif_first_run_done_body",
@@ -310,7 +317,10 @@ export default function FirstRunScreen() {
       setStep3Msg(e instanceof Error ? e.message : String(e));
       pushNotification(
         "error",
-        tr("notif_first_run_failed_title", undefined, "PS5 setup failed"),
+        withConsolePrefix(
+          host,
+          tr("notif_first_run_failed_title", undefined, "PS5 setup failed"),
+        ),
         {
           body: e instanceof Error ? e.message : String(e),
           link: "/first-run",
@@ -434,14 +444,13 @@ export default function FirstRunScreen() {
             {step3Detail.length > 0 && (
               <ul className="mt-3 space-y-1.5">
                 {step3Detail.map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex items-center gap-2 text-xs"
-                  >
+                  <li key={s.id} className="flex items-center gap-2 text-xs">
                     <StepIcon state={s.state} />
                     <span className="font-medium">{s.label}</span>
                     {s.note && (
-                      <span className="text-[var(--color-muted)]">— {s.note}</span>
+                      <span className="text-[var(--color-muted)]">
+                        — {s.note}
+                      </span>
                     )}
                   </li>
                 ))}
@@ -456,11 +465,7 @@ export default function FirstRunScreen() {
             icon={HardDrive}
             title={tr("first_run_step4_title", undefined, "You're ready")}
             state="ok"
-            stateText={tr(
-              "first_run_step4_done",
-              undefined,
-              "Setup complete",
-            )}
+            stateText={tr("first_run_step4_done", undefined, "Setup complete")}
           >
             <p className="mb-3 text-xs text-[var(--color-muted)]">
               {tr(

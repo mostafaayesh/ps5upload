@@ -77,14 +77,36 @@ function loadUploadStreams(): number {
   return Math.min(Math.max(n, 1), MAX_UPLOAD_STREAMS);
 }
 
-/** Keep the PS5 awake during uploads. Default ON: while a transfer is running,
- *  the app periodically sends a power-tick (sceSystemServicePowerTick) that
- *  resets the console's auto-standby timer, so a long upload doesn't get
- *  killed by the PS5 dropping into rest mode mid-transfer. Stored as "false"
- *  only when disabled, so absence (fresh install) = ON. */
-function loadKeepPs5Awake(): boolean {
-  if (typeof window === "undefined") return true;
-  return window.localStorage.getItem(KEY_KEEP_PS5_AWAKE) !== "false";
+/** Keep-PS5-awake policy. The app periodically sends a power-tick
+ *  (sceSystemServicePowerTick) that resets the console's auto-standby
+ *  timer:
+ *
+ *    "off"       — never tick; the PS5 rests on its own schedule.
+ *    "transfers" — tick only while an upload/queue item is running, so a
+ *                  long transfer isn't killed by rest mode (the
+ *                  spool_apply_failed failure). Default.
+ *    "always"    — tick every connected console for as long as the app is
+ *                  open and its helper is up, so the PS5 never auto-rests
+ *                  while you're working with it. Manual rest from the
+ *                  controller still works — the tick only resets the IDLE
+ *                  timer, it doesn't block an explicit request.
+ *
+ *  Migration: the pre-v3 setting was a boolean under KEY_KEEP_PS5_AWAKE
+ *  ("false" = disabled, absent = enabled). When the new mode key is absent
+ *  we derive it from the old one so nobody's choice is lost. */
+export type KeepPs5AwakeMode = "off" | "transfers" | "always";
+
+const KEY_KEEP_PS5_AWAKE_MODE = "ps5upload.keep_ps5_awake_mode";
+
+function loadKeepPs5AwakeMode(): KeepPs5AwakeMode {
+  if (typeof window === "undefined") return "transfers";
+  const v = window.localStorage.getItem(KEY_KEEP_PS5_AWAKE_MODE);
+  if (v === "off" || v === "transfers" || v === "always") return v;
+  // Legacy boolean: "false" meant disabled; absent/true meant
+  // tick-during-transfers.
+  return window.localStorage.getItem(KEY_KEEP_PS5_AWAKE) === "false"
+    ? "off"
+    : "transfers";
 }
 
 /** Auto-resume after a failed upload. Default ON: when a job fails for a
@@ -122,15 +144,14 @@ interface UploadSettingsState {
    *  the payload if it crashed, then resume. Bounded retries; fatal errors
    *  still surface. */
   autoResume: boolean;
-  /** When true (default), periodically defer the PS5's auto-standby timer
-   *  while an upload is running so it can't drop into rest mode mid-transfer. */
-  keepPs5Awake: boolean;
+  /** Keep-PS5-awake policy — see KeepPs5AwakeMode. */
+  keepPs5AwakeMode: KeepPs5AwakeMode;
   setAlwaysOverwrite: (on: boolean) => void;
   setShowTransferFiles: (on: boolean) => void;
   setBandwidthCapMbps: (n: number) => void;
   setUploadStreams: (n: number) => void;
   setAutoResume: (on: boolean) => void;
-  setKeepPs5Awake: (on: boolean) => void;
+  setKeepPs5AwakeMode: (mode: KeepPs5AwakeMode) => void;
 }
 
 export const useUploadSettingsStore = create<UploadSettingsState>((set) => ({
@@ -140,7 +161,7 @@ export const useUploadSettingsStore = create<UploadSettingsState>((set) => ({
   bandwidthCapMbps: loadBandwidthCap(),
   uploadStreams: loadUploadStreams(),
   autoResume: loadAutoResume(),
-  keepPs5Awake: loadKeepPs5Awake(),
+  keepPs5AwakeMode: loadKeepPs5AwakeMode(),
   setAlwaysOverwrite: (alwaysOverwrite) => {
     window.localStorage.setItem(
       KEY_ALWAYS_OVERWRITE,
@@ -175,11 +196,14 @@ export const useUploadSettingsStore = create<UploadSettingsState>((set) => ({
     window.localStorage.setItem(KEY_AUTO_RESUME, autoResume ? "true" : "false");
     set({ autoResume });
   },
-  setKeepPs5Awake: (keepPs5Awake) => {
+  setKeepPs5AwakeMode: (keepPs5AwakeMode) => {
+    window.localStorage.setItem(KEY_KEEP_PS5_AWAKE_MODE, keepPs5AwakeMode);
+    // Mirror into the legacy boolean so a downgrade to an older build
+    // still respects an explicit "off".
     window.localStorage.setItem(
       KEY_KEEP_PS5_AWAKE,
-      keepPs5Awake ? "true" : "false",
+      keepPs5AwakeMode === "off" ? "false" : "true",
     );
-    set({ keepPs5Awake });
+    set({ keepPs5AwakeMode });
   },
 }));

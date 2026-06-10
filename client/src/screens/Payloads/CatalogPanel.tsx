@@ -13,6 +13,7 @@ import {
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { useConnectionStore } from "../../state/connection";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 import {
   payloadsCatalog,
   payloadsReleases,
@@ -57,7 +58,9 @@ export default function CatalogPanel() {
   // `releases[id]` is the currently-SELECTED release for each payload (drives
   // the Download button + info box). `releaseLists[id]` is the full version
   // history for the picker; `selectedTag[id]` is the user's chosen version.
-  const [releases, setReleases] = useState<Record<string, PayloadReleaseInfo>>({});
+  const [releases, setReleases] = useState<Record<string, PayloadReleaseInfo>>(
+    {},
+  );
   const [releaseLists, setReleaseLists] = useState<
     Record<string, PayloadReleaseInfo[]>
   >({});
@@ -67,9 +70,11 @@ export default function CatalogPanel() {
   const [usbWizardOpen, setUsbWizardOpen] = useState(false);
 
   useEffect(() => {
-    payloadsCatalog().then(setCatalog).catch((e) => {
-      setErrors((prev) => ({ ...prev, _global: String(e) }));
-    });
+    payloadsCatalog()
+      .then(setCatalog)
+      .catch((e) => {
+        setErrors((prev) => ({ ...prev, _global: String(e) }));
+      });
     refreshInventory();
     // Mount-once: `refreshInventory` is wrapped in useCallback with
     // an empty dep array, so it's identity-stable. Depending on it
@@ -140,7 +145,11 @@ export default function CatalogPanel() {
     if (!release || !release.picked_asset_url) return;
     setBusy(id, true);
     try {
-      const local = await payloadsDownload(id, release.picked_asset_url, release.tag);
+      const local = await payloadsDownload(
+        id,
+        release.picked_asset_url,
+        release.tag,
+      );
       await refreshInventory();
       pushNotification("success", `Cached ${id} ${release.tag}`, {
         body: `${(local.size / 1024).toFixed(1)} KB downloaded to local cache.`,
@@ -174,12 +183,16 @@ export default function CatalogPanel() {
     setBusy(id, true);
     try {
       await sendPayload(host.trim(), local.path);
-      pushNotification("success", `Sent ${id} → ${host.trim()}`, {
-        body: `Payload v${local.version || "?"} streamed to :9021. Check the PS5 for the boot toast.`,
-      });
+      pushNotification(
+        "success",
+        withConsolePrefix(host, `Sent ${id} → ${host.trim()}`),
+        {
+          body: `Payload v${local.version || "?"} streamed to :9021. Check the PS5 for the boot toast.`,
+        },
+      );
     } catch (e) {
       setErrors((prev) => ({ ...prev, [id]: String(e) }));
-      pushNotification("error", `Send failed: ${id}`, {
+      pushNotification("error", withConsolePrefix(host, `Send failed: ${id}`), {
         body: String(e),
         link: "/payloads",
       });
@@ -198,7 +211,11 @@ export default function CatalogPanel() {
       return (
         <div className="mx-auto w-full max-w-5xl">
           <ErrorCard
-            title={tr("payloads_load_failed", undefined, "Could not load catalogue")}
+            title={tr(
+              "payloads_load_failed",
+              undefined,
+              "Could not load catalogue",
+            )}
             detail={errors._global}
           />
         </div>
@@ -228,16 +245,16 @@ export default function CatalogPanel() {
             leftIcon={<HardDrive size={12} />}
             onClick={() => setUsbWizardOpen(true)}
           >
-            {tr(
-              "payloads_open_usb_wizard",
-              undefined,
-              "Set up USB autoloader",
-            )}
+            {tr("payloads_open_usb_wizard", undefined, "Set up USB autoloader")}
           </Button>
         </div>
         {errors._global && (
           <ErrorCard
-            title={tr("payloads_load_failed", undefined, "Could not load catalogue")}
+            title={tr(
+              "payloads_load_failed",
+              undefined,
+              "Could not load catalogue",
+            )}
             detail={errors._global}
           />
         )}
@@ -318,12 +335,10 @@ function PayloadCard({
   // Versions the picker offers (only those with a downloadable asset).
   const pickable = releaseList ? downloadableReleases(releaseList) : [];
   const selectedIsPrerelease = !!release?.prerelease;
-  const selectedIsLatest = !!release && isLatestTag(releaseList ?? [], release.tag);
+  const selectedIsLatest =
+    !!release && isLatestTag(releaseList ?? [], release.tag);
   const upToDate =
-    !!local &&
-    !!release &&
-    !!release.tag &&
-    local.version === release.tag;
+    !!local && !!release && !!release.tag && local.version === release.tag;
   const updateAvailable =
     !!local && !!release && !!release.tag && local.version !== release.tag;
   return (

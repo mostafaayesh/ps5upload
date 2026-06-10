@@ -1436,6 +1436,19 @@ fn transfer_file_path_with_flags(
                 let _ = empty_tx.send(prepared.buf); // recycle
                 next += 1;
             }
+            // The consumer reaches here either by sending every shard (normal
+            // completion) or because the producer broke out early and closed
+            // the channel. The only reason the producer breaks early is a
+            // cancellation request, so re-check the flag and abort before
+            // draining — otherwise a cancelled transfer would fall through to
+            // commit a partial transaction.
+            if cfg
+                .cancel
+                .as_ref()
+                .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+            {
+                bail!("transfer_cancelled");
+            }
             sender.drain()?;
             Ok(())
         })?;
@@ -3836,7 +3849,7 @@ mod multistream_tests {
         // stream and the rest are balanced around it — no stream is empty and
         // the max/min load gap stays bounded by the largest single file.
         let mut weights = vec![1_073_741_824u64];
-        weights.extend(std::iter::repeat(1_000u64).take(40));
+        weights.extend(std::iter::repeat_n(1_000u64, 40));
         let buckets = distribute_balanced(&weights, 4);
         assert_partition(&weights, &buckets, 4);
         assert!(buckets.iter().all(|b| !b.is_empty()), "no idle stream");

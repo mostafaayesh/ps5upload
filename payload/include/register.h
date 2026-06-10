@@ -92,9 +92,18 @@ int unregister_title(const char *title_id,
 /* Launch an already-registered title via sceLncUtilLaunchApp. The title
  * must already be in app.db; this does not register. On firmware where
  * the service is unavailable, returns -1 with reason
- * "launch_service_unavailable". */
+ * "launch_service_unavailable".
+ *
+ * `reason_buf`/`reason_cap` (optional; pass NULL/0 to opt out): caller-
+ * owned scratch the formatted failure reasons are written into. The
+ * mgmt server runs one thread per client connection, so the previous
+ * function-local `static` reason buffers were a data race when two
+ * clients issued APP_LAUNCH concurrently (and `__thread` is off the
+ * table — the SDK's emutls breaks rtld lib_init on PS5). On failure,
+ * *err_reason_out points either at a string literal or at reason_buf. */
 int launch_title(const char *title_id,
-                 const char **err_reason_out);
+                 const char **err_reason_out,
+                 char *reason_buf, size_t reason_cap);
 
 /* Fill out_json (pre-allocated, at least out_cap bytes) with a JSON
  * object shaped like:

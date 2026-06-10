@@ -15,6 +15,7 @@ import { useTr } from "../../state/lang";
 import { mgmtAddr } from "../../lib/addr";
 import { useStaleHostGuard } from "../../lib/staleHostGuard";
 import { pushNotification } from "../../state/notifications";
+import { withConsolePrefix } from "../../state/roster";
 
 const NANODNS_INI_PATH = "/data/nanodns/nanodns.ini";
 
@@ -79,13 +80,20 @@ export default function NanoDnsScreen() {
         return;
       }
       setOriginal(text);
-      pushNotification("info", tr("nanodns_saved", undefined, "nanoDNS config saved"), {
-        body: tr(
-          "nanodns_saved_body",
-          undefined,
-          "Re-load (re-send) nanoDNS from the Payloads tab for the changes to take effect.",
+      pushNotification(
+        "info",
+        withConsolePrefix(
+          probe.host,
+          tr("nanodns_saved", undefined, "nanoDNS config saved"),
         ),
-      });
+        {
+          body: tr(
+            "nanodns_saved_body",
+            undefined,
+            "Re-load (re-send) nanoDNS from the Payloads tab for the changes to take effect.",
+          ),
+        },
+      );
     } catch (e) {
       if (probe.isStale()) return;
       setError(humanizePs5Error(e instanceof Error ? e.message : String(e)));
@@ -95,7 +103,7 @@ export default function NanoDnsScreen() {
   }, [host, text, guard, tr]);
 
   return (
-    <div className="flex flex-col gap-5 p-5">
+    <div className="flex flex-col gap-5 p-6">
       <PageHeader
         icon={Globe}
         title={tr("nanodns_title", undefined, "nanoDNS")}
@@ -108,10 +116,12 @@ export default function NanoDnsScreen() {
         right={
           <Button
             variant="secondary"
+            size="sm"
+            leftIcon={<RefreshCw size={12} />}
             onClick={() => void refresh()}
             disabled={loading || !host?.trim()}
+            loading={loading}
           >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             {tr("refresh", undefined, "Refresh")}
           </Button>
         }
@@ -132,7 +142,11 @@ export default function NanoDnsScreen() {
         <EmptyState
           icon={Globe}
           size="hero"
-          title={tr("nanodns_not_loaded_title", undefined, "nanoDNS isn't set up yet")}
+          title={tr(
+            "nanodns_not_loaded_title",
+            undefined,
+            "nanoDNS isn't set up yet",
+          )}
           message={tr(
             "nanodns_not_loaded_body",
             undefined,

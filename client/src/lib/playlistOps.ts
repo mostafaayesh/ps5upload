@@ -49,10 +49,14 @@ export interface Playlist {
 
 export type PlaylistRunStatus =
   | { kind: "idle" }
-  | { kind: "running"; playlistId: string; stepIndex: number }
+  | { kind: "running"; playlistId: string; stepIndex: number; host: string }
   | {
       kind: "sleeping";
       playlistId: string;
+      /** Console (bare host) the playlist runs against — lets the run-status
+       *  banner name the PS5 when several are connected. Execution is already
+       *  per-host (host/port captured in run()'s closure); this is display. */
+      host: string;
       /** Index of the step whose post-send sleep is in progress. */
       stepIndex: number;
       /** Wall-clock ms when the sleep began — UI uses this to render
@@ -64,6 +68,8 @@ export type PlaylistRunStatus =
   | {
       kind: "done";
       playlistId: string;
+      /** Console (bare host) the playlist ran against. */
+      host: string;
       /** Number of steps that succeeded. */
       successCount: number;
       /** Number of steps that failed. Non-zero only when the playlist
@@ -77,6 +83,8 @@ export type PlaylistRunStatus =
   | {
       kind: "failed";
       playlistId: string;
+      /** Console (bare host) the playlist ran against. */
+      host: string;
       stepIndex: number;
       error: string;
     };

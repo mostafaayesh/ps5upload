@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import {
   fsMount,
+  appRegister,
   generateTxIdHex,
   jobStatus,
   smpManualInstall,
@@ -35,6 +36,7 @@ import type { UploadStrategy } from "./transfer";
 import { useUploadSettingsStore } from "./uploadSettings";
 import { useRecentHostMetricsStore } from "./recentHostMetrics";
 import { pushNotification } from "./notifications";
+import { withConsolePrefix } from "./roster";
 import { hostOf, mgmtAddr } from "../lib/addr";
 import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
 import { effectiveUploadStreams } from "../lib/uploadStreams";
@@ -99,6 +101,12 @@ export interface QueueItem {
    *  prevents the PS5 from silently writing save-data into the image
    *  and corrupting it on next mount). */
   mountReadOnly: boolean;
+  /** Game-folder-only: after the upload commits, register the game with
+   *  the PS5 OS so it lands on the home screen without a Library visit.
+   *  Best-effort — a register failure is a warning, never an upload
+   *  failure. Old persisted items (pre-v3) lack the field; undefined
+   *  reads as false. */
+  registerAfterUpload: boolean;
   /** Stable tx_id for this queue item, minted at add-time and
    *  persisted alongside the item. Used so a queue interrupted by
    *  app restart can resume against the payload's existing journal
@@ -128,6 +136,9 @@ export interface QueueItem {
    *  the image upload + mount succeeded. Surfaced to the row so users
    *  see where the image landed without flipping to the Volumes tab. */
   mountedAt: string | null;
+  /** Display name (or title id) the post-upload register produced when
+   *  `registerAfterUpload` ran and succeeded. Null otherwise. */
+  registeredAs: string | null;
   /** Non-fatal warnings the post-upload mount surfaced — layout
    *  invalid (no sce_sys/param.json at root), kernel forced RO, etc.
    *  Pre-2.2.52 these warnings only appeared when the user mounted
@@ -175,6 +186,7 @@ export type AddQueueItem = Pick<
   | "excludes"
   | "mountAfterUpload"
   | "mountReadOnly"
+  | "registerAfterUpload"
 >;
 
 interface QueueState {
@@ -310,6 +322,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
     bytesPerSec: number;
     mountedAt: string | null;
     mountWarnings: string[];
+    registeredAs: string | null;
   }> => {
     const isFolder =
       item.sourceKind === "folder" || item.sourceKind === "game-folder";
@@ -320,8 +333,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
       // A .zip is decompressed host-side and streamed in (lands extracted).
       // Carry the persisted tx_id for cross-session shard resume, just like
       // folders; there's no reconcile mode (no local tree to diff).
-      const bandwidthCap =
-        useUploadSettingsStore.getState().bandwidthCapMbps;
+      const bandwidthCap = useUploadSettingsStore.getState().bandwidthCapMbps;
       jobId = await startTransferZip(
         item.sourcePath,
         item.resolvedDest,
@@ -334,8 +346,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
       // Pass the persisted tx_id so a Resume after app restart
       // picks up the payload's existing journal entry instead of
       // minting a fresh tx and re-sending everything.
-      const bandwidthCap =
-        useUploadSettingsStore.getState().bandwidthCapMbps;
+      const bandwidthCap = useUploadSettingsStore.getState().bandwidthCapMbps;
       jobId = await startTransferDirReconcile(
         item.sourcePath,
         item.resolvedDest,
@@ -344,11 +355,13 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         item.txIdHex,
         item.excludes,
         bandwidthCap,
-        effectiveUploadStreams(),
+        // Clamp to THIS item's console — the queue drains every console
+        // in parallel, so the active tab's advertised max is the wrong
+        // capability for a background console's transfer.
+        effectiveUploadStreams(item.addr),
       );
     } else if (isFolder) {
-      const bandwidthCap =
-        useUploadSettingsStore.getState().bandwidthCapMbps;
+      const bandwidthCap = useUploadSettingsStore.getState().bandwidthCapMbps;
       jobId = await startTransferDir(
         item.sourcePath,
         item.resolvedDest,
@@ -396,11 +409,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         // skips patching the item, leaving the row stuck at "pending"
         // while a real mount sits on /mnt/ps5upload/. Skip-and-return
         // here keeps the user's mental model consistent: Stop = stop.
-        if (
-          isLive() &&
-          item.sourceKind === "image" &&
-          item.mountAfterUpload
-        ) {
+        if (isLive() && item.sourceKind === "image" && item.mountAfterUpload) {
           // Mount point lives next to the source file (same logic as
           // transfer.ts): strip the image extension from the resolved
           // destination so /data/homebrew/MyGame.ffpkg mounts at
@@ -465,6 +474,39 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
             }
           }
         }
+        // Register-after-upload (game folders): same one-step journey as
+        // the single-shot path in transfer.ts. Best-effort — a register
+        // failure lands in mountWarnings (the row's existing warning list)
+        // rather than failing an upload whose bytes are already committed.
+        let registeredAs: string | null = null;
+        if (
+          isLive() &&
+          item.sourceKind === "game-folder" &&
+          item.registerAfterUpload
+        ) {
+          const finalDest = snap.dest ?? item.resolvedDest;
+          try {
+            let res;
+            try {
+              res = await appRegister(item.addr, finalDest);
+            } catch {
+              // Some firmwares reject the plain register; the Library
+              // flow's DRM-type-patch retry usually lands it.
+              res = await appRegister(item.addr, finalDest, {
+                patchDrmType: true,
+              });
+            }
+            registeredAs = res.title_name?.trim()
+              ? res.title_name
+              : res.title_id;
+          } catch (e) {
+            mountWarnings.push(
+              `Couldn't add it to the home screen automatically: ${
+                e instanceof Error ? e.message : String(e)
+              }. You can still do it from the Library.`,
+            );
+          }
+        }
         // Final readout = total bytes / total elapsed. Prefer the
         // engine's elapsed_ms (measured payload-side) over a wall-
         // clock diff so a slow first poll doesn't skew the average.
@@ -485,8 +527,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         // is the right direction for UX. Sharper accounting waits for
         // P3 APPLY_PROGRESS — see review notes surface C1.
         if (finalBytes > 0 && elapsedMs > 0) {
-          const throughputMibps =
-            finalBytes / 1024 / 1024 / (elapsedMs / 1000);
+          const throughputMibps = finalBytes / 1024 / 1024 / (elapsedMs / 1000);
           useRecentHostMetricsStore.getState().record(item.addr, {
             throughputMibps,
             measuredAtMs: Date.now(),
@@ -497,6 +538,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           bytesPerSec: averageRate(finalBytes, elapsedMs),
           mountedAt,
           mountWarnings,
+          registeredAs,
         };
       }
       if (snap.status === "failed") {
@@ -609,7 +651,13 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
       let recoverAttempt = 0;
       for (;;) {
         try {
-          const { bytesSent, bytesPerSec, mountedAt, mountWarnings } =
+          const {
+            bytesSent,
+            bytesPerSec,
+            mountedAt,
+            mountWarnings,
+            registeredAs,
+          } =
             await runOne(next, isLive);
           // Always flip to "done" once runOne returns success — the
           // upload + (optional) mount are committed PS5-side, and
@@ -628,6 +676,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
               bytesPerSec,
               mountedAt,
               mountWarnings,
+              registeredAs,
               recovering: false,
               recoverAttempt: 0,
               completedAt: Date.now(),
@@ -713,7 +762,11 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           // `() => !isLive()` lets a Stop bail out of the ~30 s boot-wait
           // promptly instead of leaving a ghost push running.
           try {
-            await ensurePayloadCurrent(hostOf(next.addr), () => !isLive(), true);
+            await ensurePayloadCurrent(
+              hostOf(next.addr),
+              () => !isLive(),
+              true,
+            );
           } catch (healErr) {
             console.warn("auto-resume: ensurePayloadCurrent threw:", healErr);
           }
@@ -751,7 +804,10 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
       // otherwise every Upload screen mount logs an "invoke undefined"
       // error to the user-visible logs. In production (Tauri), this
       // guard is a no-op.
-      const w = window as unknown as { isTauri?: boolean; __TAURI_INTERNALS__?: unknown };
+      const w = window as unknown as {
+        isTauri?: boolean;
+        __TAURI_INTERNALS__?: unknown;
+      };
       if (!w.isTauri && !w.__TAURI_INTERNALS__) {
         set({ loaded: true });
         return;
@@ -791,7 +847,8 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           // don't carry these. Default to 0 so the QueueRow's
           // optional chain on the finalize pill stays safe.
           if (typeof next.filesFinalized !== "number") next.filesFinalized = 0;
-          if (typeof next.filesFinalizingTotal !== "number") next.filesFinalizingTotal = 0;
+          if (typeof next.filesFinalizingTotal !== "number")
+            next.filesFinalizingTotal = 0;
           return next;
         });
         set({
@@ -828,6 +885,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         filesFinalized: 0,
         filesFinalizingTotal: 0,
         mountedAt: null,
+        registeredAs: null,
         mountWarnings: [],
         error: null,
         errorReason: null,
@@ -874,7 +932,10 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
       if (inFlight) {
         pushNotification(
           "info",
-          "Queue cleared — one upload is still finishing",
+          withConsolePrefix(
+            inFlight.addr,
+            "Queue cleared — one upload is still finishing",
+          ),
           {
             body: `"${inFlight.displayName}" is already transferring to the PS5 and will run to completion. The next upload waits until it's done.`,
           },
@@ -939,10 +1000,7 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         return {
           runningHosts: rh,
           running: anyRunning(rh),
-          items: resetRunningToPending(
-            s.items,
-            (it) => hostOf(it.addr) === h,
-          ),
+          items: resetRunningToPending(s.items, (it) => hostOf(it.addr) === h),
         };
       });
       scheduleSave();
