@@ -500,6 +500,30 @@ function QueueRow({
                 )}
               </span>
             )}
+            {item.sourceKind === "pkg" &&
+              item.installAfterUpload !== false &&
+              !item.installPhase && (
+                <span>
+                  {tr("queue_will_install", undefined, "install after upload")}
+                </span>
+              )}
+            {(item.installPhase === "done" || item.installPhase === "warn") && (
+              <span
+                className={
+                  item.installPhase === "warn"
+                    ? "text-[var(--color-warn)]"
+                    : "text-[var(--color-good)]"
+                }
+              >
+                {item.installPhase === "warn"
+                  ? tr(
+                      "queue_installed_warn",
+                      undefined,
+                      "installed (may not launch)",
+                    )
+                  : tr("queue_installed", undefined, "installed")}
+              </span>
+            )}
           </div>
         </div>
 

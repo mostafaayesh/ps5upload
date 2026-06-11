@@ -9,6 +9,7 @@ import {
   Loader2,
   Info,
   Check,
+  Package,
   X,
   Plus,
   type LucideIcon,
@@ -27,6 +28,7 @@ import {
   archiveFormat,
   type ExcludeMode,
   type PickedSource,
+  type PkgSourceInfo,
   type SourceKind,
 } from "../../state/upload";
 import {
@@ -53,7 +55,12 @@ import FfpkgInspectorPanel from "./FfpkgInspectorPanel";
 import FolderDiffPanel from "./FolderDiffPanel";
 import { useUploadSettingsStore } from "../../state/uploadSettings";
 import { useUploadQueueStore } from "../../state/uploadQueue";
-import { usePkgLibrary } from "../../state/pkgLibrary";
+import { usePkgLibrary, PKG_LIBRARY_DIR } from "../../state/pkgLibrary";
+import {
+  stagingBasename,
+  stagingSubdirForCategory,
+} from "../../lib/pkgStagingPath";
+import { useInstallSettingsStore } from "../../state/installSettings";
 import { useRecentHostMetricsStore } from "../../state/recentHostMetrics";
 import {
   computeUploadEta,
@@ -109,12 +116,13 @@ function detectedLabel(
         label: tr("upload_kind_archive", { ext }, "Compressed archive ({ext})"),
       };
     }
+    case "pkg":
+      return { icon: Package, label: tr("upload_kind_pkg", "PS5 package (.pkg)") };
   }
 }
 
 export default function UploadScreen() {
   const tr = useTr();
-  const navigate = useNavigate();
   const store = useUploadStore();
   const {
     source,
@@ -213,13 +221,8 @@ export default function UploadScreen() {
       ? await pickLocalPath({ mode: "file" })
       : await openDialog({ directory: false, multiple: false });
     if (typeof selected !== "string") return;
-    // A .pkg picked here is a package to install — send it to the Install
-    // Package flow (same droppedPath contract AppShell uses for drops) instead
-    // of uploading it as a raw blob that never gets installed.
-    if (selected.toLowerCase().endsWith(".pkg")) {
-      navigate("/install-package", { state: { droppedPath: selected } });
-      return;
-    }
+    // .pkg is handled as a first-class "pkg" source by pickFile (it becomes a
+    // queue item that uploads → installs → cleans up). No special redirect.
     await pickFile(selected);
   };
 
@@ -243,6 +246,7 @@ export default function UploadScreen() {
   const alwaysOverwrite = useUploadSettingsStore((s) => s.alwaysOverwrite);
   const reconcileMode = useUploadSettingsStore((s) => s.reconcileMode);
   const queueAdd = useUploadQueueStore((s) => s.add);
+  const queueStartHost = useUploadQueueStore((s) => s.startHost);
   const activeExcludes =
     excludeMode === "rules"
       ? excludes.filter((rule) => rule.enabled).map((rule) => rule.pattern)
@@ -253,6 +257,45 @@ export default function UploadScreen() {
    *  don't bleed into the queued item. */
   const handleAddToQueue = (strategy: "overwrite" | "resume") => {
     if (!source || !host?.trim()) return;
+    const addr0 = `${host}:${PS5_PAYLOAD_PORT}`;
+    // A .pkg is a package: it stages into the package library and the queue's
+    // pkg finisher installs it (and optionally deletes the staged copy). The
+    // destination is the library staging path (not the user's volume/subpath),
+    // and the install/delete defaults come from the Install Package settings.
+    if (source.kind === "pkg") {
+      const pkgInfo = source.pkgInfo ?? null;
+      const cid = pkgInfo?.contentId ?? "";
+      const basename = stagingBasename(
+        cid,
+        Math.random().toString(36).slice(2),
+        Date.now(),
+      );
+      const subdir = stagingSubdirForCategory(pkgInfo?.category ?? null);
+      const dest = subdir
+        ? `${PKG_LIBRARY_DIR}/${subdir}/${basename}`
+        : `${PKG_LIBRARY_DIR}/${basename}`;
+      const settings = useInstallSettingsStore.getState();
+      const displayName =
+        pkgInfo?.title?.trim() ||
+        (source.path.split(/[\\/]/).pop() ?? source.path);
+      queueAdd({
+        sourceKind: "pkg",
+        sourcePath: source.path,
+        displayName,
+        resolvedDest: dest,
+        addr: addr0,
+        strategy: "overwrite",
+        reconcileMode,
+        excludes: [],
+        contentId: cid,
+        installAfterUpload: settings.autoInstallAfterUpload,
+        deletePkgAfterInstall: settings.autoRemoveAfterInstall,
+        mountAfterUpload: false,
+        mountReadOnly,
+        registerAfterUpload: false,
+      });
+      return;
+    }
     const { dest } = resolveUploadDest(
       destinationVolume,
       destinationSubpath,
@@ -369,6 +412,16 @@ export default function UploadScreen() {
     // zip, failed folder walk). Don't ship a half-detected source — for an
     // archive that's `zipInfo: null`, which would fail deep in the flow.
     if (!source || detecting || preflightBusy || detectError) return;
+    // A .pkg installs via the queue's finisher (the single-shot transfer path
+    // has no installer). "Upload now" therefore enqueues it and starts this
+    // console's queue immediately — same end state, just routed through the
+    // unified queue so it uploads → installs → cleans up as one item.
+    if (source.kind === "pkg") {
+      if (!host?.trim()) return;
+      handleAddToQueue("overwrite");
+      void queueStartHost(host);
+      return;
+    }
     if (!host?.trim()) {
       // No console selected — store the error under the "" sentinel key so
       // phaseForHost(s, "") (this screen with an empty host) renders it.
@@ -894,33 +947,42 @@ function Step2Options(props: {
         </section>
       )}
 
-      <DestinationCard
-        volume={destinationVolume}
-        subpath={destinationSubpath}
-        onChange={onSetDestination}
-        availableVolumes={availableVolumes}
-        resolvedDest={
-          resolveUploadDest(
-            destinationVolume,
-            destinationSubpath,
-            source.path,
-            source.kind === "archive",
-            archiveExtractMode === "subfolder",
-          ).dest
-        }
-      />
+      {/* A .pkg has a fixed destination (the package library) and installs
+          itself after upload — show the finisher summary instead of the
+          volume/bandwidth/excludes config that doesn't apply. */}
+      {source.kind === "pkg" ? (
+        <PkgFinisherCard pkgInfo={source.pkgInfo ?? null} />
+      ) : (
+        <>
+          <DestinationCard
+            volume={destinationVolume}
+            subpath={destinationSubpath}
+            onChange={onSetDestination}
+            availableVolumes={availableVolumes}
+            resolvedDest={
+              resolveUploadDest(
+                destinationVolume,
+                destinationSubpath,
+                source.path,
+                source.kind === "archive",
+                archiveExtractMode === "subfolder",
+              ).dest
+            }
+          />
 
-      <BandwidthCard />
+          <BandwidthCard />
 
-      {showExcludes && (
-        <ExcludesCard
-          mode={excludeMode}
-          excludes={excludes}
-          onSetMode={onSetExcludeMode}
-          onToggle={onToggleExclude}
-          onAdd={onAddExclude}
-          onRemove={onRemoveExclude}
-        />
+          {showExcludes && (
+            <ExcludesCard
+              mode={excludeMode}
+              excludes={excludes}
+              onSetMode={onSetExcludeMode}
+              onToggle={onToggleExclude}
+              onAdd={onAddExclude}
+              onRemove={onRemoveExclude}
+            />
+          )}
+        </>
       )}
 
       <TransferStatus phase={transferPhase} />
@@ -2180,6 +2242,78 @@ function RarSourceCard() {
         </p>
       )}
     </div>
+  );
+}
+
+/** Finisher card for a picked `.pkg` source. Shows the parsed package +
+ *  the upload→install→cleanup behavior, with the install/auto-delete toggles
+ *  (shared with the Install Package screen's settings). The destination is
+ *  fixed (the package library) so there's no volume/path picker. */
+function PkgFinisherCard({ pkgInfo }: { pkgInfo: PkgSourceInfo | null }) {
+  const tr = useTr();
+  const autoInstall = useInstallSettingsStore((s) => s.autoInstallAfterUpload);
+  const setAutoInstall = useInstallSettingsStore(
+    (s) => s.setAutoInstallAfterUpload,
+  );
+  const autoRemove = useInstallSettingsStore((s) => s.autoRemoveAfterInstall);
+  const setAutoRemove = useInstallSettingsStore(
+    (s) => s.setAutoRemoveAfterInstall,
+  );
+  const label = pkgInfo?.title?.trim() || pkgInfo?.contentId || null;
+  return (
+    <section className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+        <Package size={16} className="text-[var(--color-muted)]" />
+        {tr("upload_pkg_card_title", "Package install")}
+      </div>
+      {label && (
+        <div className="mb-2 truncate text-xs text-[var(--color-muted)]">
+          {label}
+          {pkgInfo && pkgInfo.totalBytes > 0 ? (
+            <> · {formatBytes(pkgInfo.totalBytes)}</>
+          ) : null}
+        </div>
+      )}
+      <p className="mb-3 text-xs text-[var(--color-muted)]">
+        {tr(
+          "upload_pkg_card_desc",
+          "Uploads into the PS5 package library, then installs — one queued step. The staged copy lives in the library until removed.",
+        )}
+      </p>
+      <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--color-text)]">
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5"
+          checked={autoInstall}
+          onChange={(e) => setAutoInstall(e.target.checked)}
+        />
+        {tr(
+          "pkglib.autoInstall",
+          undefined,
+          "Install automatically once the upload finishes",
+        )}
+      </label>
+      <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-[var(--color-text)]">
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5"
+          checked={autoRemove}
+          onChange={(e) => setAutoRemove(e.target.checked)}
+        />
+        {tr(
+          "pkglib.autoRemove",
+          undefined,
+          "Auto-delete each package from the PS5 after it installs",
+        )}
+      </label>
+      <p className="mt-3 flex items-start gap-1.5 text-xs text-[var(--color-muted)]">
+        <Info size={12} className="mt-0.5 shrink-0" />
+        {tr(
+          "upload_pkg_fw12_note",
+          "On FW 12+ the PS5 screen may go black for a few seconds during install — that's normal.",
+        )}
+      </p>
+    </section>
   );
 }
 

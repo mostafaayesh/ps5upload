@@ -2,6 +2,8 @@ import { create } from "zustand";
 
 import {
   fsMount,
+  fsDelete,
+  fsMkdir,
   appRegister,
   generateTxIdHex,
   jobStatus,
@@ -34,6 +36,7 @@ import {
   type RateSample,
 } from "../lib/rollingRate";
 import { archiveFormat, type SourceKind } from "./upload";
+import { runPkgInstall, pkgLibraryStore } from "./pkgLibrary";
 import type { UploadStrategy } from "./transfer";
 import { useUploadSettingsStore } from "./uploadSettings";
 import { useRecentHostMetricsStore } from "./recentHostMetrics";
@@ -117,6 +120,23 @@ export interface QueueItem {
    *  failure. Old persisted items (pre-v3) lack the field; undefined
    *  reads as false. */
   registerAfterUpload: boolean;
+  /** Pkg-only: the parsed ContentID, passed to the installer (the staged file
+   *  is already on the PS5). Empty string for a headerless pkg (install still
+   *  accepts it). Null/absent for non-pkg items. */
+  contentId?: string | null;
+  /** Pkg-only: run the installer once the .pkg upload commits (default on —
+   *  staging a pkg exists to install it). Mirrors installSettings, captured at
+   *  add time so toggling the default mid-queue doesn't disturb queued rows. */
+  installAfterUpload?: boolean;
+  /** Pkg-only: delete the staged .pkg from the PS5 after a successful install
+   *  (default on — it's just a staging copy). */
+  deletePkgAfterInstall?: boolean;
+  /** Pkg-only runtime state: the install phase after the upload commits.
+   *  null until the finisher runs (or for non-pkg items). */
+  installPhase?: "installing" | "done" | "warn" | "error" | null;
+  /** Pkg-only: the installed title (or content id) the finisher resolved,
+   *  shown on the done row. Null otherwise. */
+  installedTitle?: string | null;
   /** Stable tx_id for this queue item, minted at add-time and
    *  persisted alongside the item. Used so a queue interrupted by
    *  app restart can resume against the payload's existing journal
@@ -198,6 +218,9 @@ export type AddQueueItem = Pick<
   | "mountAfterUpload"
   | "mountReadOnly"
   | "registerAfterUpload"
+  | "contentId"
+  | "installAfterUpload"
+  | "deletePkgAfterInstall"
 >;
 
 interface QueueState {
@@ -339,10 +362,26 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
     mountedAt: string | null;
     mountWarnings: string[];
     registeredAs: string | null;
+    installPhase: QueueItem["installPhase"];
+    installedTitle: string | null;
   }> => {
     const isFolder =
       item.sourceKind === "folder" || item.sourceKind === "game-folder";
     const isArchive = item.sourceKind === "archive";
+
+    // A .pkg stages into the package-library dir, then installs in the
+    // finisher. Make sure the staging dir exists first — the single-file
+    // transfer's open() fails ENOENT on a missing parent. EEXIST-tolerant.
+    if (item.sourceKind === "pkg") {
+      const parent = item.resolvedDest.replace(/\/[^/]*$/, "");
+      if (parent) {
+        try {
+          await fsMkdir(item.addr, parent);
+        } catch {
+          /* dir already exists (or will fail loudly at open) */
+        }
+      }
+    }
 
     let jobId: string;
     if (isArchive) {
@@ -541,6 +580,61 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
             );
           }
         }
+        // Pkg finisher (the queue merge): once the .pkg lands in the staging
+        // dir, install it via the shared runPkgInstall helper — the same
+        // HW-proven cascade the Install Package screen uses (main-payload
+        // InstallByPackage → DPI fallback → restore) — then optionally delete
+        // the staged copy. So a queued .pkg uploads → installs → cleans up as
+        // ONE unit, alongside every other upload in the same queue.
+        let installPhase: QueueItem["installPhase"] = undefined;
+        let installedTitle: string | null = null;
+        if (
+          isLive() &&
+          item.sourceKind === "pkg" &&
+          item.installAfterUpload !== false
+        ) {
+          const finalDest = snap.dest ?? item.resolvedDest;
+          // Cross-surface serialization: flip THIS console's pkgLibrary
+          // `installing` flag so a manual install / one-shot upload on the same
+          // console waits (they check it), and the install (which swaps the
+          // payload) can't race them. Cleared in finally.
+          const pkgStore = pkgLibraryStore(item.addr);
+          pkgStore.setState({ installing: true });
+          try {
+            const r = await runPkgInstall(
+              item.addr,
+              finalDest,
+              item.contentId ?? null,
+            );
+            if (r.installed) {
+              installPhase = r.mayNotLaunch ? "warn" : "done";
+              installedTitle =
+                item.installedTitle ?? item.contentId ?? item.displayName ?? null;
+              if (r.mayNotLaunch) {
+                mountWarnings.push(
+                  "Installed, but it may not launch on this firmware — re-install from the Install Package tab if it won't start.",
+                );
+              }
+              // Free the staging copy on success (default on). Best-effort —
+              // a leftover staged pkg isn't a transfer failure.
+              if (item.deletePkgAfterInstall !== false) {
+                try {
+                  await fsDelete(mgmtAddr(hostOf(item.addr)), finalDest);
+                } catch {
+                  /* leftover staged pkg is harmless */
+                }
+              }
+            } else {
+              // The bytes landed but the install — the point of a pkg — did
+              // not. Fail the row so the user notices (the message routes
+              // through the queue's humanizer).
+              installPhase = "error";
+              throw new Error(r.errMessage || "Install was rejected.");
+            }
+          } finally {
+            pkgStore.setState({ installing: false, busyNotice: null });
+          }
+        }
         // Final readout = total bytes / total elapsed. Prefer the
         // engine's elapsed_ms (measured payload-side) over a wall-
         // clock diff so a slow first poll doesn't skew the average.
@@ -573,6 +667,8 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           mountedAt,
           mountWarnings,
           registeredAs,
+          installPhase,
+          installedTitle,
         };
       }
       if (snap.status === "failed") {
@@ -691,6 +787,8 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
             mountedAt,
             mountWarnings,
             registeredAs,
+            installPhase,
+            installedTitle,
           } =
             await runOne(next, isLive);
           // Always flip to "done" once runOne returns success — the
@@ -711,6 +809,8 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
               mountedAt,
               mountWarnings,
               registeredAs,
+              installPhase,
+              installedTitle,
               recovering: false,
               recoverAttempt: 0,
               completedAt: Date.now(),

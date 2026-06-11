@@ -1199,7 +1199,17 @@ upload_kind_image: "Disk image ({ext})",
 upload_kind_folder: "Folder",
 upload_kind_game_folder: "Game folder",
 upload_kind_archive: "Compressed archive ({ext})",
+upload_kind_pkg: "PS5 package (.pkg)",
 upload_archive_word: "archive",
+// Pkg-as-queue-item (the upload/install/delete merge).
+upload_pkg_card_title: "Package install",
+upload_pkg_card_desc:
+  "Uploads into the PS5 package library, then installs — one queued step. The staged copy lives in the library until removed.",
+upload_pkg_fw12_note:
+  "On FW 12+ the PS5 screen may go black for a few seconds during install — that's normal.",
+queue_will_install: "install after upload",
+queue_installed: "installed",
+queue_installed_warn: "installed (may not launch)",
 // Generic archive scanning hint (format-neutral; replaces the .zip-specific one).
 upload_scanning_archive_hint_v2:
   "Reading the archive index and parsing embedded game metadata. Upload buttons will enable when this finishes.",

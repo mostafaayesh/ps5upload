@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 import {
   inspectFolder,
   zipInspectStream,
@@ -26,7 +27,23 @@ import {
  *                 on the PS5. Adds a "compressed → extracted" card and the
  *                 same exclude rules as a folder.
  */
-export type SourceKind = "file" | "image" | "folder" | "game-folder" | "archive";
+export type SourceKind =
+  | "file"
+  | "image"
+  | "folder"
+  | "game-folder"
+  | "archive"
+  | "pkg";
+
+/** Parsed header for a picked `.pkg` source — drives the row label and the
+ *  on-PS5 staging name. A headerless/odd pkg yields an empty contentId, which
+ *  the install still accepts (HW-confirmed). */
+export interface PkgSourceInfo {
+  contentId: string;
+  title: string | null;
+  category: string | null;
+  totalBytes: number;
+}
 
 export interface PickedSource {
   kind: SourceKind;
@@ -37,6 +54,8 @@ export interface PickedSource {
   wrappedHint: WrappedGameHint | null;
   /** Populated for `archive` — the zip's central-directory preview. */
   zipInfo: ZipInspect | null;
+  /** Populated for `pkg` — the parsed package header. Absent/null otherwise. */
+  pkgInfo?: PkgSourceInfo | null;
 }
 
 /** Exclude model. Default is "all" — upload everything, no filters.
@@ -197,6 +216,69 @@ export const useUploadStore = create<UploadState>((set, get) => ({
     // A new pick clears any stale .rar password. `setRarPassword` re-inspects
     // the SAME path, so it deliberately doesn't trip this reset.
     if (get().source?.path !== path) set({ rarPassword: null });
+    // A .pkg is a PACKAGE to install, not bytes to drop on a volume. It becomes
+    // a "pkg" queue source: uploaded to the staging dir, then installed (and
+    // optionally deleted) by the queue's pkg finisher — one queued unit. Parse
+    // the header for ContentID/title so the row shows the title and the staged
+    // file is named the way Sony's installer expects.
+    if (path.toLowerCase().endsWith(".pkg")) {
+      set({
+        source: {
+          kind: "pkg",
+          path,
+          meta: null,
+          wrappedHint: null,
+          zipInfo: null,
+          pkgInfo: null,
+        },
+        detecting: true,
+        detectError: null,
+        mountAfterUpload: false,
+        zipInspectEntries: null,
+      });
+      try {
+        const meta = (await invoke("pkg_metadata_split", { path })) as {
+          head?: { content_id?: string; title?: string; category?: string };
+          parts?: unknown[];
+          total_size?: number;
+        };
+        if (get().source?.path !== path) return;
+        if ((meta.parts?.length ?? 1) > 1) {
+          set({
+            detecting: false,
+            detectError:
+              "Split .pkg sets aren't supported — pick the single lead .pkg.",
+          });
+          return;
+        }
+        set({
+          source: {
+            kind: "pkg",
+            path,
+            meta: null,
+            wrappedHint: null,
+            zipInfo: null,
+            pkgInfo: {
+              contentId: meta.head?.content_id ?? "",
+              title: meta.head?.title ?? null,
+              category: meta.head?.category ?? null,
+              totalBytes: meta.total_size ?? 0,
+            },
+          },
+          detecting: false,
+          detectError: null,
+        });
+      } catch (e) {
+        if (get().source?.path !== path) return;
+        set({
+          detecting: false,
+          detectError: `Couldn't read .pkg header: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        });
+      }
+      return;
+    }
     // A .zip is an archive source: optimistically mark it, then inspect the
     // central directory (fast — no inflation) to show what it expands to and
     // detect an embedded game. Mirrors pickFolder's stale-result guard.
