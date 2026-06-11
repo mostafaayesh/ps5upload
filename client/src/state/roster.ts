@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { useConnectionStore } from "./connection";
 import { useRunningAppsStore } from "./runningApps";
-import { useFsClipboardStore } from "./fsClipboard";
-import { useUploadStore } from "./upload";
+import { useFsClipboardStore, evictFsClipboard } from "./fsClipboard";
+import { useUploadStore, evictUploadDraft } from "./upload";
 import { evictPkgLibraryStore } from "./pkgLibrary";
 import { hostOf } from "../lib/addr";
 
@@ -147,15 +147,17 @@ export const useRosterStore = create<RosterState>((set, get) => ({
     useRunningAppsStore.getState().clearForHostChange(profile.host);
     // The FS cut/copy clipboard holds paths from the PREVIOUS console — a
     // paste after switching would target the new console with the old one's
-    // paths. Clear it on switch so cut/paste stays within one console.
-    useFsClipboardStore.getState().clear();
+    // paths. Stash/restore it per console so a cut/copy survives a round-trip
+    // switch but never pastes one console's paths onto another. Before setHost.
+    useFsClipboardStore.getState().switchToHost(profile.host);
     // (Library is per-console now — `useLibraryStore` is keyed byHost, so the
     // new console shows its own slot immediately and there's nothing to clear.
     // The wrong-target window the old clear-on-switch guarded against is gone.)
-    // The Upload screen's destination volume is a PS5-side path that only
-    // exists on the previous console; clear it so the new console re-detects
-    // its own volumes instead of showing a stale (possibly nonexistent) dest.
-    useUploadStore.getState().clearForHostChange();
+    // Stash THIS console's upload draft and restore the target console's, so a
+    // switch preserves each PS5's in-progress upload (picked file + options).
+    // Must run BEFORE setHost (the connection store must still hold the old
+    // host the current draft belongs to).
+    useUploadStore.getState().switchToHost(profile.host);
     // Sync connection store. AppShell's host-watcher kicks off
     // probes against the new host, populating
     // payloadStatus/payloadVersion/ps5Kernel naturally.
@@ -193,6 +195,8 @@ export const useRosterStore = create<RosterState>((set, get) => ({
       !next.some((p) => hostOf(p.host) === hostOf(removed.host))
     ) {
       evictPkgLibraryStore(removed.host);
+      evictUploadDraft(removed.host);
+      evictFsClipboard(removed.host);
     }
     let next_active = get().active_id;
     if (next_active === id) {
@@ -203,8 +207,9 @@ export const useRosterStore = create<RosterState>((set, get) => ({
         // the newly-active console doesn't inherit stale running-apps badges,
         // FS clipboard paths, or Library entries from the one just deleted.
         useRunningAppsStore.getState().clearForHostChange(next[0].host);
-        useFsClipboardStore.getState().clear();
-        useUploadStore.getState().clearForHostChange();
+        // Restore the promoted console's own clipboard + upload draft.
+        useFsClipboardStore.getState().switchToHost(next[0].host);
+        useUploadStore.getState().switchToHost(next[0].host);
         useConnectionStore.getState().setHost(next[0].host);
       }
     }
@@ -232,18 +237,21 @@ export const useRosterStore = create<RosterState>((set, get) => ({
       !next.some((p) => hostOf(p.host) === hostOf(oldHost))
     ) {
       evictPkgLibraryStore(oldHost);
+      // Drop the now-orphaned old-IP stashes; the ACTIVE draft + clipboard are
+      // kept below (this is the same console with a new address, so its
+      // in-progress upload and cut/copy should follow the profile).
+      evictUploadDraft(oldHost);
+      evictFsClipboard(oldHost);
     }
     set({ profiles: next });
     persist(next, get().active_id);
     if (get().active_id === id) {
-      // Re-pointing the active profile at a different PS5 is a console
-      // switch in disguise: tear down the previous console's per-host state
-      // exactly like setActive()/remove() do, so the Library, FS clipboard,
-      // and running-apps badges don't carry over to the new console (a stale
-      // Unmount/paste could otherwise target the wrong PS5).
+      // Re-pointing the active profile at a different IP: clear only the live,
+      // address-tied state (running-apps badges) so a stale Unmount can't
+      // target the wrong PS5. The upload DRAFT and the cut/copy CLIPBOARD are
+      // deliberately KEPT — it's the same console, so they follow it to the new
+      // address (the clipboard holds PS5-side paths, valid regardless of IP).
       useRunningAppsStore.getState().clearForHostChange(host.trim());
-      useFsClipboardStore.getState().clear();
-      useUploadStore.getState().clearForHostChange();
       useConnectionStore.getState().setHost(host.trim());
     }
   },

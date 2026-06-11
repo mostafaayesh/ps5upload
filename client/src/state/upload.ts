@@ -9,6 +9,8 @@ import {
   type WrappedGameHint,
   type ZipInspect,
 } from "../api/ps5";
+import { useConnectionStore } from "./connection";
+import { hostOf } from "../lib/addr";
 
 /**
  * Detected source kind. Drives which options the Upload screen shows.
@@ -108,11 +110,17 @@ export interface UploadState {
   pickFile(path: string): Promise<void>;
   pickFolder(path: string): Promise<void>;
   reset(): void;
-  /** Switching consoles: drop the in-progress draft so a source picked +
-   *  configured for console A can't fire against console B. Clears the source,
-   *  the mount toggle and the (PS5-side) destination volume; KEEPS the
-   *  cross-console preferences (subpath, excludes, register-after-upload). */
-  clearForHostChange(): void;
+  /** Switching consoles: PRESERVE each console's in-progress draft instead of
+   *  discarding it. Stashes the leaving console's draft (picked source + its
+   *  inspection, .rar password, mount toggle, PS5-side destination volume) and
+   *  restores the target console's stashed draft (or a blank one). So a
+   *  round-trip switch brings back exactly what you were setting up — each PS5
+   *  has its own upload context. Cross-console PREFERENCES (subpath, excludes,
+   *  register-after-upload, mount-read-only) stay shared. Safe because the
+   *  active draft is always the active console's, so a pick can't fire at the
+   *  wrong PS5. Call BEFORE connection.setHost (the connection store must still
+   *  hold the OLD host, which the current draft belongs to). */
+  switchToHost(newHost: string): void;
 
   /** Set the encrypted-`.rar` password and re-inspect the current source so
    *  the file tree / "needs password" state updates. */
@@ -185,6 +193,39 @@ export function archiveFormat(path: string): "zip" | "7z" | "rar" | null {
  *  streams the files in. */
 function isArchivePath(path: string): boolean {
   return archiveFormat(path) !== null;
+}
+
+/** The per-console slice of the upload form — the "what I'm working on" that
+ *  switches with the active PS5. Cross-console preferences (subpath, excludes,
+ *  register/mount-RO) are deliberately NOT here; they stay shared. */
+interface UploadDraft {
+  source: PickedSource | null;
+  detectError: string | null;
+  rarPassword: string | null;
+  mountAfterUpload: boolean;
+  destinationVolume: string | null;
+}
+
+const BLANK_DRAFT: UploadDraft = {
+  source: null,
+  detectError: null,
+  rarPassword: null,
+  mountAfterUpload: false,
+  destinationVolume: null,
+};
+
+/** One stashed draft per console (port-stripped host key). Module-level (not
+ *  React state) — switching consoles swaps the active draft in/out of here, so
+ *  no extra re-renders and the map survives as long as the app is open. */
+const draftStash = new Map<string, UploadDraft>();
+
+const draftKey = (host: string | null | undefined): string =>
+  hostOf(host ?? "") || "_unset_";
+
+/** Forget a console's stashed upload draft — called when its roster profile is
+ *  removed/re-pointed so a future console reusing that IP starts blank. */
+export function evictUploadDraft(host: string): void {
+  draftStash.delete(draftKey(host));
 }
 
 export const useUploadStore = create<UploadState>((set, get) => ({
@@ -414,18 +455,36 @@ export const useUploadStore = create<UploadState>((set, get) => ({
       mountAfterUpload: false,
     }),
 
-  clearForHostChange: () =>
+  switchToHost: (newHost) => {
+    // The connection store still holds the OLD host (this runs before
+    // connection.setHost), so the current draft belongs to it — stash it there.
+    const oldKey = draftKey(useConnectionStore.getState().host);
+    const newKey = draftKey(newHost);
+    if (oldKey === newKey) return; // same console — nothing to swap
+    const s = get();
+    draftStash.set(oldKey, {
+      source: s.source,
+      detectError: s.detectError,
+      rarPassword: s.rarPassword,
+      mountAfterUpload: s.mountAfterUpload,
+      destinationVolume: s.destinationVolume,
+    });
+    // Restore the target console's draft (or a blank one). `detecting` /
+    // `zipInspectEntries` are transient inspect state — never restored as
+    // "in progress" (the completed result lives on source.zipInfo, which IS
+    // preserved), so a backgrounded console never comes back with a stuck
+    // spinner.
+    const d = draftStash.get(newKey) ?? BLANK_DRAFT;
     set({
-      source: null,
+      source: d.source,
+      detectError: d.detectError,
+      rarPassword: d.rarPassword,
+      mountAfterUpload: d.mountAfterUpload,
+      destinationVolume: d.destinationVolume,
       detecting: false,
-      detectError: null,
       zipInspectEntries: null,
-      rarPassword: null,
-      mountAfterUpload: false,
-      // Destination volume is a PS5-side path that only exists on the previous
-      // console — clear it so the new console re-detects its own volumes.
-      destinationVolume: null,
-    }),
+    });
+  },
 
   async setRarPassword(password) {
     set({ rarPassword: password });

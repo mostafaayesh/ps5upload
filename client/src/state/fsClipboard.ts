@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { useConnectionStore } from "./connection";
+import { hostOf } from "../lib/addr";
 
 /**
  * Shared cut/copy clipboard for PS5 filesystem operations.
@@ -41,13 +43,53 @@ interface FsClipboardState {
   set: (op: ClipboardOp, items: ClipboardItem[], sourceLabel: string) => void;
   /** Clear after paste succeeds (for "cut") or user dismisses. */
   clear: () => void;
+  /** Console switch: stash THIS console's clipboard and restore the target
+   *  console's, so a cut/copy survives a round-trip switch (each PS5 keeps its
+   *  own clipboard). The clipboard holds PS5-side source paths, so it's only
+   *  ever pasted on the console it was cut from — preserving it per-console is
+   *  safe. Call BEFORE connection.setHost (the connection store must still hold
+   *  the OLD host the current clipboard belongs to). */
+  switchToHost: (newHost: string) => void;
 }
 
-export const useFsClipboardStore = create<FsClipboardState>((set) => ({
+interface ClipboardSnapshot {
+  op: ClipboardOp | null;
+  items: ClipboardItem[];
+  sourceLabel: string | null;
+}
+const EMPTY_CLIPBOARD: ClipboardSnapshot = {
+  op: null,
+  items: [],
+  sourceLabel: null,
+};
+/** One stashed clipboard per console (port-stripped host key). Module-level. */
+const clipboardStash = new Map<string, ClipboardSnapshot>();
+const clipKey = (host: string | null | undefined): string =>
+  hostOf(host ?? "") || "_unset_";
+
+/** Forget a console's stashed clipboard — called when its roster profile is
+ *  removed/re-pointed. */
+export function evictFsClipboard(host: string): void {
+  clipboardStash.delete(clipKey(host));
+}
+
+export const useFsClipboardStore = create<FsClipboardState>((set, get) => ({
   op: null,
   items: [],
   sourceLabel: null,
 
   set: (op, items, sourceLabel) => set({ op, items, sourceLabel }),
   clear: () => set({ op: null, items: [], sourceLabel: null }),
+  switchToHost: (newHost) => {
+    const oldKey = clipKey(useConnectionStore.getState().host);
+    const newKey = clipKey(newHost);
+    if (oldKey === newKey) return;
+    const s = get();
+    clipboardStash.set(oldKey, {
+      op: s.op,
+      items: s.items,
+      sourceLabel: s.sourceLabel,
+    });
+    set(clipboardStash.get(newKey) ?? EMPTY_CLIPBOARD);
+  },
 }));
