@@ -4,6 +4,16 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 3.1.5
+
+- **Stop a running upload, for real.** The Stop button on the Activity page now
+  actually halts the transfer on the spot — before, it only stopped *showing*
+  the upload while the PS5 kept receiving it in the background. Works for both
+  one-off uploads and queued ones; whatever already landed stays on the PS5, so
+  you can resume later if you want. (Verified on a real console mid-transfer.)
+
+---
+
 ## 3.1.4
 
 - **Game details open on Android now.** Tapping a game's **Details** in the
