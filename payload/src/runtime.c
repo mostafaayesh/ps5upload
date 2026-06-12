@@ -1306,9 +1306,43 @@ void runtime_sweep_stale_pkg_temp(void) {
  * Intentionally tolerant: any single failure logs + continues. A
  * reconciliation error never prevents the payload from coming up.
  * At worst, one stale mount stays visible for one more session. */
+/* getmntinfo(3) is NOT thread-safe: it returns a pointer to a single
+ * libc-owned static buffer that the next call in ANY thread overwrites (and
+ * may realloc, invalidating an earlier caller's pointer). The mgmt port runs
+ * up to PS5UPLOAD2_MAX_MGMT_THREADS concurrent client threads, several of
+ * which call getmntinfo (FS_LIST_VOLUMES, the FS_MOUNT reuse scan, FS_UNMOUNT,
+ * and the shell `mount`/`df`/`mtrw` verbs) — so two racing callers can read a
+ * half-replaced array or a dangling pointer. Serialize the call and hand back
+ * a PRIVATE heap copy the caller frees with free(). The lock is held only
+ * around getmntinfo + the memcpy — a tiny, return-free region — never during
+ * the caller's iteration, so it can neither deadlock nor serialize the stat()
+ * work the callers do. Returns the entry count (0 on failure/empty) and sets
+ * *out to a malloc'd array (NULL on failure/empty). EVERY caller must free()
+ * the array on every exit path once it's done reading it. */
+static int mntinfo_snapshot(struct statfs **out) {
+    static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+    *out = NULL;
+    struct statfs *copy = NULL;
+    int n = 0;
+    pthread_mutex_lock(&mtx);
+    struct statfs *libc_mnts = NULL;
+    int got = getmntinfo(&libc_mnts, MNT_NOWAIT);
+    if (got > 0 && libc_mnts != NULL) {
+        size_t bytes = (size_t)got * sizeof(struct statfs);
+        copy = (struct statfs *)malloc(bytes);
+        if (copy != NULL) {
+            memcpy(copy, libc_mnts, bytes);
+            n = got;
+        }
+    }
+    pthread_mutex_unlock(&mtx);
+    *out = copy;
+    return n;
+}
+
 void runtime_reconcile_mounts(void) {
     struct statfs *mnts = NULL;
-    int nmnts = getmntinfo(&mnts, MNT_NOWAIT);
+    int nmnts = mntinfo_snapshot(&mnts);
     if (nmnts <= 0 || mnts == NULL) return;
 
     int cleaned = 0;
@@ -1389,6 +1423,7 @@ void runtime_reconcile_mounts(void) {
             "[payload2] reconcile: kept %d mount(s), cleaned %d orphan(s)\n",
             kept, cleaned);
     }
+    free(mnts);
 }
 
 /* Encode a mount_point to a filesystem-safe tracker filename (no
@@ -5349,7 +5384,7 @@ static int handle_fs_list_volumes(runtime_state_t *state, int client_fd,
      * tab just shows one spurious entry that disappears on the next
      * refresh, which is much better than a wedged mgmt thread. The
      * FS_UNMOUNT handler already uses MNT_NOWAIT for the same reason. */
-    nmnts = getmntinfo(&mnts, MNT_NOWAIT);
+    nmnts = mntinfo_snapshot(&mnts);
     if (nmnts < 0 || mnts == NULL) {
         return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
                           "fs_list_volumes_getmntinfo_failed", 33);
@@ -5357,12 +5392,13 @@ static int handle_fs_list_volumes(runtime_state_t *state, int client_fd,
 
     resp = (char *)malloc(RESP_CAP);
     if (!resp) {
+        free(mnts);
         return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
                           "fs_list_volumes_oom", 19);
     }
 
     n = snprintf(resp + off, RESP_CAP - off, "{\"volumes\":[");
-    if (n < 0 || (size_t)n >= RESP_CAP - off) { free(resp); return -1; }
+    if (n < 0 || (size_t)n >= RESP_CAP - off) { free(resp); free(mnts); return -1; }
     off += (size_t)n;
 
     for (i = 0; i < nmnts; i++) {
@@ -5487,6 +5523,10 @@ static int handle_fs_list_volumes(runtime_state_t *state, int client_fd,
         if (off >= RESP_CAP) { off = RESP_CAP - 1; break; }
         first_volume = 0;
     }
+    /* mnts isn't read past the loop; free the snapshot now so none of the
+     * trailer/return paths below need to. */
+    free(mnts);
+    mnts = NULL;
 
     /* Reserve room for the "]}" trailer — if a previous iteration
      * landed on the boundary, leave space for the close-array tokens. */
@@ -6358,6 +6398,17 @@ typedef struct {
 static void *async_copy_writer_thread(void *arg) {
     async_copy_t *w = (async_copy_t *)arg;
     int slot = 0;
+    /* Bytes written since the last periodic fsync. A cross-volume move
+     * (e.g. external SSD -> internal) is a local-to-local byte copy with
+     * NO network to pace the writer, so dirty pages pile up far faster
+     * than during an upload. Left unbounded, a multi-GB game copy grows
+     * the kernel dirty-page backlog into the GBs and the PS5 kernel
+     * panics under the writeback/VM pressure (observed: console shutdown,
+     * lost jailbreak, mid-copy of a ~50 GB title). fsync drains the dirty
+     * pages to clean ones on a fixed cadence so the backlog stays bounded
+     * -- the same fix piped_writer_thread() uses for huge uploads. See
+     * PS5UPLOAD2_WRITEBACK_FSYNC_BYTES. */
+    uint64_t since_fsync = 0;
     for (;;) {
         size_t len;
         int eof;
@@ -6390,6 +6441,20 @@ static void *async_copy_writer_thread(void *arg) {
                 }
                 written += wr;
             }
+            /* Bound the dirty-page backlog: flush on a fixed byte cadence
+             * so a huge cross-volume copy can't balloon the kernel's dirty
+             * count into the GBs and panic the console. Done before the
+             * empty-signal so the reader naturally blocks on a full slot
+             * during the flush -- that backpressure is exactly the pacing
+             * we want. A flush failure isn't fatal: a real I/O error still
+             * surfaces via the write() path above. */
+#if PS5UPLOAD2_WRITEBACK_FSYNC_BYTES > 0
+            since_fsync += (uint64_t)len;
+            if (since_fsync >= PS5UPLOAD2_WRITEBACK_FSYNC_BYTES) {
+                (void)fsync(w->dfd);
+                since_fsync = 0;
+            }
+#endif
         }
 
         pthread_mutex_lock(&w->mtx);
@@ -6592,6 +6657,19 @@ static int cp_rf_op(const char *src, const char *dst, int depth, int op_idx) {
             /* Other return values (0 success, EINVAL/EOPNOTSUPP,
              * etc.) all fall through and let the read/write loop
              * proceed with lazy allocation. */
+            /* If the preallocation succeeded for a large file, drain it
+             * now. On filesystems whose fallocate zero-fills through the
+             * buffer cache (rather than reserving bare extents), a
+             * multi-GB preallocation would otherwise hand the copy loop a
+             * huge dirty-page backlog before the first byte is even read
+             * -- the same writeback pressure that can panic the console.
+             * A pure extent-reserving fallocate leaves nothing dirty, so
+             * this is a cheap no-op there. Threshold mirrors the copy
+             * loop's flush cadence. */
+            if (falloc_rc == 0 &&
+                (uint64_t)st.st_size >= PS5UPLOAD2_WRITEBACK_FSYNC_BYTES) {
+                (void)fsync(dfd);
+            }
         }
         /* Hand the actual byte movement to the async-write helper:
          * one writer thread + double-buffered 16 MiB slots so read
@@ -7546,7 +7624,7 @@ static int fs_mount_find_existing(const char *image_path,
     if (!image_path || !*image_path || !out_mp || out_cap == 0) return 0;
     out_mp[0] = '\0';
     struct statfs *mnts = NULL;
-    int nmnts = getmntinfo(&mnts, MNT_NOWAIT);
+    int nmnts = mntinfo_snapshot(&mnts);
     if (nmnts <= 0 || !mnts) return 0;
     for (int i = 0; i < nmnts; i++) {
         const char *mnt_on   = mnts[i].f_mntonname;
@@ -7563,10 +7641,12 @@ static int fs_mount_find_existing(const char *image_path,
         if (strcmp(src, image_path) != 0) continue;
         /* Found one. Surface it to the caller. */
         size_t len = strlen(mnt_on);
-        if (len + 1 > out_cap) return 0;
+        if (len + 1 > out_cap) { free(mnts); return 0; }
         memcpy(out_mp, mnt_on, len + 1);
+        free(mnts);
         return 1;
     }
+    free(mnts);
     return 0;
 }
 
@@ -7763,13 +7843,14 @@ static int handle_fs_mount(runtime_state_t *state, int client_fd,
              * find it the ACK still carries the mount_point. */
             char existing_dev[32] = "";
             struct statfs *mnts = NULL;
-            int nmnts = getmntinfo(&mnts, MNT_NOWAIT);
+            int nmnts = mntinfo_snapshot(&mnts);
             for (int i = 0; i < nmnts && mnts; i++) {
                 if (strcmp(mnts[i].f_mntonname, existing) != 0) continue;
                 snprintf(existing_dev, sizeof(existing_dev), "%s",
                          mnts[i].f_mntfromname);
                 break;
             }
+            free(mnts);
             /* Re-write the source tracker on reuse — idempotent. If the
              * tracker file got deleted out-of-band (manual cleanup,
              * orphan-reconciliation race, etc.) the next FS_UNMOUNT
@@ -8163,7 +8244,7 @@ static int handle_fs_unmount(runtime_state_t *state, int client_fd,
     int detach_md_unit  = -1;
     int detach_lvd_unit = -1;
     struct statfs *mnts = NULL;
-    int nmnts = getmntinfo(&mnts, MNT_NOWAIT);
+    int nmnts = mntinfo_snapshot(&mnts);
     for (int i = 0; i < nmnts && mnts != NULL; i++) {
         if (strcmp(mnts[i].f_mntonname, mount_point) != 0) continue;
         const char *from = mnts[i].f_mntfromname;
@@ -8176,6 +8257,8 @@ static int handle_fs_unmount(runtime_state_t *state, int client_fd,
         }
         break;
     }
+    /* Only the unit numbers (ints) are kept past here; the snapshot is done. */
+    free(mnts);
 
     if (fs_mount_try_unmount(mount_point) != 0) {
         /* 2.2.59: differentiate EBUSY ("game is running, files
@@ -11285,20 +11368,21 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
     }
     if (strcmp(prog, "mount") == 0) {
         struct statfs *mnts = NULL;
-        int n = getmntinfo(&mnts, MNT_NOWAIT);
+        int n = mntinfo_snapshot(&mnts);
         for (int i = 0; i < n && mnts; i++) {
             len = shell_appendf(&out, &cap, len, "%-10s %-30s %s\n",
                                  mnts[i].f_fstypename,
                                  mnts[i].f_mntfromname,
                                  mnts[i].f_mntonname);
         }
+        free(mnts);
         if (!out) out = strdup_safe("");
         *out_text = out;
         return 0;
     }
     if (strcmp(prog, "df") == 0) {
         struct statfs *mnts = NULL;
-        int n = getmntinfo(&mnts, MNT_NOWAIT);
+        int n = mntinfo_snapshot(&mnts);
         len = shell_appendf(&out, &cap, len,
                              "%-30s %12s %12s %12s  use%%\n",
                              "filesystem", "blocks", "used", "avail");
@@ -11316,6 +11400,7 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
                                  (unsigned long long)(free_b / 1024),
                                  pct);
         }
+        free(mnts);
         if (!out) out = strdup_safe("");
         *out_text = out;
         return 0;
@@ -12851,7 +12936,7 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
          * "fstype" must match what's already mounted there (ufs or
          * nullfs typically); we look it up via getmntinfo. */
         struct statfs *mnts = NULL;
-        int n = getmntinfo(&mnts, MNT_NOWAIT);
+        int n = mntinfo_snapshot(&mnts);
         const char *fstype = NULL;
         const char *from = NULL;
         for (int i = 0; i < n && mnts; i++) {
@@ -12861,11 +12946,15 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
                 break;
             }
         }
+        /* NOTE: fstype/from alias INTO `mnts`, so the snapshot must stay alive
+         * until after the nmount iovec below is built and used — free it only
+         * on each return path past that point (and here, where they're unused). */
         if (!fstype) {
             len = shell_appendf(&out, &cap, len,
                                  "mtrw: %s: not a mounted filesystem\n", mnt);
             *out_text = out;
             *out_exit = 1;
+            free(mnts);
             return 0;
         }
         /* nmount(2) iovec: each option name + value pair, iov_len
@@ -12891,11 +12980,13 @@ static int handle_shell_builtin(const char *cmd_in, char **out_text,
                                  mnt, strerror(errno));
             *out_text = out;
             *out_exit = 1;
+            free(mnts); /* last use of `from` (iov[5]) was above */
             return 0;
         }
         len = shell_appendf(&out, &cap, len, "%s remounted rw (%s)\n",
                              mnt, fstype);
         *out_text = out;
+        free(mnts); /* last use of `fstype` was the line above */
         return 0;
     }
     if (strcmp(prog, "sfoinfo") == 0) {
@@ -14704,6 +14795,67 @@ static int handle_profile_apply_avatar(int client_fd, uint64_t trace_id,
                       trace_id, resp, (uint64_t)len);
 }
 
+/* Keep the home-screen display name in sync after a rename.
+ *
+ * sceUserServiceSetUserName() updates the live user name (what the app's
+ * Profile screen + the PS5 "add profile" uniqueness check read), but the PS5
+ * HOME SCREEN displays the np profile-cache `online.json` "firstName" — and
+ * SetUserName does NOT touch that file. So once an avatar has been applied
+ * (which writes online.json), renaming leaves the home screen showing the OLD
+ * name. (HW-confirmed on FW: rename → username changes, online.json firstName
+ * stays stale.)
+ *
+ * Fix: after a successful rename, if the profile cache's online.json EXISTS,
+ * rewrite just its "firstName" value in place so the two stores stay
+ * consistent. We only touch an EXISTING cache file: a user who never applied
+ * an avatar has no cache, the home screen reads the UserService name directly
+ * (already updated), and we must NOT create an online.json-only cache (that
+ * would blank their avatar). Reading + patching a single field preserves the
+ * avatar .dds files and every other online.json field untouched. */
+static void profile_sync_online_json_firstname(uint32_t uid, const char *name) {
+    char path[256];
+    snprintf(path, sizeof(path),
+             "/system_data/priv/cache/profile/0x%08X/online.json", uid);
+
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return; /* no cache → nothing to sync (home reads UserService name) */
+    char buf[2048];
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) return;
+    buf[n] = '\0';
+
+    const char *key = "\"firstName\":\"";
+    char *p = strstr(buf, key);
+    if (!p) return;
+    char *vstart = p + strlen(key);
+    char *vend = strchr(vstart, '"');
+    if (!vend) return;
+
+    char nesc[128];
+    json_escape_into(name, nesc, sizeof(nesc)); /* escapes content, no quotes */
+
+    char out[2560];
+    size_t prefix_len = (size_t)(vstart - buf);
+    int w = snprintf(out, sizeof(out), "%.*s%s%s",
+                     (int)prefix_len, buf, nesc, vend);
+    if (w < 0 || (size_t)w >= sizeof(out)) return;
+
+    /* Atomic replace: write a sibling tmp then rename over the original so a
+     * crash mid-write can't leave a truncated online.json. */
+    char tmp[300];
+    snprintf(tmp, sizeof(tmp), "%s.ps5up-tmp", path);
+    int wf = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (wf < 0) return;
+    int wr = write_full(wf, out, (size_t)w);
+    close(wf);
+    if (wr != 0) {
+        (void)unlink(tmp);
+        return;
+    }
+    if (rename(tmp, path) != 0) (void)unlink(tmp);
+}
+
 static int handle_profile_set_local_username(int client_fd, uint64_t trace_id,
                                              const char *body) {
     uint32_t uid = (uint32_t)extract_json_uint64_field(body, "uid");
@@ -14715,6 +14867,9 @@ static int handle_profile_set_local_username(int client_fd, uint64_t trace_id,
         rc = profile_set_local_username(uid, name);
         usleep(SONY_API_POST_SLEEP_US);
         pthread_mutex_unlock(&sony_api_lock);
+        /* Sync the home-screen display name (online.json firstName) — outside
+         * sony_api_lock since it's plain file I/O, not a Sony API call. */
+        if (rc == 0) profile_sync_online_json_firstname(uid, name);
     }
     char nesc[128];
     json_escape_into(name, nesc, sizeof(nesc));
