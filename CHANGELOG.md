@@ -4,6 +4,17 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 3.2.2
+
+- **New look, and a new theme.** The two main themes are now **PS5 Dark** and
+  **PS5 Light** — coloured after the console's own black- and white-plastic
+  panels with the PlayStation-blue accent. And there's a brand-new **Rose**
+  theme: warm, bright, and soft, built around a bold rose accent. Pick any of
+  them (plus OLED) in **Settings → Appearance**.
+- **Tidier releases.** The engine now carries the same version number as the
+  app, and each release also ships the engine binary on its own for every
+  platform.
+
 ## 3.2.1
 
 - **Save Data now shows game cover art.** The save thumbnails were trying to
