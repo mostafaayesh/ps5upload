@@ -295,12 +295,17 @@ hw_cpu_cores: "CPU cores",
 logs_filter_all: "All",
 
 // Status bar
-status_engine: "engine",
-status_engine_tooltip: "ps5upload-engine sidecar on localhost:19113",
+status_engine: "Engine",
+status_engine_tooltip:
+  "ps5upload-engine — the app's local backend (localhost:19113)",
 status_payload: "helper",
 status_payload_tooltip: "PS5Upload helper on :9113",
 status_kernel_ok: "kernel OK",
-status_no_active_transfers: "no active transfers",
+status_no_active_transfers: "No active transfers",
+status_ps5: "PS5",
+status_ps5_connected: "Connected",
+status_ps5_disconnected: "Not connected",
+status_helper_version: "Helper v{ver}",
 
 // Sidebar nav items missing from v1.5.4-era dictionary. Without
 // these the sidebar shows the English fallback even when the
@@ -1787,8 +1792,8 @@ picker_use_folder: "Use this folder",
 android_storage_prompt_title: "Allow file access for Android uploads",
 android_storage_prompt_body: "Grant All files access so PS5Upload can upload game folders, .zip dumps, and .pkg files from your phone.",
 bug_report: "Bug report",
-status_console_up: "helper up",
-status_console_down: "helper down",
+status_console_up: "connected",
+status_console_down: "not connected",
 status_console_unknown: "not probed yet",
 status_keep_awake_tooltip: "Keep-awake is set to “Always while connected” — connected consoles won't auto-enter rest mode while the app is open. Change in Settings → Upload.",
 status_keep_awake: "keeping awake",

@@ -66,8 +66,40 @@ export default function StatusBar() {
     );
   };
 
+  // The footer says two things, so it shows two groups: the Engine (the
+  // app's own local backend) and the PS5 (the console we're talking to).
+  // Everything else — helper version, kernel build, profile name — is
+  // detail that belongs in a tooltip, not strung along the bar as a row
+  // of cryptic pipe-separated tokens.
+  const ps5Connected = payloadStatus === "up";
+  // Console name: in a multi-console setup the active profile's name is
+  // the clearest label ("Pro", "Fat"); otherwise just "PS5".
+  const ps5Name =
+    multiConsole && activeProfile
+      ? activeProfile.name
+      : tr("status_ps5", undefined, "PS5");
+  // Pack the connection state, kernel build and helper version into one
+  // hover string. Reads top-to-bottom: are we connected, what firmware,
+  // what helper build.
+  const ps5Tooltip = [
+    ps5Connected
+      ? tr("status_ps5_connected", undefined, "Connected")
+      : tr("status_ps5_disconnected", undefined, "Not connected"),
+    ps5Kernel || null,
+    payloadVersion
+      ? tr(
+          "status_helper_version",
+          { ver: payloadVersion },
+          `Helper v${payloadVersion}`,
+        )
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 whitespace-nowrap border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 pt-1.5 pb-[calc(env(safe-area-inset-bottom)_+_0.375rem)] pl-[calc(env(safe-area-inset-left)_+_1rem)] pr-[calc(env(safe-area-inset-right)_+_1rem)] text-xs text-[var(--color-muted)]">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 whitespace-nowrap border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 pt-1.5 pb-[calc(env(safe-area-inset-bottom)_+_0.375rem)] pl-[calc(env(safe-area-inset-left)_+_1rem)] pr-[calc(env(safe-area-inset-right)_+_1rem)] text-xs text-[var(--color-muted)]">
+      {/* Group 1 — the Engine (our local backend). */}
       <div
         className="flex items-center gap-2"
         title={
@@ -75,30 +107,29 @@ export default function StatusBar() {
           tr(
             "status_engine_tooltip",
             undefined,
-            "ps5upload-engine sidecar on localhost:19113",
+            "ps5upload-engine — the app's local backend (localhost:19113)",
           )
         }
       >
-        {dot(engineStatus)} {tr("status_engine", undefined, "engine")}
+        {dot(engineStatus)}
+        <span>{tr("status_engine", undefined, "Engine")}</span>
       </div>
-      <div
-        className="flex items-center gap-2"
-        title={tr(
-          "status_payload_tooltip",
-          undefined,
-          "PS5Upload helper on :9113",
-        )}
-      >
-        {dot(payloadStatus)}{" "}
-        {multiConsole && activeProfile
-          ? activeProfile.name
-          : tr("status_payload", undefined, "helper")}
-        {payloadVersion && (
+
+      <span className="h-3 w-px bg-[var(--color-border)]" aria-hidden />
+
+      {/* Group 2 — the PS5 console (helper + firmware). */}
+      <div className="flex items-center gap-2" title={ps5Tooltip}>
+        {dot(payloadStatus)}
+        <span className={ps5Connected ? undefined : "opacity-70"}>
+          {ps5Name}
+        </span>
+        {ps5Connected && ps5Firmware && (
           <span className="rounded bg-[var(--color-surface-3)] px-1 font-mono text-xs">
-            v{payloadVersion}
+            {tr("status_fw", { ver: ps5Firmware }, `FW ${ps5Firmware}`)}
           </span>
         )}
       </div>
+
       {otherConsoles.length > 0 && (
         <div className="flex items-center gap-1.5">
           {otherConsoles.map((p) => {
@@ -106,9 +137,9 @@ export default function StatusBar() {
               runtimeByHost[hostOf(p.host) || "_"] ?? EMPTY_HOST_RUNTIME;
             const statusLabel =
               rt.payloadStatus === "up"
-                ? tr("status_console_up", undefined, "helper up")
+                ? tr("status_console_up", undefined, "connected")
                 : rt.payloadStatus === "down"
-                  ? tr("status_console_down", undefined, "helper down")
+                  ? tr("status_console_down", undefined, "not connected")
                   : tr("status_console_unknown", undefined, "not probed yet");
             return (
               <span
@@ -128,27 +159,25 @@ export default function StatusBar() {
           })}
         </div>
       )}
-      {ps5Kernel && (
-        <div className="flex items-center gap-2" title={ps5Kernel}>
-          <span>PS5</span>
-          <span className="rounded bg-[var(--color-surface-3)] px-1 font-mono text-xs">
-            {ps5Firmware
-              ? tr("status_fw", { ver: ps5Firmware }, `FW ${ps5Firmware}`)
-              : tr("status_kernel_ok", undefined, "kernel OK")}
-          </span>
-        </div>
-      )}
-      <div className="ml-auto">
-        {runningCount > 0
-          ? tr(
-              "status_running_count",
-              { count: runningCount },
-              `${runningCount} running`,
-            )
-          : tr("status_no_active_transfers", undefined, "no active transfers")}
+
+      {/* Right cluster — live activity + power/capture controls. */}
+      <div className="ms-auto flex items-center gap-3">
+        <span>
+          {runningCount > 0
+            ? tr(
+                "status_running_count",
+                { count: runningCount },
+                `${runningCount} running`,
+              )
+            : tr(
+                "status_no_active_transfers",
+                undefined,
+                "No active transfers",
+              )}
+        </span>
+        <KeepAwakeIndicator />
+        <CaptureButton />
       </div>
-      <KeepAwakeIndicator />
-      <CaptureButton />
     </div>
   );
 }
