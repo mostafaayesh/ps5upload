@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriEnv } from "../lib/tauriEnv";
 
-import { useThemeStore } from "./theme";
+import { useThemeStore, type Theme } from "./theme";
 import { useLangStore } from "./lang";
 import { useKeepAwakeStore } from "./keepAwake";
 import { useUploadSettingsStore } from "./uploadSettings";
@@ -27,7 +27,7 @@ const DEBOUNCE_MS = 300;
 interface SettingsSnapshot {
   // Top-level keys mirror the renderer's internal store names. Flat by
   // design — easy to hand-edit, easy to extend.
-  theme?: "dark" | "light" | "oled";
+  theme?: Theme;
   lang?: string;
   /** PS5 IP address the Connection screen probes + sends payload to.
    *  Survives relaunch so users don't re-type it every session. */

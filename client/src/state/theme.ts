@@ -9,11 +9,11 @@ import { create } from "zustand";
  *
  *  Storage key kept at the original "ps5upload.theme" so users don't
  *  lose their setting across the upgrade. */
-export type Theme = "dark" | "light" | "oled";
+export type Theme = "dark" | "light" | "oled" | "rose";
 
 const STORAGE_KEY = "ps5upload.theme";
 
-const VALID_THEMES: Theme[] = ["dark", "light", "oled"];
+const VALID_THEMES: Theme[] = ["dark", "light", "oled", "rose"];
 
 /** Read the persisted theme synchronously so the first paint is correct.
  *  Returning "dark" as the fallback keeps parity with the app's historical
@@ -54,7 +54,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     set({ theme });
   },
   toggleTheme: () => {
-    const order: Theme[] = ["dark", "light", "oled"];
+    const order: Theme[] = ["dark", "light", "oled", "rose"];
     const idx = order.indexOf(get().theme);
     const next: Theme = order[(idx + 1) % order.length];
     window.localStorage.setItem(STORAGE_KEY, next);

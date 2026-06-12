@@ -402,7 +402,7 @@ export default function SavesScreen() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="ml-auto"
+                    className="ms-auto"
                     leftIcon={<FolderOpen size={12} />}
                     onClick={() => openInFileSystem(navigate, entries[0].path)}
                     title={tr(

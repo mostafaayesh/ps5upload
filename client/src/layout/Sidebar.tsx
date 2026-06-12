@@ -21,6 +21,7 @@ import {
   Sun,
   Moon,
   MoonStar,
+  Flower2,
   Sparkles,
   HelpCircle,
   ScrollText,
@@ -51,17 +52,19 @@ function themeLabel(
     fallback?: string,
   ) => string,
 ): string {
-  if (theme === "light") return tr("light_mode", undefined, "Light mode");
+  if (theme === "light") return tr("light_mode", undefined, "PS5 Light");
   if (theme === "oled") return tr("oled_mode", undefined, "OLED mode");
-  return tr("dark_mode", undefined, "Dark mode");
+  if (theme === "rose") return tr("rose_mode", undefined, "Rose");
+  return tr("dark_mode", undefined, "PS5 Dark");
 }
 
-/** Icon picker that mirrors `themeLabel`. Three icons keeps each
- *  state visually distinct: sun (light) → moon (dark) → moon-star
- *  (OLED). The toggle button cycles through these in order. */
+/** Icon picker that mirrors `themeLabel`. One icon per state keeps each
+ *  visually distinct: sun (PS5 Light) → moon (PS5 Dark) → moon-star
+ *  (OLED) → flower (Rose). The toggle button cycles through these in order. */
 function themeIcon(theme: Theme) {
   if (theme === "light") return <Sun size={14} />;
   if (theme === "oled") return <MoonStar size={14} />;
+  if (theme === "rose") return <Flower2 size={14} />;
   return <Moon size={14} />;
 }
 

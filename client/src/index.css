@@ -22,12 +22,14 @@
  * those scripts — the brand carries through color, depth and motion.
  */
 
+/* PS5 Dark — the console's black-plastic centre panel: a deep, cool
+ * charcoal (not pure black), lit by the PlayStation-blue accent. */
 @theme {
-  --color-surface: oklch(0.155 0.015 260);
-  --color-surface-2: oklch(0.195 0.015 258);
-  --color-surface-3: oklch(0.245 0.015 256);
-  --color-border: oklch(0.3 0.02 256);
-  --color-border-strong: oklch(0.4 0.025 254);
+  --color-surface: oklch(0.17 0.013 262);
+  --color-surface-2: oklch(0.21 0.014 260);
+  --color-surface-3: oklch(0.258 0.015 258);
+  --color-border: oklch(0.31 0.02 258);
+  --color-border-strong: oklch(0.41 0.025 256);
   --color-muted: oklch(0.66 0.025 252);
   --color-text: oklch(0.955 0.008 250);
   --color-accent: oklch(0.7 0.17 255);
@@ -79,12 +81,14 @@
   --overlay-scrim: rgba(0, 0, 0, 0.45);
 }
 
+/* PS5 Light — the console's white-plastic outer panels: a clean, cool
+ * bright white with the PlayStation-blue accent. */
 :root[data-theme="light"] {
-  --color-surface: oklch(0.985 0.004 250);
-  --color-surface-2: oklch(0.96 0.006 250);
-  --color-surface-3: oklch(0.92 0.01 250);
-  --color-border: oklch(0.87 0.012 250);
-  --color-border-strong: oklch(0.76 0.015 250);
+  --color-surface: oklch(0.975 0.004 255);
+  --color-surface-2: oklch(0.945 0.006 252);
+  --color-surface-3: oklch(0.905 0.01 252);
+  --color-border: oklch(0.86 0.012 252);
+  --color-border-strong: oklch(0.75 0.016 252);
   --color-muted: oklch(0.49 0.02 252);
   --color-text: oklch(0.21 0.02 250);
   --color-accent: oklch(0.52 0.19 255);
@@ -154,6 +158,49 @@
   --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   --atmosphere: none;
   --overlay-scrim: rgba(0, 0, 0, 0.6);
+}
+
+/* Rose — a warm, bright theme built around a bold rose accent.
+ *
+ * Surfaces are a warm off-white with a barely-there pink tint (very low
+ * chroma at hue ~350) so the screen reads soft and light rather than
+ * clinical, while the deep rose accent (the signature) carries the
+ * personality on buttons, links, and selected states. Text stays a dark
+ * warm plum for strong, comfortable contrast on the pale surface. The
+ * semantic good/warn/bad and PS4/PS5 badge colours are kept distinct from
+ * the rose accent so status never reads as "just pink". */
+:root[data-theme="rose"] {
+  --color-surface: oklch(0.985 0.006 350);
+  --color-surface-2: oklch(0.96 0.012 350);
+  --color-surface-3: oklch(0.925 0.022 350);
+  --color-border: oklch(0.88 0.025 350);
+  --color-border-strong: oklch(0.76 0.04 350);
+  --color-muted: oklch(0.5 0.045 350);
+  --color-text: oklch(0.26 0.045 350);
+  --color-accent: oklch(0.56 0.21 350);
+  --color-accent-contrast: oklch(0.99 0.005 350);
+  --color-accent-soft: oklch(0.93 0.06 350);
+  --color-good: oklch(0.54 0.13 158);
+  --color-good-soft: oklch(0.93 0.05 158);
+  --color-warn: oklch(0.62 0.14 65);
+  --color-warn-soft: oklch(0.95 0.05 65);
+  --color-bad: oklch(0.55 0.22 22);
+  --color-bad-soft: oklch(0.95 0.05 22);
+  --color-ps4: oklch(0.48 0.16 255);
+  --color-ps4-soft: oklch(0.92 0.05 255);
+  --color-ps5: oklch(0.5 0.2 305);
+  --color-ps5-soft: oklch(0.93 0.05 305);
+  --shadow-logo: 0 12px 40px -10px oklch(0.56 0.21 350 / 0.25);
+  --shadow-1: 0 1px 2px oklch(0.4 0.1 350 / 0.1);
+  --shadow-2: 0 4px 16px -4px oklch(0.4 0.12 350 / 0.2);
+  --shadow-3: 0 16px 48px -12px oklch(0.4 0.12 350 / 0.28);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --atmosphere: radial-gradient(
+    120% 70% at 50% -10%,
+    oklch(0.9 0.05 350 / 0.6),
+    transparent 60%
+  );
+  --overlay-scrim: oklch(0.3 0.08 350 / 0.32);
 }
 
 html,

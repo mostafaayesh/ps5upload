@@ -13,6 +13,7 @@ import {
   Sun,
   Moon,
   MoonStar,
+  Flower2,
   Gauge,
   Bell,
   Bug,
@@ -914,21 +915,21 @@ function ThemePicker() {
   }> = [
     {
       value: "dark",
-      label: tr("theme_dark", undefined, "Dark"),
+      label: tr("theme_dark", undefined, "PS5 Dark"),
       description: tr(
         "theme_dark_hint",
         undefined,
-        "Default. Slight surface elevation, balanced contrast.",
+        "Default. The console's black-plastic charcoal, PlayStation-blue accent.",
       ),
       icon: <Moon size={14} />,
     },
     {
       value: "light",
-      label: tr("theme_light", undefined, "Light"),
+      label: tr("theme_light", undefined, "PS5 Light"),
       description: tr(
         "theme_light_hint",
         undefined,
-        "Daytime colours, high readability.",
+        "The console's white-plastic panels — clean, bright, cool white.",
       ),
       icon: <Sun size={14} />,
     },
@@ -941,6 +942,16 @@ function ThemePicker() {
         "Pure-#000 background. Mitigates burn-in on OLED panels.",
       ),
       icon: <MoonStar size={14} />,
+    },
+    {
+      value: "rose",
+      label: tr("theme_rose", undefined, "Rose"),
+      description: tr(
+        "theme_rose_hint",
+        undefined,
+        "Warm, bright, and soft — built around a bold rose accent.",
+      ),
+      icon: <Flower2 size={14} />,
     },
   ];
   return (
