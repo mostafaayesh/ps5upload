@@ -15,7 +15,9 @@ use ps5upload_core::fs_ops::app_list_registered;
 use ps5upload_core::pkg_install::{title_id_from_content_id, verify_launchable, LaunchCheck};
 
 fn live_addr() -> Option<String> {
-    std::env::var("PS5UPLOAD_LIVE_ADDR").ok().filter(|s| !s.is_empty())
+    std::env::var("PS5UPLOAD_LIVE_ADDR")
+        .ok()
+        .filter(|s| !s.is_empty())
 }
 
 #[test]
@@ -90,7 +92,11 @@ fn live_verify_launchable_against_real_console() {
     );
     if fs_live {
         // Console enumerable, title in neither source → genuinely absent.
-        assert_eq!(check, LaunchCheck::Absent, "reachable console, title absent → Absent");
+        assert_eq!(
+            check,
+            LaunchCheck::Absent,
+            "reachable console, title absent → Absent"
+        );
     }
 
     // 5. A FAKE-placeholder content_id is never verifiable (elf-arsenal parity).

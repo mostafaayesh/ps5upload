@@ -68,7 +68,10 @@ fn live_inspect_pkg_category() {
     println!("mounting {pkg_path} ...");
     let m = pkg_direct_mount(&mgmt, &pkg_path, None).expect("pkg_direct_mount");
     let mount = m.mount_point.clone().unwrap_or_default();
-    println!("  ok={} code={:?} mount_point={:?} err={:?}", m.ok, m.code, m.mount_point, m.err);
+    println!(
+        "  ok={} code={:?} mount_point={:?} err={:?}",
+        m.ok, m.code, m.mount_point, m.err
+    );
     assert!(m.ok && !mount.is_empty(), "mount failed");
 
     let sfo_path = format!("{mount}/sce_sys/param.sfo");
@@ -87,12 +90,16 @@ fn live_inspect_pkg_category() {
             println!("  {k:20} = {v}");
         }
     }
-    let category = fields.iter().find(|(k, _)| k == "CATEGORY").map(|(_, v)| v.as_str());
+    let category = fields
+        .iter()
+        .find(|(k, _)| k == "CATEGORY")
+        .map(|(_, v)| v.as_str());
     println!(
         "\n==> CATEGORY = {category:?}  ({})",
         match category {
             Some("gd") | Some("gde") => "BASE APP — installable standalone",
-            Some("gp") | Some("gpc") | Some("gpd") => "PATCH/UPDATE — needs the base game installed first",
+            Some("gp") | Some("gpc") | Some("gpd") =>
+                "PATCH/UPDATE — needs the base game installed first",
             Some("ac") => "DLC — needs the base game installed first",
             _ => "unknown",
         }

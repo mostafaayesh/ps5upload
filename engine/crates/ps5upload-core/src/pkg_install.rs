@@ -387,7 +387,11 @@ fn probe_installed_pkg(addr: &str, title_id: &str) -> PkgProbe {
     let path = format!("/user/app/{title_id}");
     match crate::fs_ops::list_dir(addr, &path, crate::fs_ops::ListDirOptions::default()) {
         Ok(listing) => {
-            if listing.entries.iter().any(|e| e.name == "app.pkg" && e.size > 0) {
+            if listing
+                .entries
+                .iter()
+                .any(|e| e.name == "app.pkg" && e.size > 0)
+            {
                 PkgProbe::Present
             } else {
                 PkgProbe::Absent
@@ -472,7 +476,11 @@ pub fn verify_title_registered(addr: &str, title_id: &str) -> LaunchCheck {
     // A bare-dir pkg install has `src == ""`, so this never re-introduces the
     // false positive.
     if let Ok(list) = crate::fs_ops::app_list_registered(addr) {
-        if list.apps.iter().any(|a| a.title_id == title_id && !a.src.is_empty()) {
+        if list
+            .apps
+            .iter()
+            .any(|a| a.title_id == title_id && !a.src.is_empty())
+        {
             return LaunchCheck::Registered;
         }
     }

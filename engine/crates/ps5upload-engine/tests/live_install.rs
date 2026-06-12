@@ -66,7 +66,9 @@ fn serve_one(s: &mut TcpStream, data: &[u8]) -> std::io::Result<()> {
     eprintln!(
         "[http] {} {}",
         req.lines().next().unwrap_or("?"),
-        req.lines().find(|l| l.to_ascii_lowercase().starts_with("range:")).unwrap_or("(no range)")
+        req.lines()
+            .find(|l| l.to_ascii_lowercase().starts_with("range:"))
+            .unwrap_or("(no range)")
     );
     let range = req.lines().find_map(|l| {
         if l.to_ascii_lowercase().starts_with("range:") {
@@ -145,7 +147,11 @@ fn live_install_and_verify() {
     //    from the package itself), so content_id may be empty — recover the
     //    title_id from the filename for verification.
     let meta = parse_pkg(Path::new(&pkg)).expect("parse_pkg");
-    let fname = Path::new(&pkg).file_name().unwrap().to_string_lossy().to_string();
+    let fname = Path::new(&pkg)
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
     let title_id = if !meta.title_id.is_empty() {
         meta.title_id.clone()
     } else {
@@ -204,8 +210,13 @@ fn live_install_and_verify() {
         } else {
             meta.title.clone()
         },
-        package_type: meta.package_type.clone().unwrap_or_else(|| "PS4GD".to_string()),
-        method: std::env::var("PS5UPLOAD_METHOD").ok().filter(|s| !s.is_empty()),
+        package_type: meta
+            .package_type
+            .clone()
+            .unwrap_or_else(|| "PS4GD".to_string()),
+        method: std::env::var("PS5UPLOAD_METHOD")
+            .ok()
+            .filter(|s| !s.is_empty()),
     };
     println!("\n---- pkg_install ----");
     let resp = pkg_install(&mgmt_addr, &req).expect("pkg_install RPC");
