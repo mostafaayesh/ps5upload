@@ -7,12 +7,11 @@ services:
     pull_policy: build
     container_name: ps5upload
     restart: unless-stopped
-    ports:
-      # Web UI accessible on host port (defaults to 8080)
-      - "${PORT:-8080}:80"
+    network_mode: host
     environment:
       - PS5_ADDR
       - FTX2_BANDWIDTH_MBPS
+      - PORT
     volumes:
       # Host path to your game library — set GAMES_PATH in .env (or shell env).
       # Inside the container files are always accessible at /games.

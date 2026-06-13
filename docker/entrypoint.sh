@@ -12,6 +12,11 @@ ENGINE_PID=$!
 # Give the engine a moment to bind :19113 before Nginx starts
 sleep 1
 
+# Update Nginx listen port dynamically from PORT (defaults to 8080)
+PORT="${PORT:-8080}"
+echo "[entrypoint] Configuring Nginx to listen on port ${PORT}"
+sed -i "s/listen 80;/listen ${PORT};/g" /etc/nginx/sites-enabled/ps5upload
+
 echo "[entrypoint] Starting Nginx"
 nginx -g "daemon off;" &
 NGINX_PID=$!
