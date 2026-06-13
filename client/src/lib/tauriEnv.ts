@@ -11,11 +11,8 @@
  * a drag-drop event in a browser. */
 export function isTauriEnv(): boolean {
   if (typeof window === "undefined") return false;
-  const w = window as unknown as {
-    isTauri?: boolean;
-    __TAURI_INTERNALS__?: unknown;
-  };
-  return Boolean(w.isTauri || w.__TAURI_INTERNALS__);
+  const w = window as any;
+  return Boolean((w.isTauri || w.__TAURI_INTERNALS__) && !w.__TAURI_INTERNALS__?.isShim);
 }
 
 /** Fire-and-forget call of a Tauri event-listener unregister function.

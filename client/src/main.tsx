@@ -1,6 +1,7 @@
 // Shim Tauri internals if we are running in a browser to prevent Tauri v2 API from crashing on import
 if (typeof window !== "undefined" && !window.__TAURI_INTERNALS__) {
   (window as any).__TAURI_INTERNALS__ = {
+    isShim: true,
     invoke: (cmd: string, args?: any) => {
       if ((window as any).__TAURI_INVOKE__) {
         return (window as any).__TAURI_INVOKE__(cmd, args);
@@ -8,6 +9,11 @@ if (typeof window !== "undefined" && !window.__TAURI_INTERNALS__) {
       return Promise.reject(
         new Error(`Tauri not available. Attempted to call ${cmd} before shim loaded.`)
       );
+    },
+    metadata: {
+      currentWindow: {
+        label: "main",
+      },
     },
   };
 }
