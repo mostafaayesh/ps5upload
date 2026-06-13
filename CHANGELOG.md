@@ -4,6 +4,17 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 3.2.7
+
+- **Download files from mounted disc images.** Browsing a ShadowMount+ game
+  under `/mnt/shadowmnt` worked, but downloading a file from it (e.g.
+  `eboot.bin`) failed with "path not allowed". You can now read/download files
+  from mounted disc images.
+- **Preview SDR screenshots.** Consoles that save screenshots as `.jpg` (rather
+  than HDR `.jxr`) hit a "not a JPEG XR file" error on Preview. `.jpg`/`.png`
+  screenshots now preview and save directly; only HDR `.jxr` shots are
+  converted.
+
 ## 3.2.6
 
 - **Properly fixed the Payloads "Send file" screen at large Text sizes.** The
