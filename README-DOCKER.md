@@ -50,6 +50,7 @@ Open **http://\<your-server-ip\>:8080** in a browser.
 
 | Variable | Default | Description |
 |---|---|---|
+| `PORT` | `8080` | Host port for the Web UI |
 | `PS5_ADDR` | `192.168.1.x:9113` | PS5 transfer address |
 | `FTX2_BANDWIDTH_MBPS` | (unlimited) | Upload bandwidth cap (MB/s) |
 | `PS5UPLOAD_ENGINE_PORT` | `19113` | Engine listen port (internal) |
@@ -62,9 +63,4 @@ Open **http://\<your-server-ip\>:8080** in a browser.
 
 ## Port
 
-By default the web UI is on port `8080`. Change it in `docker-compose.yml`:
-
-```yaml
-ports:
-  - "80:80"   # or any other host port
-```
+By default, the Web UI is served on host port `8080`. You can configure it by setting the `PORT` environment variable in your `.env` file (e.g. `PORT=80`).

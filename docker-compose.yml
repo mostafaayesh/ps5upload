@@ -8,8 +8,8 @@ services:
     container_name: ps5upload
     restart: unless-stopped
     ports:
-      # Web UI accessible on host port 8080 (change as needed)
-      - "8080:80"
+      # Web UI accessible on host port (defaults to 8080)
+      - "${PORT:-8080}:80"
     environment:
       - PS5_ADDR
       - FTX2_BANDWIDTH_MBPS
