@@ -335,6 +335,24 @@ const CATALOGUE: &[CatalogueEntry] = &[
         homepage: "https://github.com/LightningMods/itemzflow_PS5",
     },
     CatalogueEntry {
+        // Requested by users. Loads game cheats on-console; pairs with
+        // a cheat database the user manages on the PS5 side.
+        id: "cheatrunner",
+        display_name: "CheatRunner",
+        role: "Game cheat loader",
+        description: "Loads and applies game cheats on the PS5. Send it like any other payload, then browse and toggle cheats for supported titles on the console.",
+        repo_host: "github.com",
+        repo_owner: "notmaj0r",
+        repo_name: "CheatRunner",
+        asset_name_hint: "",
+        on_console_marker_path: None,
+        process_name_hint: None,
+        ports: &[],
+        autoload_priority: 6,
+        autoload_delay_ms: 200,
+        homepage: "https://github.com/notmaj0r/CheatRunner",
+    },
+    CatalogueEntry {
         // Companion to our Shell tab. Pre-2.13.0 we shipped 17
         // in-payload built-ins; 2.13.0 raised that to 42 (parity
         // with shsrv). shsrv still offers two things our built-
