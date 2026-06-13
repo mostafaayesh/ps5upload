@@ -568,6 +568,20 @@ export async function webInvoke<T>(
         download_filename: "",
       } as T;
 
+    case "fs_read_preview":
+      return {
+        size: 0,
+        base64: "",
+      } as T;
+
+    case "shell_run_cmd":
+      return {
+        exit_code: -1,
+        timed_out: false,
+        stdout: "",
+        err: "Shell execution is not supported in web mode.",
+      } as T;
+
     // ── OS notifications (desktop-only no-op) ─────────────────────────────
     case "send_notification":
     case "notify":
