@@ -10,6 +10,7 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { isAndroid } from "./platform";
+import { isTauriEnv } from "./tauriEnv";
 import { pickLocalPath } from "../state/localPicker";
 
 export interface PickPathOptions {
@@ -21,7 +22,7 @@ export interface PickPathOptions {
 
 /** Pick a single real path, or null if cancelled. */
 export async function pickPath(opts: PickPathOptions): Promise<string | null> {
-  if (isAndroid()) {
+  if (isAndroid() || !isTauriEnv()) {
     return pickLocalPath({ mode: opts.mode, title: opts.title });
   }
   const sel = await openDialog({

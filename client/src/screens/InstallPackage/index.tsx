@@ -387,7 +387,7 @@ export default function InstallPackageScreen() {
     }
     setPicking(true);
     try {
-      const sel = isAndroid()
+      const sel = (isAndroid() || !isTauriEnv())
         ? await pickPath({
             mode: "file",
             filters: [{ name: "PS5 Package", extensions: ["pkg"] }],

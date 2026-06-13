@@ -28,6 +28,7 @@ RUN npm ci --no-audit --no-fund
 
 # Copy source and build
 COPY client/ .
+COPY FAQ.md CHANGELOG.md /
 
 # Build as a plain web app (no Tauri env → webInvoke shim is active)
 # Output lands in /app/dist

@@ -5214,6 +5214,103 @@ async fn debug_crash(Query(q): Query<DebugCrashQuery>) -> axum::response::Respon
     }
 }
 
+// ── Local Filesystem Browsing for Web Mode ──────────────────────────
+
+#[derive(serde::Serialize)]
+struct LocalEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+    size: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct LocalListDirQuery {
+    path: String,
+}
+
+async fn local_fs_roots() -> impl IntoResponse {
+    let mut roots = Vec::new();
+    if std::path::Path::new("/games").exists() {
+        roots.push("/games".to_string());
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| "/".to_string());
+    if !roots.contains(&home) {
+        roots.push(home);
+    }
+    (StatusCode::OK, Json(roots)).into_response()
+}
+
+async fn local_fs_list_dir(
+    Query(q): Query<LocalListDirQuery>,
+) -> impl IntoResponse {
+    let rd_result = std::fs::read_dir(&q.path);
+    match rd_result {
+        Ok(rd) => {
+            let mut out = Vec::new();
+            for ent in rd.flatten() {
+                if let Ok(md) = ent.metadata() {
+                    out.push(LocalEntry {
+                        name: ent.file_name().to_string_lossy().into_owned(),
+                        path: ent.path().to_string_lossy().into_owned(),
+                        is_dir: md.is_dir(),
+                        size: if md.is_file() { md.len() } else { 0 },
+                    });
+                }
+            }
+            out.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            });
+            (StatusCode::OK, Json(out)).into_response()
+        }
+        Err(e) => json_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("read_dir {}: {}", q.path, e),
+        )
+        .into_response(),
+    }
+}
+
+// ── PS5 Shell Command Execution ────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct ShellRunReq {
+    addr: Option<String>,
+    cmd: String,
+    session_id: Option<String>,
+    cwd: Option<String>,
+    timeout_secs: Option<u32>,
+}
+
+async fn ps5_shell_run(
+    State(state): State<AppState>,
+    Json(req): Json<ShellRunReq>,
+) -> impl IntoResponse {
+    let addr = mgmt_addr_or_default(req.addr, &state.default_ps5_addr);
+    let t = req.timeout_secs.unwrap_or(30);
+    let r = tokio::task::spawn_blocking(move || {
+        ps5upload_core::diagnostics::shell_run(
+            &addr,
+            &req.cmd,
+            req.session_id.as_deref(),
+            req.cwd.as_deref(),
+            t,
+        )
+    })
+    .await
+    .map_err(anyhow::Error::from)
+    .and_then(|r| r.map_err(anyhow::Error::from));
+
+    match r {
+        Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+        Err(e) => json_err(StatusCode::BAD_GATEWAY, format!("{e:#}")).into_response(),
+    }
+}
+
 /// GET /api/version — engine self-identification.
 ///
 /// Returned shape: `{"version": "x.y.z"}`. Used by the Tauri shell
@@ -5521,6 +5618,9 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         .route("/api/events", get(events_stream))
         .route("/api/engine-logs", get(engine_logs_tail))
         .route("/api/debug/crash", get(debug_crash))
+        .route("/api/local-fs/roots", get(local_fs_roots))
+        .route("/api/local-fs/list-dir", get(local_fs_list_dir))
+        .route("/api/ps5/shell", post(ps5_shell_run))
         .with_state(state)
         // .pkg install — sessions live in their own state because the
         // HTTP-host serving handler needs Mutex-guarded session lookup
