@@ -513,6 +513,61 @@ export async function webInvoke<T>(
       );
       return { ok: false, status: "not_supported_in_web_mode" } as T;
 
+    // ── Connectivity probes & LAN discovery (web shims) ───────────────────
+    case "payload_check": {
+      try {
+        const ip = req.ip || req.addr || "";
+        const status = await getJson<unknown>("/ps5/status", { addr: `${ip}:9114` });
+        return {
+          ok: true,
+          reachable: true,
+          status,
+        } as T;
+      } catch (e: any) {
+        return {
+          ok: false,
+          reachable: false,
+          error: e.message || String(e),
+        } as T;
+      }
+    }
+
+    case "port_check": {
+      const ip = req.ip || req.addr || "";
+      const port = Number(req.port);
+      if (port === 9114 || port === 9113) {
+        try {
+          await getJson<unknown>("/ps5/status", { addr: `${ip}:9114` });
+          return { open: true } as T;
+        } catch {
+          return { open: false, error: "unreachable" } as T;
+        }
+      }
+      return { open: false, error: "TCP probes for this port not supported in web mode" } as T;
+    }
+
+    case "discover_ps5":
+      return {
+        ok: true,
+        candidates: [],
+        scanned_ms: 0,
+        browsed_services: [],
+      } as T;
+
+    case "companion_probe":
+      return [] as T;
+
+    case "update_check":
+      return {
+        available: false,
+        current_version: "3.2.4",
+        latest_version: "3.2.4",
+        notes: "Running in Docker web mode. Updates are managed via Docker image tags.",
+        pub_date: "",
+        download_url: "",
+        download_filename: "",
+      } as T;
+
     // ── OS notifications (desktop-only no-op) ─────────────────────────────
     case "send_notification":
     case "notify":
