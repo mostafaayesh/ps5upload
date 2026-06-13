@@ -15,12 +15,8 @@ services:
       # Optional: bandwidth cap in MB/s (0 = unlimited)
       # FTX2_BANDWIDTH_MBPS: "100"
     volumes:
-      # Mount your game library into the container.
-      # In the web UI, reference files by their container path (/games/...).
-      # Example: /mnt/nas/games on the host → /games inside the container
-      - /mnt/games:/games:ro
-      # Persist engine logs across restarts (optional)
-      - ps5upload-logs:/var/log/ps5upload
-
-volumes:
-  ps5upload-logs:
+      # Host path to your game library — set GAMES_PATH in .env (or shell env).
+      # Inside the container files are always accessible at /games.
+      - ${GAMES_PATH:-/mnt/games}:/games:ro
+      # Host directory for engine logs — set LOGS_PATH in .env (or shell env).
+      - ${LOGS_PATH:-./logs}:/var/log/ps5upload
