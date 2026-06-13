@@ -31,7 +31,7 @@ COPY client/ .
 
 # Build as a plain web app (no Tauri env → webInvoke shim is active)
 # Output lands in /app/dist
-RUN npm run build
+RUN npm run build:vite
 
 # ─── Stage 3: Runtime image ───────────────────────────────────────────────────
 # Single container: Nginx (port 80) proxies /api/* to the engine (127.0.0.1:19113)
