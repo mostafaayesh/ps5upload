@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: ps5upload:latest
+    pull_policy: build
     container_name: ps5upload
     restart: unless-stopped
     ports:
