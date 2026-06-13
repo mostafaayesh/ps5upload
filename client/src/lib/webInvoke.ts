@@ -1103,7 +1103,7 @@ export async function webInvoke<T>(
       return [] as T;
 
     case "net_interfaces_get":
-      return [] as T;
+      return { interfaces: [] } as T;
 
     case "peripheral_eject":
     case "peripheral_bd_off":
