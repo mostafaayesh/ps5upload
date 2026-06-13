@@ -1,0 +1,26 @@
+services:
+  ps5upload:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ps5upload:latest
+    container_name: ps5upload
+    restart: unless-stopped
+    ports:
+      # Web UI accessible on host port 8080 (change as needed)
+      - "8080:80"
+    environment:
+      # Set this to your PS5's IP address and transfer port
+      PS5_ADDR: "192.168.1.x:9113"
+      # Optional: bandwidth cap in MB/s (0 = unlimited)
+      # FTX2_BANDWIDTH_MBPS: "100"
+    volumes:
+      # Mount your game library into the container.
+      # In the web UI, reference files by their container path (/games/...).
+      # Example: /mnt/nas/games on the host → /games inside the container
+      - /mnt/games:/games:ro
+      # Persist engine logs across restarts (optional)
+      - ps5upload-logs:/var/log/ps5upload
+
+volumes:
+  ps5upload-logs:

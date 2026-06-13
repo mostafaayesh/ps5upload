@@ -1,0 +1,19 @@
+# Dependencies / build artifacts
+client/node_modules
+client/dist
+engine/target
+
+# Git
+.git
+.gitignore
+
+# Dev tools
+.github
+docs
+tests
+payload
+scripts
+
+# IDE
+.vscode
+*.swp

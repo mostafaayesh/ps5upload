@@ -5,7 +5,12 @@
 // `volumes` exports here were unused; the renderer goes through the
 // Tauri IPC surface in `api/ps5.ts` for everything except this probe.
 
-const BASE = "http://127.0.0.1:19113";
+import { isTauriEnv } from "../lib/tauriEnv";
+
+// In Docker/web mode Nginx proxies /api → 127.0.0.1:19113 inside the container.
+// In Tauri desktop mode we talk directly to the loopback sidecar.
+const BASE = isTauriEnv() ? "http://127.0.0.1:19113" : "";
+
 
 export const engineApi = {
   /** Lightweight engine liveness probe. Unlike `/api/ps5/status` (which

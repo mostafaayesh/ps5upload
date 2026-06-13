@@ -3,6 +3,8 @@ import {
   type InvokeArgs,
   type InvokeOptions,
 } from "@tauri-apps/api/core";
+import { isTauriEnv } from "./tauriEnv";
+import { webInvoke } from "./webInvoke";
 
 import { log } from "../state/logs";
 
@@ -29,6 +31,18 @@ export async function invoke<T>(
   args?: InvokeArgs,
   options?: InvokeOptions,
 ): Promise<T> {
+  // In Docker / browser: route through the HTTP shim instead of Tauri IPC.
+  if (!isTauriEnv()) {
+    try {
+      const result = await webInvoke<T>(cmd, args as Record<string, unknown> | undefined);
+      log.trace("cmd", cmd);
+      return result;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.warn("cmd", `${cmd} failed: ${msg}`);
+      throw e;
+    }
+  }
   try {
     // Forward only the args we were given — passing a trailing `undefined`
     // options arg would change the observable call shape (and break tests /
