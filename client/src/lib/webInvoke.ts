@@ -967,7 +967,7 @@ export async function webInvoke<T>(
       return { ok: false, listening: false, sent: false, error: "DPI check not supported in web mode" } as T;
 
     case "payload_bundled_path":
-      return { path: "" } as T;
+      return { ok: false, error: "not_supported_in_web_mode" } as T;
 
     case "payload_probe":
       return { is_ps5upload: false, code: "payload_probe_not_supported" } as T;

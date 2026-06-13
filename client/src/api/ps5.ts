@@ -296,6 +296,34 @@ export async function sendPayload(
   }
 }
 
+/**
+ * Upload and stream a payload file to the PS5's ELF loader (for web mode).
+ */
+export async function sendPayloadWeb(
+  ip: string,
+  file: File,
+  port?: number
+): Promise<void> {
+  const url = `/api/payload/send?ip=${encodeURIComponent(ip)}${port ? `&port=${port}` : ""}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+    },
+    body: file,
+  });
+  if (!response.ok) {
+    let errMsg = `Upload failed with status ${response.status}`;
+    try {
+      const json = await response.json();
+      if (json && json.error) {
+        errMsg = json.error;
+      }
+    } catch {}
+    throw new Error(errMsg);
+  }
+}
+
 // ─── Transfer jobs ────────────────────────────────────────────────────────
 
 /** Start a single-file upload. Returns the job id; poll `jobStatus(id)`

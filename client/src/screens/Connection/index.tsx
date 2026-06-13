@@ -9,6 +9,7 @@ import {
   portCheck,
   payloadCheck,
   sendPayload,
+  sendPayloadWeb,
   bundledPayloadPath,
   bundledPayloadInfo,
   probeCompanions,
@@ -20,6 +21,7 @@ import {
 import { pollUntilReady, type PollHandle } from "../../lib/pollUntilReady";
 import { parsePS5Firmware } from "../../lib/ps5Firmware";
 import { compareVersions } from "../../lib/semver";
+import { isTauriEnv } from "../../lib/tauriEnv";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -182,10 +184,8 @@ export default function ConnectionScreen() {
    *  otherwise-silent ~3-20s probe window. null when not in progress. */
   const sendStartedAt = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
-  // Explicit send phase for the Send button label — set by handleSend, cleared
-  // on settle. Drives sendButtonLabel so the label localizes (it used to be
-  // re-derived from the localized status message via English substring matches).
   const [sendPhase, setSendPhase] = useState<SendPhase | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   /** Active boot-probe poller. Held so the component-unmount effect can
    *  cancel it — otherwise a poll fires up to 20 s after unmount and
@@ -367,34 +367,66 @@ export default function ConnectionScreen() {
       payloadVersion: null,
       ps5Kernel: null,
     });
-    setSendPhase("locating");
-    flashStep2(
-      "busy",
-      tr(
-        "connection_locating_elf",
-        undefined,
-        "Locating bundled payload ELF…",
-      ),
-    );
-    try {
-      const elf = await bundledPayloadPath();
+
+    if (!isTauriEnv()) {
+      if (!selectedFile) {
+        setStatus({ payloadProbing: false });
+        settleStep2(
+          "fail",
+          tr(
+            "connection_web_no_file",
+            undefined,
+            "Please select a ps5upload.elf file first.",
+          ),
+        );
+        return;
+      }
       setSendPhase("sending");
       flashStep2(
         "busy",
         tr(
           "connection_sending_elf",
-          { elf, host: target, port: PS5_LOADER_PORT },
+          { elf: selectedFile.name, host: target, port: PS5_LOADER_PORT },
           "Sending {elf} to {host}:{port}…",
         ),
       );
-      await sendPayload(target, elf);
-    } catch (e) {
-      // Send itself failed (loader-port unreachable, ELF missing,
-      // etc.) — no new payload to probe; clear the probing flag so
-      // VersionBlock stops showing the rechecking badge.
-      setStatus({ payloadProbing: false });
-      settleStep2("fail", e instanceof Error ? e.message : String(e));
-      return;
+      try {
+        await sendPayloadWeb(target, selectedFile, PS5_LOADER_PORT);
+      } catch (e) {
+        setStatus({ payloadProbing: false });
+        settleStep2("fail", e instanceof Error ? e.message : String(e));
+        return;
+      }
+    } else {
+      setSendPhase("locating");
+      flashStep2(
+        "busy",
+        tr(
+          "connection_locating_elf",
+          undefined,
+          "Locating bundled payload ELF…",
+        ),
+      );
+      try {
+        const elf = await bundledPayloadPath();
+        setSendPhase("sending");
+        flashStep2(
+          "busy",
+          tr(
+            "connection_sending_elf",
+            { elf, host: target, port: PS5_LOADER_PORT },
+            "Sending {elf} to {host}:{port}…",
+          ),
+        );
+        await sendPayload(target, elf);
+      } catch (e) {
+        // Send itself failed (loader-port unreachable, ELF missing,
+        // etc.) — no new payload to probe; clear the probing flag so
+        // VersionBlock stops showing the rechecking badge.
+        setStatus({ payloadProbing: false });
+        settleStep2("fail", e instanceof Error ? e.message : String(e));
+        return;
+      }
     }
     setSendPhase("waiting");
     flashStep2(
@@ -619,13 +651,20 @@ export default function ConnectionScreen() {
                 `The PS5Upload helper is a small program your PS5 runs in memory to accept uploads. Sent over port ${PS5_LOADER_PORT}; it takes a few seconds for the PS5 to respond once the bytes arrive.`,
               )}
             </p>
-            <BundledPayloadBanner />
+            {!isTauriEnv() ? (
+              <WebPayloadSelector
+                selectedFile={selectedFile}
+                onFileSelect={setSelectedFile}
+              />
+            ) : (
+              <BundledPayloadBanner />
+            )}
             <Button
               variant="primary"
               size="md"
               leftIcon={<Send size={14} />}
               onClick={() => void handleSend()}
-              disabled={step2 === "busy"}
+              disabled={step2 === "busy" || (!isTauriEnv() && !selectedFile)}
               loading={step2 === "busy"}
             >
               {sendButtonLabel(step2, sendPhase, elapsedMs, tr)}
@@ -925,6 +964,93 @@ function DiscoverRow({
           : tr("connection_discover_use", undefined, "Use")}
       </Button>
     </li>
+  );
+}
+
+interface WebPayloadSelectorProps {
+  selectedFile: File | null;
+  onFileSelect: (file: File | null) => void;
+}
+
+function WebPayloadSelector({ selectedFile, onFileSelect }: WebPayloadSelectorProps) {
+  const tr = useTr();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    onFileSelect(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0] || null;
+    if (file && file.name.endsWith(".elf")) {
+      onFileSelect(file);
+    }
+  };
+
+  const bytesToSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  return (
+    <div className="mb-4 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
+      <div className="mb-2 font-semibold text-[var(--color-text)]">
+        {tr("connection_web_payload_title", undefined, "Select PS5Upload Helper ELF")}
+      </div>
+      <p className="mb-3 text-[var(--color-muted)] leading-relaxed">
+        {tr(
+          "connection_web_payload_desc",
+          undefined,
+          "In Web Mode, the helper payload cannot be embedded automatically. Select a compiled helper ELF (ps5upload.elf) from your computer to stream to the PS5.",
+        )}{" "}
+        <a
+          href="https://github.com/mostafaayesh/ps5upload/releases"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[var(--color-accent)] hover:underline"
+        >
+          {tr("connection_web_payload_download_link", undefined, "Download ps5upload.elf from GitHub Releases")}
+        </a>
+      </p>
+
+      <div
+        className="flex flex-col items-center justify-center rounded border border-dashed border-[var(--color-border)] p-4 text-center cursor-pointer hover:bg-[var(--color-surface-2)] transition-colors"
+        onClick={() => fileInputRef.current?.click()}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".elf"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        {selectedFile ? (
+          <div>
+            <span className="font-semibold text-[var(--color-text)] block mb-1">
+              {selectedFile.name}
+            </span>
+            <span className="text-[var(--color-muted)] block">
+              {bytesToSize(selectedFile.size)}
+            </span>
+          </div>
+        ) : (
+          <span className="text-[var(--color-muted)]">
+            {tr("connection_web_payload_drag", undefined, "Drag & drop ps5upload.elf here, or click to browse")}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

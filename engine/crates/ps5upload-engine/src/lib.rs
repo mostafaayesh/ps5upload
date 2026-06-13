@@ -5311,6 +5311,104 @@ async fn ps5_shell_run(
     }
 }
 
+#[derive(serde::Deserialize)]
+struct PayloadSendQuery {
+    ip: String,
+    port: Option<u16>,
+}
+
+fn memmem_ascii(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return false;
+    }
+    haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+fn is_ps5upload_payload(body: &[u8]) -> bool {
+    memmem_ascii(body, b"ps5upload") || memmem_ascii(body, b"PS5UPLOAD")
+}
+
+async fn payload_send_handler(
+    Query(query): Query<PayloadSendQuery>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let ip = query.ip;
+    let target_port = query.port.unwrap_or(9021);
+    let size = body.len() as u64;
+
+    if body.is_empty() {
+        return json_err(StatusCode::BAD_REQUEST, "empty payload body").into_response();
+    }
+
+    const PAYLOAD_SEND_MAX_BYTES: u64 = 128 * 1024 * 1024;
+    if size > PAYLOAD_SEND_MAX_BYTES {
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            format!("payload is too large ({size} bytes > {PAYLOAD_SEND_MAX_BYTES} cap)"),
+        )
+        .into_response();
+    }
+
+    if target_port == 9021 {
+        if size < 4 {
+            return json_err(
+                StatusCode::BAD_REQUEST,
+                format!("not an ELF file (only {size} bytes)"),
+            )
+            .into_response();
+        }
+        if &body[..4] != b"\x7FELF" {
+            return json_err(
+                StatusCode::BAD_REQUEST,
+                format!("not an ELF file (first 4 bytes {:02x?})", &body[..4]),
+            )
+            .into_response();
+        }
+
+        let sending_ps5upload = is_ps5upload_payload(&body);
+        if sending_ps5upload {
+            let mgmt_addr = format!("{ip}:9114");
+            let _ = tokio::task::spawn_blocking(move || {
+                ps5upload_core::payload_lifecycle::shutdown_running_payload(&mgmt_addr)
+            })
+            .await;
+            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        }
+    }
+
+    let addr = format!("{ip}:{target_port}");
+    let connect_timeout = std::time::Duration::from_secs(3);
+    let send_timeout = std::time::Duration::from_secs(60);
+
+    let mut stream = match tokio::time::timeout(connect_timeout, tokio::net::TcpStream::connect(&addr)).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, format!("connect {addr}: {e}")).into_response(),
+        Err(_) => return json_err(StatusCode::GATEWAY_TIMEOUT, format!("connect {addr}: timeout")).into_response(),
+    };
+
+    let sent = match tokio::time::timeout(send_timeout, async {
+        use tokio::io::AsyncWriteExt;
+        stream.write_all(&body).await.map_err(|e| format!("write: {e}"))?;
+        
+        match tokio::time::timeout(std::time::Duration::from_secs(5), stream.shutdown()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(format!("shutdown: {e}")),
+            Err(_) => {}
+        }
+        Ok::<u64, String>(size)
+    }).await {
+        Ok(Ok(n)) => n,
+        Ok(Err(e)) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(_) => return json_err(StatusCode::GATEWAY_TIMEOUT, "send timed out".to_string()).into_response(),
+    };
+
+    Json(serde_json::json!({
+        "ok": true,
+        "status": format!("sent {sent} bytes to {ip}:{target_port}"),
+        "bytes": sent
+    })).into_response()
+}
+
 /// GET /api/version — engine self-identification.
 ///
 /// Returned shape: `{"version": "x.y.z"}`. Used by the Tauri shell
@@ -5622,6 +5720,7 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         .route("/api/local-fs/roots", get(local_fs_roots))
         .route("/api/local-fs/list-dir", get(local_fs_list_dir))
         .route("/api/ps5/shell", post(ps5_shell_run))
+        .route("/api/payload/send", post(payload_send_handler))
         .with_state(state)
         // .pkg install — sessions live in their own state because the
         // HTTP-host serving handler needs Mutex-guarded session lookup

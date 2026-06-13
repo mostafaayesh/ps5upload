@@ -1,5 +1,5 @@
 // Shim Tauri internals if we are running in a browser to prevent Tauri v2 API from crashing on import
-if (typeof window !== "undefined" && !window.__TAURI_INTERNALS__) {
+if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
   (window as any).__TAURI_INTERNALS__ = {
     isShim: true,
     invoke: (cmd: string, args?: any) => {
