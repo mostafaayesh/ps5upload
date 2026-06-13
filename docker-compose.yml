@@ -11,10 +11,8 @@ services:
       # Web UI accessible on host port 8080 (change as needed)
       - "8080:80"
     environment:
-      # Set this to your PS5's IP address and transfer port
-      PS5_ADDR: "192.168.1.x:9113"
-      # Optional: bandwidth cap in MB/s (0 = unlimited)
-      # FTX2_BANDWIDTH_MBPS: "100"
+      - PS5_ADDR
+      - FTX2_BANDWIDTH_MBPS
     volumes:
       # Host path to your game library — set GAMES_PATH in .env (or shell env).
       # Inside the container files are always accessible at /games.
