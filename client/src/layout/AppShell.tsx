@@ -628,6 +628,26 @@ export default function AppShell() {
     }
   }, []);
 
+  // Auto-populate default PS5 host from the engine in web mode if not set
+  useEffect(() => {
+    if (!isTauriEnv()) {
+      const conn = useConnectionStore.getState();
+      if (!conn.host || !conn.host.trim()) {
+        fetch("/api/version")
+          .then((r) => r.json())
+          .then((data: any) => {
+            if (data?.default_ps5_host) {
+              log.info("connection", `Auto-populated default PS5 host from engine: ${data.default_ps5_host}`);
+              conn.setHost(data.default_ps5_host);
+            }
+          })
+          .catch((err) => {
+            log.warn("connection", `Failed to fetch default PS5 host from engine: ${err}`);
+          });
+      }
+    }
+  }, []);
+
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)] text-[var(--color-text)]">
       {/* Global in-app file/folder picker (Android real-path browser).

@@ -5321,7 +5321,7 @@ async fn ps5_shell_run(
 /// talking to the prior version's engine indefinitely (silently
 /// missing any newly-added routes — e.g. the FS_OP frames added in
 /// 2.2.7).
-async fn engine_version() -> impl IntoResponse {
+async fn engine_version(State(state): State<AppState>) -> impl IntoResponse {
     (
         StatusCode::OK,
         Json(serde_json::json!({
@@ -5330,6 +5330,7 @@ async fn engine_version() -> impl IntoResponse {
             // (the UnRAR C dep is excluded from the Android build), so the
             // client hides the .rar option when this is false.
             "caps": { "rar": cfg!(not(target_os = "android")) },
+            "default_ps5_host": state.default_ps5_addr,
         })),
     )
 }
