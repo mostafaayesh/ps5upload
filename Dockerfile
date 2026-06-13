@@ -2,7 +2,7 @@
 FROM rust:1.93-slim-bookworm AS engine-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev ca-certificates \
+    pkg-config libssl-dev ca-certificates g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
