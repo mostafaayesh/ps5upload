@@ -30,7 +30,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { pickPath } from "../../lib/pickPath";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { openExternalUrl as openExternal } from "../../lib/openExternalUrl";
 
 import { useConnectionStore, PS5_PAYLOAD_PORT } from "../../state/connection";
 import SmpPanel from "./SmpPanel";

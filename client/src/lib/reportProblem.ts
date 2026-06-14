@@ -53,12 +53,9 @@ export async function reportProblem(
   }
 }
 
-/** Open the Discord support channel in the user's browser. Best-effort. */
+/** Open the Discord support channel in the user's browser. Best-effort.
+ *  Uses the opener plugin (works on Android, unlike the old shell open). */
 export async function openReportChannel(): Promise<void> {
-  try {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(DISCORD_REPORT_URL);
-  } catch {
-    // ignore — opening the browser is best-effort.
-  }
+  const { openExternalUrl } = await import("./openExternalUrl");
+  await openExternalUrl(DISCORD_REPORT_URL);
 }

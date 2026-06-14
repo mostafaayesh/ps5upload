@@ -9,7 +9,7 @@ import {
   Cpu,
   Sparkles,
 } from "lucide-react";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { openExternalUrl as openExternal } from "../../lib/openExternalUrl";
 import { getVersion } from "@tauri-apps/api/app";
 
 import { useTr } from "../../state/lang";

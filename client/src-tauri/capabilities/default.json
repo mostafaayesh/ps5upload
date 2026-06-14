@@ -19,6 +19,8 @@
     "dialog:allow-message",
     "fs:default",
     "shell:allow-open",
+    "opener:default",
+    "opener:allow-open-url",
     "notification:default"
   ]
 }

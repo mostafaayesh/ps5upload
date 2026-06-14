@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { openExternalUrl as openExternal } from "../lib/openExternalUrl";
 
 /**
  * Tiny inline markdown renderer. Scope kept narrow to what FAQ.md and

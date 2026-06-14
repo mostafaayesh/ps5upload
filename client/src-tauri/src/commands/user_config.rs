@@ -199,11 +199,7 @@ pub async fn app_data_reset(app: AppHandle) -> Result<usize, String> {
 
     // 2. app_data caches — surgical (NOT the whole app_data_dir).
     if let Ok(data) = app.path().app_data_dir() {
-        for entry in [
-            "resume_txids.json",
-            "send_payload_history.json",
-            "payloads",
-        ] {
+        for entry in ["resume_txids.json", "send_payload_history.json", "payloads"] {
             let p = data.join(entry);
             if !p.exists() {
                 continue;

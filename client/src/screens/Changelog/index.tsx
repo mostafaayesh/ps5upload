@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Sparkles, ExternalLink } from "lucide-react";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { openExternalUrl as openExternal } from "../../lib/openExternalUrl";
 
 import {
   PageHeader,

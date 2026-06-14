@@ -1,6 +1,6 @@
 [package]
 name = "ps5upload-desktop"
-version = "3.3.2"
+version = "3.3.3"
 description = "The all-in-one PS5 companion app."
 edition = "2021"
 rust-version = "1.77"
@@ -95,6 +95,7 @@ mdns-sd = { version = "0.20", default-features = false, features = ["async"] }
 # (macOS/Windows/Linux), no system linkage; keeps the single-toolchain
 # cross-compile story intact.
 if-addrs = "0.15"
+tauri-plugin-opener = "2"
 
 # libc for `statvfs` in the USB autoloader's drive enumeration
 # (commands/usb_autoloader.rs). Already pulled in transitively via

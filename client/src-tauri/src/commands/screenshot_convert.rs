@@ -109,7 +109,9 @@ mod desktop {
         }
         let (w, h) = (w as usize, h as usize);
 
-        let format = dec.get_pixel_format().map_err(|e| format!("jxr format: {e:?}"))?;
+        let format = dec
+            .get_pixel_format()
+            .map_err(|e| format!("jxr format: {e:?}"))?;
         let info = PixelInfo::from_format(format);
         let bpp = info.bits_per_pixel();
         if bpp == 0 || bpp % 8 != 0 {
@@ -119,7 +121,8 @@ mod desktop {
         }
         let stride = w * (bpp / 8);
         let mut raw = vec![0u8; stride * h];
-        dec.copy_all(&mut raw, stride).map_err(|e| format!("jxr decode: {e:?}"))?;
+        dec.copy_all(&mut raw, stride)
+            .map_err(|e| format!("jxr decode: {e:?}"))?;
 
         // Pull each pixel into linear-light, display-referred RGB in [0,1]
         // according to the source format, then sRGB-encode to 8-bit.
@@ -208,28 +211,53 @@ mod desktop {
         use PixelFormat::*;
         Some(match f {
             // 8-bit SDR, already display-ready.
-            PixelFormat24bppRGB | PixelFormat32bppRGB | PixelFormat32bppRGBA
-            | PixelFormat32bppPRGBA => Kind::Sdr8 { bgr: false, channels: chans(f) },
-            PixelFormat24bppBGR | PixelFormat32bppBGR | PixelFormat32bppBGRA
-            | PixelFormat32bppPBGRA => Kind::Sdr8 { bgr: true, channels: chans(f) },
+            PixelFormat24bppRGB
+            | PixelFormat32bppRGB
+            | PixelFormat32bppRGBA
+            | PixelFormat32bppPRGBA => Kind::Sdr8 {
+                bgr: false,
+                channels: chans(f),
+            },
+            PixelFormat24bppBGR
+            | PixelFormat32bppBGR
+            | PixelFormat32bppBGRA
+            | PixelFormat32bppPBGRA => Kind::Sdr8 {
+                bgr: true,
+                channels: chans(f),
+            },
 
             // ≥10-bit integer → treated as PS5 HDR (Rec.2100 PQ).
-            PixelFormat32bppRGB101010 => Kind::PqInt { bits: 10, channels: 3 },
-            PixelFormat48bppRGB => Kind::PqInt { bits: 16, channels: 3 },
-            PixelFormat64bppRGBA => Kind::PqInt { bits: 16, channels: 4 },
+            PixelFormat32bppRGB101010 => Kind::PqInt {
+                bits: 10,
+                channels: 3,
+            },
+            PixelFormat48bppRGB => Kind::PqInt {
+                bits: 16,
+                channels: 3,
+            },
+            PixelFormat64bppRGBA => Kind::PqInt {
+                bits: 16,
+                channels: 4,
+            },
 
             // Float / half-float → scRGB linear (Windows/NVIDIA-style HDR;
             // handled too so a stray non-PS5 .jxr still converts sensibly).
-            PixelFormat96bppRGBFloat | PixelFormat128bppRGBFloat => {
-                Kind::ScRgbFloat { half: false, channels: 3 }
-            }
-            PixelFormat128bppRGBAFloat | PixelFormat128bppPRGBAFloat => {
-                Kind::ScRgbFloat { half: false, channels: 4 }
-            }
-            PixelFormat48bppRGBHalf | PixelFormat64bppRGBHalf => {
-                Kind::ScRgbFloat { half: true, channels: 3 }
-            }
-            PixelFormat64bppRGBAHalf => Kind::ScRgbFloat { half: true, channels: 4 },
+            PixelFormat96bppRGBFloat | PixelFormat128bppRGBFloat => Kind::ScRgbFloat {
+                half: false,
+                channels: 3,
+            },
+            PixelFormat128bppRGBAFloat | PixelFormat128bppPRGBAFloat => Kind::ScRgbFloat {
+                half: false,
+                channels: 4,
+            },
+            PixelFormat48bppRGBHalf | PixelFormat64bppRGBHalf => Kind::ScRgbFloat {
+                half: true,
+                channels: 3,
+            },
+            PixelFormat64bppRGBAHalf => Kind::ScRgbFloat {
+                half: true,
+                channels: 4,
+            },
 
             _ => return None,
         })
