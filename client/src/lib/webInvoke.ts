@@ -1094,7 +1094,7 @@ export async function webInvoke<T>(
       return undefined as T;
 
     case "app_list_running":
-      return [] as T;
+      return { ok: true, apps: [] } as T;
 
     case "toast_push":
       return undefined as T;
@@ -1113,14 +1113,16 @@ export async function webInvoke<T>(
       return undefined as T;
 
     case "proc_modules_get":
+      return { modules: [] } as T;
+
     case "proc_list_get":
-      return [] as T;
+      return { ok: true, procs: [] } as T;
 
     case "crc32_file_get":
       return { crc32: 0 } as T;
 
     case "appdb_query_get":
-      return [] as T;
+      return { apps: [] } as T;
 
     case "net_speed_test_run":
       return { ok: false, error: "Net speed test is not supported in web mode." } as T;
