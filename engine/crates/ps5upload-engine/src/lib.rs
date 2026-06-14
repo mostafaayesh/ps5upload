@@ -1014,14 +1014,14 @@ struct AddrQuery {
     addr: Option<String>,
 }
 
-/// Query for the HW_TEMPS endpoint. `extended=1` requests the on-demand
+/// Query for the HW_TEMPS endpoint. `extended=true` requests the on-demand
 /// telemetry (SoC power / CPU usage / fan duty / product shape); any other
 /// value (or absent) is the basic, auto-poll-safe read.
 #[derive(Deserialize)]
 struct HwTempsQuery {
     addr: Option<String>,
     #[serde(default)]
-    extended: Option<u8>,
+    extended: Option<bool>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1774,7 +1774,7 @@ async fn ps5_hw_temps(
     Query(q): Query<HwTempsQuery>,
 ) -> impl IntoResponse {
     let addr = mgmt_addr_or_default(q.addr, &state.default_ps5_addr);
-    let extended = q.extended.unwrap_or(0) != 0;
+    let extended = q.extended.unwrap_or(false);
     let r: Result<HwTemps, anyhow::Error> =
         tokio::task::spawn_blocking(move || hw_temps(&addr, extended))
             .await
