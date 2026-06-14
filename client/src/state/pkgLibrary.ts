@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fsListDir, fsDelete, fsMkdir, fsCopy } from "../api/ps5";
 import type { ExternalPkg } from "../api/ps5";
 import { hostOf, mgmtAddr, transferAddr } from "../lib/addr";
+import { removableMountRoot } from "../lib/mountPaths";
 import { humanizePs5Error } from "../lib/humanizeError";
 import {
   stagingBasename,
@@ -15,6 +16,7 @@ import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
 import { transferScreenBusy } from "../lib/ps5Transfers";
 import { useInstallSettingsStore } from "./installSettings";
 import { useConnectionStore } from "./connection";
+import { log } from "./logs";
 import { parsePS5Firmware } from "../lib/ps5Firmware";
 
 /**
@@ -418,6 +420,11 @@ export async function runPkgInstall(
   host: string,
   localPs5Path: string,
   contentId: string | null,
+  // The user's "Auto Delete after installation" preference. When false, the
+  // engine KEEPS the staged pkg after install instead of deleting it. This is
+  // the single source of truth for staging deletion now — previously the engine
+  // always deleted, ignoring the setting (the reported data-loss bug).
+  deleteStaging: boolean,
 ): Promise<PkgInstallOutcome> {
   const ip = hostOf(host);
   let installed = false;
@@ -438,6 +445,7 @@ export async function runPkgInstall(
       packageTypeOverride: null,
       localPs5Path,
       contentId: contentId || null,
+      deleteStaging,
     })) as {
       err_code?: number;
       register_path?: string;
@@ -808,8 +816,18 @@ const makePkgLibraryStore = () =>
       // installed → staged copy removed" becomes one action. It never throws
       // (try/finally inside), so awaiting it here is safe; the caller already
       // treats addAndUpload as fire-and-forget.
-      if (useInstallSettingsStore.getState().autoInstallAfterUpload) {
-        await get().install(destPath, host);
+      {
+        const s = useInstallSettingsStore.getState();
+        // Log the post-upload decision (install or not) with the settings that
+        // drove it, so a "it auto-installed/deleted even though I disabled that"
+        // report is answerable from the bundle alone.
+        log.info(
+          "install",
+          `staged pkg uploaded: ${destPath} — auto-install=${s.autoInstallAfterUpload}, auto-delete=${s.autoRemoveAfterInstall}`,
+        );
+        if (s.autoInstallAfterUpload) {
+          await get().install(destPath, host);
+        }
       }
     } catch (e) {
       // Drop the optimistic row and surface the error.
@@ -886,17 +904,30 @@ const makePkgLibraryStore = () =>
       // the shared `runPkgInstall` helper (also used by the upload queue's pkg
       // finisher), so the mechanism stays identical across both surfaces.
       const entry = get().entries.find((e) => e.path === path);
+      // delete_staging = the user's Auto Delete preference: the engine keeps
+      // the uploaded pkg when this is off (the separate client-side remove()
+      // below is also gated on the same setting, so OFF means truly kept).
+      const autoRemove =
+        useInstallSettingsStore.getState().autoRemoveAfterInstall;
       const { installed, mayNotLaunch, errMessage: mainErr } =
-        await runPkgInstall(host, path, entry?.contentId || null);
+        await runPkgInstall(host, path, entry?.contentId || null, autoRemove);
 
       if (installed) {
         patch({ status: "idle", lastResult: installedLastResult(mayNotLaunch) });
         // Optional: auto-delete the spent staged .pkg so the library
         // doesn't accumulate installed packages. Best-effort + awaited so
         // the row vanishes deterministically; remove() swallows its own
-        // errors (surfaces via store.error, never throws here).
-        if (useInstallSettingsStore.getState().autoRemoveAfterInstall) {
+        // errors (surfaces via store.error, never throws here). The ENGINE
+        // already cleaned the staged file (delete_staging=autoRemove), so this
+        // mainly drops the library ROW; logged so the deletion is traceable.
+        if (autoRemove) {
+          log.info("install", `auto-deleting staged pkg after install: ${path}`);
           await get().remove(path, host);
+        } else {
+          log.info(
+            "install",
+            `keeping staged pkg after install (auto-delete off): ${path}`,
+          );
         }
       } else {
         patch({
@@ -964,11 +995,14 @@ const makePkgLibraryStore = () =>
       }
       set({ busyNotice: null });
 
-      // 2. Install from the internal copy via the shared cascade.
+      // 2. Install from the internal copy via the shared cascade. The internal
+      //    copy is a TRANSIENT staging file (the user's USB/external original is
+      //    untouched), so always clean it — deleteStaging: true.
       const { installed, mayNotLaunch, errMessage } = await runPkgInstall(
         host,
         internalPath,
         pkg.contentId || null,
+        true,
       );
 
       // 3. Clean up the transient copy regardless of outcome.
@@ -990,7 +1024,7 @@ const makePkgLibraryStore = () =>
     // Removable mounts can't be installed off directly (exfat + Sony's
     // installer) — reuse the staged copy-then-install path. Derive the
     // mount root so the staging notice names the right drive.
-    const mountRoot = path.match(/^(\/mnt\/(?:usb|ext)[^/]*)/i)?.[1];
+    const mountRoot = removableMountRoot(path);
     if (mountRoot) {
       return get().installExternal(
         {
@@ -1023,10 +1057,14 @@ const makePkgLibraryStore = () =>
         }
       }
       set({ busyNotice: `Installing ${name}…` });
+      // In-place install of a pkg the user pointed at on the console's disk
+      // (e.g. from the File System browser). It's THEIR file at THEIR path, not
+      // a staging copy we made — never delete it. deleteStaging: false.
       const { installed, mayNotLaunch, errMessage } = await runPkgInstall(
         host,
         path,
         null,
+        false,
       );
       return installed
         ? { ok: true, mayNotLaunch }

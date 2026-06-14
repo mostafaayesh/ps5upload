@@ -5,9 +5,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { ChevronDown, MoreHorizontal } from "lucide-react";
 
-import { Button } from "./Button";
+import { Button, type ButtonVariant } from "./Button";
 
 /**
  * One action inside an OverflowMenu.
@@ -58,12 +58,22 @@ export function OverflowMenu({
   buttonTitle = "More actions",
   align = "right",
   size = "sm",
+  triggerLabel,
+  triggerIcon,
+  triggerVariant = "ghost",
 }: {
   items: OverflowMenuItem[];
   ariaLabel?: string;
   buttonTitle?: string;
   align?: "left" | "right";
   size?: "sm" | "md";
+  /** When set, the trigger renders as a labeled Button ("Browse ▾") with a
+   *  chevron instead of the bare ⋮ icon — for cases where the menu IS the
+   *  primary affordance (e.g. a unified file/folder picker) rather than a
+   *  secondary "more actions" overflow. */
+  triggerLabel?: string;
+  triggerIcon?: ReactNode;
+  triggerVariant?: ButtonVariant;
 }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -73,17 +83,20 @@ export function OverflowMenu({
   // on every page (Library can render hundreds of rows).
   useEffect(() => {
     if (!open) return;
-    function handlePointer(e: MouseEvent) {
+    function handlePointer(e: Event) {
       if (!wrapperRef.current) return;
       if (!wrapperRef.current.contains(e.target as Node)) setOpen(false);
     }
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
-    document.addEventListener("mousedown", handlePointer);
+    // pointerdown (not mousedown) so touch taps outside dismiss the menu
+    // crisply on Android/touch — mousedown is only synthesized after the
+    // touch sequence, leaving the popover open a beat too long.
+    document.addEventListener("pointerdown", handlePointer);
     document.addEventListener("keydown", handleKey);
     return () => {
-      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("pointerdown", handlePointer);
       document.removeEventListener("keydown", handleKey);
     };
   }, [open]);
@@ -95,16 +108,32 @@ export function OverflowMenu({
 
   return (
     <div ref={wrapperRef} className="relative inline-block">
-      <Button
-        variant="ghost"
-        size={size}
-        leftIcon={<MoreHorizontal size={14} />}
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={ariaLabel}
-        title={buttonTitle}
-      />
+      {triggerLabel ? (
+        <Button
+          variant={triggerVariant}
+          size={size}
+          leftIcon={triggerIcon}
+          rightIcon={<ChevronDown size={14} />}
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          title={buttonTitle}
+        >
+          {triggerLabel}
+        </Button>
+      ) : (
+        <Button
+          variant={triggerVariant}
+          size={size}
+          leftIcon={<MoreHorizontal size={14} />}
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          title={buttonTitle}
+        />
+      )}
       {open && (
         <div
           role="menu"

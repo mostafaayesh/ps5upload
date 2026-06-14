@@ -340,6 +340,15 @@ extern int posix_fallocate(int fd, off_t offset, off_t len);
  * Distinct from PROFILE_SET_USERNAME, which renames an offline-account slot. */
 #define FTX2_FRAME_PROFILE_SET_LOCAL_USERNAME     160u
 #define FTX2_FRAME_PROFILE_SET_LOCAL_USERNAME_ACK 161u
+/* In-app process manager. PROCESS_LIST is the DETAILED enumerate
+ * (proc_list_get_json_ex: pid/name/comm/title_id/app_id/memory/threads/kind)
+ * — distinct from the older PROC_LIST (74) which feeds the `ps` diagnostic
+ * with just pid+name. PROCESS_KILL SIGKILLs a pid: req {"pid":N} → ack
+ * {"ok":bool,...}. Restart is the client composing KILL + APP_LAUNCH. */
+#define FTX2_FRAME_PROCESS_LIST      162u
+#define FTX2_FRAME_PROCESS_LIST_ACK  163u
+#define FTX2_FRAME_PROCESS_KILL      164u
+#define FTX2_FRAME_PROCESS_KILL_ACK  165u
 /* Where we place mount points. Scoped under /mnt/ps5upload/ so it
  * never collides with mount paths owned by other utilities. */
 #define FS_MOUNT_BASE "/mnt/ps5upload"
@@ -1769,6 +1778,35 @@ static int runtime_read_prior_pid(const char *ownership_path) {
     return pid;
 }
 
+/* Read the `started_at_unix` line from the prior ownership record. Returns
+ * the recorded wall-clock start time (CLOCK_REALTIME seconds), or 0 if the
+ * field is absent (older-format record) or unreadable. */
+static uint64_t runtime_read_prior_started_at(const char *ownership_path) {
+    FILE *fp = fopen(ownership_path, "r");
+    if (!fp) return 0;
+    unsigned long long started = 0;
+    char line[128];
+    while (fgets(line, sizeof(line), fp)) {
+        if (sscanf(line, "started_at_unix=%llu", &started) == 1) break;
+    }
+    fclose(fp);
+    return (uint64_t)started;
+}
+
+/* System boot wall-clock time (CLOCK_REALTIME seconds) via sysctl
+ * kern.boottime. Same clock domain as `started_at_unix`, so the two are
+ * directly comparable to tell whether an ownership record was written in
+ * the CURRENT boot session. Returns 0 if the sysctl is unavailable — callers
+ * must treat 0 as "unknown" and refuse to act on it. */
+static uint64_t runtime_system_boottime_unix(void) {
+    struct timeval bt;
+    size_t len = sizeof(bt);
+    int mib[2] = {CTL_KERN, KERN_BOOTTIME};
+    if (sysctl(mib, 2, &bt, &len, NULL, 0) != 0 || len < sizeof(bt)) return 0;
+    if (bt.tv_sec <= 0) return 0;
+    return (uint64_t)bt.tv_sec;
+}
+
 /*
  * Best-effort reap of a previous payload instance that crashed and lingered.
  *
@@ -1807,6 +1845,33 @@ void runtime_reap_prior_instance(runtime_state_t *state) {
                 me, ok == 0 ? self_name : "<unknown>", prior);
     }
     if (prior <= 0 || prior == me) return;
+
+    /* Boot-session guard (the critical safety gate). The ownership file lives
+     * on persistent /data and SURVIVES reboots. After a reboot the kernel's
+     * PID counter resets, so a stale `pid=` from a PRIOR boot is very likely
+     * now owned by UNRELATED homebrew the user autoloaded (a cheat loader,
+     * nanoDNS, ...). SIGKILLing it would take down their other tools — exactly
+     * the "my scripts died" reports. So only reap a record written during the
+     * CURRENT boot: the recorded start time must be >= this boot's wall-clock
+     * start. If either value is unknown (no sysctl, or an old-format record
+     * with no started_at), refuse to kill — the worst case is the pre-existing
+     * "restart the PS5" fallback, which is far better than killing a
+     * bystander. The name check below is kept as a second line of defense. */
+    {
+        uint64_t prior_started =
+            runtime_read_prior_started_at(state->ownership_path);
+        uint64_t boottime = runtime_system_boottime_unix();
+        if (boottime == 0 || prior_started == 0 || prior_started < boottime) {
+            fprintf(stderr,
+                    "[payload2] reap: prior record (started=%llu, boottime=%llu) "
+                    "is from a previous boot or unverifiable — pid %d may now be "
+                    "unrelated homebrew; NOT killing\n",
+                    (unsigned long long)prior_started,
+                    (unsigned long long)boottime, prior);
+            return;
+        }
+    }
+
     if (kill((pid_t)prior, 0) != 0) return; /* already gone */
 
     char my_name[64] = {0};
@@ -5931,6 +5996,16 @@ static int is_path_lexically_allowed(const char *p) {
      * (/mnt/ps5upload or /mnt/ps5upload/) is deliberately excluded —
      * callers should target a specific mount's subtree. */
     if (strncmp(p, "/mnt/ps5upload/", 15) == 0 && p[15] != '\0') return 1;
+    /* /mnt/shadowmnt[/...] — ShadowMount+ mounts game disc images here
+     * (read-only). The File System browser lists these, so reading/
+     * downloading files inside them (eboot.bin, sce_sys/, the title
+     * JSONs) must be allowed too — otherwise a user can browse a mounted
+     * game but every file download fails with fs_read_path_not_allowed.
+     * Allow the mount root itself (for listing) and any subpath. Writes
+     * to the read-only mount fail at the syscall level regardless. */
+    if (strcmp(p, "/mnt/shadowmnt") == 0 ||
+        strncmp(p, "/mnt/shadowmnt/", 15) == 0)
+        return 1;
     return 0;
 }
 
@@ -6013,10 +6088,36 @@ static int rm_rf_op(const char *path, int depth, int op_idx) {
 
     if (depth > 64) return -1;
     if (op_idx >= 0 && fs_op_cancel_pending(op_idx)) return -2;
-    if (lstat(path, &st) != 0) return -1;
+    if (lstat(path, &st) != 0) {
+        /* Already gone (ENOENT) is SUCCESS, not failure. A concurrent boot
+         * sweep, or the caller's own earlier delete, may have removed it —
+         * surfacing that as fs_delete_failed turned a benign race (e.g. the
+         * staged-pkg auto-delete after an install) into a scary user error. */
+        if (errno == ENOENT) return 0;
+        return -1;
+    }
     if (!S_ISDIR(st.st_mode)) {
         /* Regular file / symlink / device. unlink() works for all. */
-        if (unlink(path) != 0) return -1;
+        if (unlink(path) != 0) {
+            if (errno == ENOENT) return 0; /* already gone → ok */
+            /* EBUSY: Sony's async installer can still hold a just-installed
+             * .pkg open when auto-delete-after-install fires. Retry briefly
+             * (≤1s) before declaring failure rather than failing the click. */
+            if (errno == EBUSY) {
+                int freed = 0;
+                for (int i = 0; i < 10; i++) {
+                    usleep(100000); /* 100 ms */
+                    if (unlink(path) == 0 || errno == ENOENT) {
+                        freed = 1;
+                        break;
+                    }
+                    if (errno != EBUSY) break;
+                }
+                if (!freed) return -1;
+            } else {
+                return -1;
+            }
+        }
         if (op_idx >= 0 && S_ISREG(st.st_mode)) {
             fs_op_progress(op_idx, (uint64_t)st.st_size);
         }
@@ -6041,7 +6142,8 @@ static int rm_rf_op(const char *path, int depth, int op_idx) {
      * handle_fs_delete also relies on this: a partial tree is
      * acceptable, but the entry the user clicked Stop on stays so
      * they can see what's left. */
-    if (rc != -2 && rmdir(path) != 0) rc = -1;
+    /* ENOENT here too means the directory is already gone — treat as success. */
+    if (rc != -2 && rmdir(path) != 0 && errno != ENOENT) rc = -1;
     return rc;
 }
 
@@ -9475,7 +9577,26 @@ static int handle_system_control(runtime_state_t *state, int client_fd,
         const char *ack = "{\"ok\":true,\"action\":\"shutdown\"}";
         rc = send_frame(client_fd, FTX2_FRAME_SYSTEM_CONTROL_ACK, 0,
                         trace_id, ack, strlen(ack));
-        sceSystemServiceRequestPowerOff();
+        /* sceSystemServiceRequestPowerOff() goes through the system's normal
+         * power-button flow, which on PS5 RESPECTS the rest-mode setting — so
+         * "Shutdown" commonly dropped the console into REST MODE instead of a
+         * full power-off (user report). sceSystemStateMgrTurnOff() is the
+         * direct turn-the-power-off call (same SystemStateMgr family as the
+         * standby path's sceSystemStateMgrEnterStandby), which actually powers
+         * the console off. dlsym it so a firmware that lacks the symbol
+         * degrades to the old request-based behavior rather than failing.
+         *
+         * Called through an `(int)` pointer with arg 0: if the real symbol is
+         * niladic the extra register is ignored; if it takes a mode/reason,
+         * 0 is the safe "normal shutdown" default. Avoids passing a garbage
+         * register the way a `(void)` cast would if the arity is non-zero. */
+        void *h = dlsym(RTLD_DEFAULT, "sceSystemStateMgrTurnOff");
+        if (h) {
+            int (*turn_off)(int) = (int (*)(int))h;
+            turn_off(0);
+        } else {
+            sceSystemServiceRequestPowerOff();
+        }
         return rc;
     }
     case SC_ACTION_STANDBY: {
@@ -14160,6 +14281,79 @@ static int handle_proc_list(runtime_state_t *state, int client_fd,
     return rc;
 }
 
+/* PROCESS_LIST: the detailed process enumerate for the in-app process
+ * manager — pid/name/comm/title_id/app_id/memory/threads/kind per process.
+ * Same sysctl walk as PROC_LIST but the richer proc_list_get_json_ex body.
+ * Read-only; no kernel write, no elevation needed for the enumerate. */
+static int handle_process_list(runtime_state_t *state, int client_fd,
+                               uint64_t trace_id) {
+    /* Detailed entries are ~5x the compact ones; 256 KiB holds the busiest
+     * real PS5 (~120 procs) with wide headroom. */
+    const size_t cap = 256u * 1024u;
+    char *buf = NULL;
+    size_t written = 0;
+    const char *err = NULL;
+    int rc;
+    if (!state) return -1;
+    buf = (char *)malloc(cap);
+    if (!buf) {
+        return send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
+                          "process_list_oom", 16);
+    }
+    if (proc_list_get_json_ex(buf, cap, &written, &err) != 0) {
+        const char *reason = err ? err : "process_list_failed";
+        rc = send_frame(client_fd, FTX2_FRAME_ERROR, 0, trace_id,
+                        reason, (uint64_t)strlen(reason));
+        free(buf);
+        return rc;
+    }
+    pthread_mutex_lock(&state->state_mtx);
+    state->command_count += 1;
+    pthread_mutex_unlock(&state->state_mtx);
+    rc = send_frame(client_fd, FTX2_FRAME_PROCESS_LIST_ACK, 0, trace_id,
+                    buf, (uint64_t)written);
+    free(buf);
+    return rc;
+}
+
+/* PROCESS_KILL: SIGKILL the pid in the request body ({"pid":N}). proc_kill
+ * guards self/kernel/init; the UI is responsible for warning before a
+ * "system" kill. Ack {"ok":bool,"pid":N[,"err":"..."]}. */
+static int handle_process_kill(runtime_state_t *state, int client_fd,
+                               uint64_t trace_id, const char *body) {
+    int pid = (int)extract_json_uint64_field(body ? body : "", "pid");
+    int rc = proc_kill(pid);
+    int err_no = errno; /* capture immediately — proc_kill set it on failure */
+    char ack[160];
+    int n;
+    if (rc == 0) {
+        n = snprintf(ack, sizeof(ack), "{\"ok\":true,\"pid\":%d}", pid);
+        if (state) {
+            pthread_mutex_lock(&state->state_mtx);
+            state->command_count += 1;
+            pthread_mutex_unlock(&state->state_mtx);
+        }
+    } else {
+        /* Report the specific reason (ESRCH = already gone, EPERM = refused /
+         * guarded) so a bug report distinguishes "process vanished" from
+         * "kernel said no" instead of a bare kill_failed. strerror is bounded
+         * and JSON-safe (ASCII), but escape defensively anyway. */
+        char reason_esc[96];
+        json_escape_into(strerror(err_no), reason_esc, sizeof(reason_esc));
+        n = snprintf(ack, sizeof(ack),
+                     "{\"ok\":false,\"pid\":%d,\"err\":\"kill_failed\","
+                     "\"errno\":%d,\"reason\":\"%s\"}",
+                     pid, err_no, reason_esc);
+    }
+    if (n <= 0 || n >= (int)sizeof(ack)) {
+        const char *e = "{\"ok\":false,\"err\":\"format\"}";
+        return send_frame(client_fd, FTX2_FRAME_PROCESS_KILL_ACK, 0,
+                          trace_id, e, strlen(e));
+    }
+    return send_frame(client_fd, FTX2_FRAME_PROCESS_KILL_ACK, 0,
+                      trace_id, ack, (size_t)n);
+}
+
 /* SYSLOG_TAIL: return the PS5 kernel-log circular buffer (dmesg
  * equivalent). Read via `sysctl kern.msgbuf` — the kernel's in-memory
  * printk/printf history. Used by the desktop's "PS5 system log" panel to
@@ -16350,6 +16544,13 @@ abort_done:
         return handle_proc_list(state, client_fd, hdr.trace_id,
                                 request_body, hdr.body_len);
     }
+    if (hdr.frame_type == FTX2_FRAME_PROCESS_LIST) {
+        return handle_process_list(state, client_fd, hdr.trace_id);
+    }
+    if (hdr.frame_type == FTX2_FRAME_PROCESS_KILL) {
+        return handle_process_kill(state, client_fd, hdr.trace_id,
+                                   request_body);
+    }
     if (hdr.frame_type == FTX2_FRAME_SYSLOG_TAIL) {
         return handle_syslog_tail(state, client_fd, hdr.trace_id);
     }
@@ -16711,8 +16912,19 @@ int runtime_server_loop(runtime_state_t *state) {
     while (!state->shutdown_requested) {
         int client_fd = accept(state->listener_fd, NULL, NULL);
         if (client_fd < 0) {
-            if (errno == EINTR) continue;
-            if (state->shutdown_requested) break;  /* listener closed from outside */
+            if (state->shutdown_requested) break; /* listener closed from outside */
+            /* Transient per-connection errors must NOT tear down the whole
+             * helper. Previously ANY non-EINTR error broke the loop and killed
+             * the payload — a single ECONNABORTED or an fd-pressure spike under
+             * a heavy Library scan dropped the helper, surfacing as "helper
+             * keeps dying randomly". Retry instead. */
+            if (errno == EINTR || errno == ECONNABORTED) continue;
+            if (errno == EMFILE || errno == ENFILE || errno == ENOBUFS ||
+                errno == ENOMEM) {
+                perror("[payload2] accept (transient resource pressure)");
+                usleep(100000); /* 100 ms back-off so we don't busy-spin */
+                continue;
+            }
             perror("[payload2] accept");
             break;
         }
@@ -16863,10 +17075,19 @@ void *runtime_mgmt_server_loop(void *state_ptr) {
     while (!state->shutdown_requested) {
         int client_fd = accept(state->mgmt_listener_fd, NULL, NULL);
         if (client_fd < 0) {
-            if (errno == EINTR) continue;
             /* When main() signals shutdown it closes mgmt_listener_fd from
              * the outside; accept() returns with EBADF and we exit cleanly. */
             if (state->shutdown_requested) break;
+            /* Keep the MGMT listener alive across transient errors — it's the
+             * port the host's liveness probe hits, so breaking here makes the
+             * app declare "Helper isn't running" even though the helper is up. */
+            if (errno == EINTR || errno == ECONNABORTED) continue;
+            if (errno == EMFILE || errno == ENFILE || errno == ENOBUFS ||
+                errno == ENOMEM) {
+                perror("[payload2] mgmt accept (transient resource pressure)");
+                usleep(100000); /* 100 ms back-off */
+                continue;
+            }
             perror("[payload2] mgmt accept");
             break;
         }

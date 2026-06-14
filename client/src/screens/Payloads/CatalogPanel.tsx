@@ -68,6 +68,18 @@ export default function CatalogPanel() {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [usbWizardOpen, setUsbWizardOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  // Client-side filter over the already-loaded catalog (name / role /
+  // description / repo). Cheap — the catalog is ~two dozen entries.
+  const visibleCatalog = (catalog ?? []).filter((p) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return [p.display_name, p.role, p.description, p.repo_owner, p.repo_name]
+      .join(" ")
+      .toLowerCase()
+      .includes(q);
+  });
 
   useEffect(() => {
     payloadsCatalog()
@@ -239,14 +251,32 @@ export default function CatalogPanel() {
               `${catalog.length} curated payloads. Releases are fetched from GitHub on demand and cached for 1 hour.`,
             )}
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<HardDrive size={12} />}
-            onClick={() => setUsbWizardOpen(true)}
-          >
-            {tr("payloads_open_usb_wizard", undefined, "Set up USB autoloader")}
-          </Button>
+          <div className="flex items-center gap-2">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={tr(
+                "payloads_search_placeholder",
+                undefined,
+                "Search payloads…",
+              )}
+              aria-label={tr("payloads_search", undefined, "Search payloads")}
+              className="w-44 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs outline-none focus:border-[var(--color-accent)]"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<HardDrive size={12} />}
+              onClick={() => setUsbWizardOpen(true)}
+            >
+              {tr(
+                "payloads_open_usb_wizard",
+                undefined,
+                "Set up USB autoloader",
+              )}
+            </Button>
+          </div>
         </div>
         {errors._global && (
           <ErrorCard
@@ -273,7 +303,16 @@ export default function CatalogPanel() {
             detail={errors._inventory}
           />
         )}
-        {catalog.map((p) => (
+        {query.trim() && visibleCatalog.length === 0 && (
+          <div className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-xs text-[var(--color-muted)]">
+            {tr(
+              "payloads_search_no_match",
+              { query: query.trim() },
+              `No payloads match "${query.trim()}".`,
+            )}
+          </div>
+        )}
+        {visibleCatalog.map((p) => (
           <PayloadCard
             key={p.id}
             info={p}
@@ -344,8 +383,15 @@ function PayloadCard({
   return (
     <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+        {/* Floor the text column's min-width to min(100%,16rem). With `flex-1`
+            (basis 0%) + `min-w-0`, the name column shrank to nothing at large
+            Text size while the version-select + Download button held the row
+            on one line — wrapping the name "k/l/o/g/s/r/v" one letter per
+            line. A real min-width makes flex-wrap push the controls onto a
+            new line instead; min(100%,…) keeps a lone column from overflowing
+            a narrow viewport. */}
+        <div className="min-w-[min(100%,16rem)] flex-1">
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold">{info.display_name}</h3>
             <button
               type="button"
@@ -552,9 +598,20 @@ function PayloadCard({
       )}
 
       {error && (
-        <div className="mt-3 flex items-start gap-2 rounded-md border border-[var(--color-bad)] bg-[var(--color-surface)] p-2 text-xs text-[var(--color-bad)]">
+        // Muted, NOT alarming red. A source failing to fetch its release list
+        // (a renamed/deleted repo → 404, or a down Forgejo host) is not a
+        // user error — the row stays present and usable later. The loud red
+        // card made users think the payload was "broken" or "removed".
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-xs text-[var(--color-muted)]">
           <AlertTriangle size={11} className="mt-0.5 shrink-0" />
-          <span className="break-words">{error}</span>
+          <span className="min-w-0 break-words">
+            {tr(
+              "payloads_source_unreachable",
+              undefined,
+              "Couldn't reach this source right now — try Refresh later.",
+            )}
+            <span className="mt-0.5 block break-words opacity-70">{error}</span>
+          </span>
         </div>
       )}
     </section>

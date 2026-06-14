@@ -2,8 +2,10 @@ import { create } from "zustand";
 
 import { hostOf } from "../lib/addr";
 import { payloadPlaylistsLoad, payloadPlaylistsSave, sendPayload } from "../api/ps5";
+import { log } from "./logs";
 import {
   appendStep,
+  DEFAULT_AUTO_LOADER,
   movePlaylistDown,
   movePlaylistUp,
   moveStepDown,
@@ -11,6 +13,7 @@ import {
   patchPlaylist,
   removePlaylist,
   removeStep,
+  type AutoLoaderConfig,
   type Playlist,
   type PlaylistRunStatus,
   type PlaylistStep,
@@ -44,11 +47,19 @@ import {
 
 interface PlaylistDocument {
   playlists: Playlist[];
+  /** Persisted alongside the playlists in the same JSON file — it's a
+   *  property OF the playlist set (which one auto-runs), so co-locating it
+   *  keeps import/export a single document and avoids a second store. */
+  autoLoader?: AutoLoaderConfig;
 }
 
 interface PlaylistState {
   playlists: Playlist[];
   loaded: boolean;
+  /** The one playlist that auto-runs when a console's helper becomes
+   *  ready. See AutoLoaderConfig. Drives the Auto-loader card in the
+   *  Playlists panel and the trigger in AppShell's status poller. */
+  autoLoader: AutoLoaderConfig;
   /** Live status of each console's running playlist, keyed by bare host
    *  (port-stripped). The SendPayload screen renders a banner from the
    *  active console's slot so the user always knows whether that console's
@@ -78,6 +89,9 @@ interface PlaylistState {
   /** Stop the run owned by `host` (the console the run was launched against).
    *  Other consoles' runs are untouched. */
   stop: (host: string) => void;
+
+  /** Patch the auto-loader config (enable/disable, choose playlist). */
+  setAutoLoader: (patch: Partial<AutoLoaderConfig>) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 300;
@@ -133,13 +147,13 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      const { playlists } = get();
-      const doc: PlaylistDocument = { playlists };
+      const { playlists, autoLoader } = get();
+      const doc: PlaylistDocument = { playlists, autoLoader };
       void payloadPlaylistsSave(doc).catch((e) => {
         // Same rationale as upload-queue: log so it lands in the
         // dev console + Windows engine.log; a UI toast is future
         // work but would need throttling.
-        console.error("[payload-playlists] save failed:", e);
+        log.error("playlist", `save failed: ${e instanceof Error ? e.message : String(e)}`);
       });
     }, SAVE_DEBOUNCE_MS);
   };
@@ -148,6 +162,7 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
     playlists: [],
     loaded: false,
     runStatusByHost: {},
+    autoLoader: DEFAULT_AUTO_LOADER,
 
     async hydrate() {
       // Browser-only contexts: Tauri invoke unavailable. Same rationale
@@ -160,14 +175,18 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
       }
       try {
         const doc = await payloadPlaylistsLoad<Partial<PlaylistDocument>>();
-        set({ playlists: doc.playlists ?? [], loaded: true });
+        set({
+          playlists: doc.playlists ?? [],
+          autoLoader: { ...DEFAULT_AUTO_LOADER, ...(doc.autoLoader ?? {}) },
+          loaded: true,
+        });
       } catch (e) {
         // load_json_or_default returns {} for missing file, so a
         // throw here means real corruption. Log + fall through to
         // empty state so the user can rebuild — the alternative
         // (blocking the screen with an error) hides every other
         // payload feature behind a recoverable issue.
-        console.error("[payload-playlists] hydrate failed:", e);
+        log.error("playlist", `hydrate failed: ${e instanceof Error ? e.message : String(e)}`);
         set({ loaded: true });
       }
     },
@@ -307,6 +326,15 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
           const errMsg = e instanceof Error ? e.message : String(e);
           failureCount++;
           failures.push({ stepIndex: i, error: errMsg });
+          // Log every step failure: the run-status banner is transient (gone by
+          // the time a user files a bug report), so this is the only durable
+          // trace of "my playlist / auto-loader didn't run". Includes the step
+          // file + target so a maintainer can see exactly what failed where.
+          const stepName = step.path.split(/[\\/]/).pop() ?? step.path;
+          log.warn(
+            "playlist",
+            `step ${i + 1} (${stepName}) failed on ${stepHost}:${stepPort} — ${errMsg}`,
+          );
           if (!playlist.continueOnFailure) {
             if (isLive()) {
               setRunStatus(key, {
@@ -362,6 +390,11 @@ export const usePayloadPlaylistsStore = create<PlaylistState>((set, get) => {
       aborts.get(key)?.abort();
       aborts.delete(key);
       setRunStatus(key, { kind: "idle" });
+    },
+
+    setAutoLoader(patch) {
+      set((s) => ({ autoLoader: { ...s.autoLoader, ...patch } }));
+      scheduleSave();
     },
   };
 });

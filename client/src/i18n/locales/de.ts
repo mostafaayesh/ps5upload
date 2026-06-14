@@ -1655,6 +1655,17 @@ err_payload_rejected: "Die PS5 hat die Anfrage abgelehnt: {reason}",
   upload_register_after_desc: "Registriert das Spiel direkt nach Abschluss des Uploads bei der PS5, sodass es startbereit ist — kein Besuch der Bibliothek nötig. Schlägt dieser Schritt fehl, bleibt der Upload selbst unberührt und du kannst es weiterhin über die Bibliothek hinzufügen.",
   upload_done_next_hint: "Als Nächstes: Öffne die Bibliothek, um es zu registrieren oder zu mounten, damit es auf dem PS5-Startbildschirm erscheint.",
   upload_done_open_library: "Bibliothek öffnen",
+  autoloader_title: "Auto-Loader",
+  autoloader_description: "Eine Playlist automatisch ausführen, sobald der Helfer einer PS5 bereit ist – nach der Ersteinrichtung oder einer erneuten Verbindung.",
+  autoloader_pick: "Playlist auswählen…",
+  autoloader_enable: "Aktivieren",
+  autoloader_warn_none: "Wähle eine Playlist, die der Auto-Loader ausführen soll.",
+  autoloader_warn_empty: "Die gewählte Playlist hat noch keine Schritte.",
+  upload_browse: "Durchsuchen",
+  upload_browse_title: "Datei oder Ordner auswählen",
+  playlist_from_files: "Aus Dateien…",
+  playlist_from_files_title: "Wähle eine oder mehrere Payloads für eine Playlist",
+  playlist_drop_hint: "Ziehe eine oder mehrere Payloads hierher, um eine Playlist zu erstellen",
 };
 
 export default de;

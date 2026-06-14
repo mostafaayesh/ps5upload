@@ -293,9 +293,16 @@ int hw_info_get_text(char *out, size_t out_cap, size_t *out_written,
         sysctl_string("kern.osrelease", osrelease,  sizeof(osrelease));
         sysctl_int("hw.ncpu", &ncpu);
 
-        /* Physical RAM. 5-step detection chain: PS5-specific API
-         * first (most accurate), then sysctl variants, then page
-         * math, then the 16 GiB default every PS5 is known to have. */
+        /* Physical RAM. Detection chain ordered to avoid kernel log noise:
+         *   1. sceKernelGetDirectMemorySize — PS5-specific, most accurate.
+         *   2. page-count math (vm.stats.vm.v_page_count × hw.pagesize) —
+         *      APPROVED sysctls on PS5; the product is exact.
+         *   3. 16 GiB default (every PS5 has this).
+         * Deliberately does NOT query hw.physmem / hw.realmem / hw.usermem:
+         * those are FreeBSD-generic but UNAPPROVED on PS5, and each call spams
+         * the kernel log with "[SYSCTL] Error : hw.physmem is not approved.
+         * Please report to PPRBUG-6864." They bought nothing the page-count
+         * product doesn't already give, so they're gone. */
         uint64_t physmem = 0;
         if (g_hw.direct_mem) {
             /* volatile temp so the value is well-defined on the fault path. */
@@ -304,9 +311,6 @@ int hw_info_get_text(char *out, size_t out_cap, size_t *out_written,
                      dm = (uint64_t)g_hw.direct_mem());
             physmem = dm;
         }
-        if (physmem == 0) sysctl_uint64("hw.physmem", &physmem);
-        if (physmem == 0) sysctl_uint64("hw.realmem", &physmem);
-        if (physmem == 0) sysctl_uint64("hw.usermem", &physmem);
         if (physmem == 0) {
             int pagesize = 0;
             uint64_t page_count = 0;

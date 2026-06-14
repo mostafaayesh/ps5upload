@@ -44,6 +44,7 @@ import { useRecentHostMetricsStore } from "./recentHostMetrics";
 import { pushNotification } from "./notifications";
 import { withConsolePrefix } from "./roster";
 import { hostOf, mgmtAddr } from "../lib/addr";
+import { log } from "./logs";
 import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
 import { effectiveUploadStreams } from "../lib/uploadStreams";
 import {
@@ -601,6 +602,18 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         // ONE unit, alongside every other upload in the same queue.
         let installPhase: QueueItem["installPhase"] = undefined;
         let installedTitle: string | null = null;
+        // Record the post-upload decision for EVERY pkg (install or not), so a
+        // "it installed/deleted even though I turned that off" report shows the
+        // exact flags this item carried — captured from the settings at add
+        // time. Without this the decision was invisible in bug bundles.
+        if (isLive() && item.sourceKind === "pkg") {
+          log.info(
+            "install",
+            `pkg "${item.displayName}" uploaded — auto-install=${
+              item.installAfterUpload !== false
+            }, auto-delete=${item.deletePkgAfterInstall !== false}`,
+          );
+        }
         if (
           isLive() &&
           item.sourceKind === "pkg" &&
@@ -614,10 +627,14 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           const pkgStore = pkgLibraryStore(item.addr);
           pkgStore.setState({ installing: true });
           try {
+            // delete_staging = the per-item Auto Delete preference (captured
+            // from the setting at queue-add time). When off, the engine keeps
+            // the uploaded pkg instead of deleting it post-install.
             const r = await runPkgInstall(
               item.addr,
               finalDest,
               item.contentId ?? null,
+              item.deletePkgAfterInstall !== false,
             );
             if (r.installed) {
               installPhase = r.mayNotLaunch ? "warn" : "done";
@@ -979,6 +996,11 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           // UI doesn't show NaN MiB/s on the first render after
           // upgrade.
           if (typeof next.bytesPerSec !== "number") next.bytesPerSec = 0;
+          // Back-fill reconcileMode — a pre-reconcile persisted "resume" item
+          // would otherwise pass undefined to startTransferDirReconcile (whose
+          // engine arg is non-optional ReconcileMode). "fast" matches the
+          // current add-time default.
+          if (next.reconcileMode == null) next.reconcileMode = "fast";
           // Back-fill the mountWarnings field added in 2.2.52 — older
           // persisted docs don't carry it. Default to empty so the UI
           // can blindly read .mountWarnings.length without optional-

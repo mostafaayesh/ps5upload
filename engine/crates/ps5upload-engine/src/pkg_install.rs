@@ -257,6 +257,33 @@ pub struct InstallStartRequest {
     /// pkg itself, so an empty value still installs.
     #[serde(default)]
     pub content_id: Option<String>,
+    /// Whether to DELETE the staged `local_ps5_path` pkg after the install
+    /// reaches a terminal phase (the "Tier-1 staging cleanup"). This is the
+    /// user's "Auto Delete after installation" preference. Defaults TRUE for
+    /// backward-compatibility (older clients that don't send it keep the old
+    /// always-clean behaviour), but the current client always sends the real
+    /// setting — so "Auto Delete off" now actually KEEPS the uploaded pkg
+    /// instead of the engine silently deleting it regardless.
+    #[serde(default = "default_true")]
+    pub delete_staging: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Decide the session's `staging_path` — the file the terminal-phase handler
+/// deletes after install. Returns `Some(path)` ONLY when the caller asked us to
+/// clean up (`delete_staging`) AND a non-empty local path was supplied; `None`
+/// otherwise, which KEEPS the uploaded pkg. Pulled out as a pure fn so the
+/// "Auto Delete off ⇒ pkg kept" guarantee is unit-tested rather than buried in
+/// the install_start flow (it was the root of a reported data-loss bug).
+fn staging_path_for(local_ps5_path: &Option<String>, delete_staging: bool) -> Option<String> {
+    if delete_staging {
+        local_ps5_path.clone().filter(|s| !s.is_empty())
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -389,7 +416,9 @@ async fn install_start_handler(
         detail: String::new(),
         cancelled: false,
         created_at_unix: now_unix(),
-        staging_path: req.local_ps5_path.clone().filter(|s| !s.is_empty()),
+        // staging_path drives the terminal-phase cleanup. None ⇒ pkg KEPT,
+        // honouring "Auto Delete after installation" = off. See staging_path_for.
+        staging_path: staging_path_for(&req.local_ps5_path, req.delete_staging),
         terminal_status: None,
         verify_started_unix: None,
         launchable: None,
@@ -464,7 +493,7 @@ async fn install_start_handler(
     };
 
     crate::log_info!(
-        "pkg_install: addr={} session={} url={} content_id={} title={:?} package_type={} parts={} total={} bytes",
+        "pkg_install: addr={} session={} url={} content_id={} title={:?} package_type={} parts={} total={} bytes delete_staging={} staging_path={:?}",
         req.ps5_addr,
         session_id,
         url,
@@ -473,6 +502,8 @@ async fn install_start_handler(
         install_req.package_type,
         session.parts.len(),
         total_size,
+        req.delete_staging,
+        session.staging_path,
     );
 
     // Run the blocking PS5 frame exchange OFF the async reactor. `pkg_install`
@@ -1581,6 +1612,60 @@ fn now_unix() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── delete_staging / staging cleanup (the Auto-Delete data-loss fix) ──
+
+    #[test]
+    fn staging_path_kept_when_delete_disabled() {
+        // Auto Delete OFF → no staging_path → the uploaded pkg is KEPT, even
+        // though a real local path was supplied. This is the core guarantee.
+        let path = Some("/user/data/ps5upload/pkg_library/game.pkg".to_string());
+        assert_eq!(staging_path_for(&path, false), None);
+    }
+
+    #[test]
+    fn staging_path_cleaned_when_delete_enabled() {
+        let path = Some("/user/data/ps5upload/pkg_library/game.pkg".to_string());
+        assert_eq!(
+            staging_path_for(&path, true),
+            Some("/user/data/ps5upload/pkg_library/game.pkg".to_string())
+        );
+    }
+
+    #[test]
+    fn staging_path_none_for_empty_or_missing_path() {
+        // Empty string and None both yield None regardless of the flag (there's
+        // nothing to clean — e.g. the http-host flow with no local pkg).
+        assert_eq!(staging_path_for(&Some(String::new()), true), None);
+        assert_eq!(staging_path_for(&None, true), None);
+        assert_eq!(staging_path_for(&None, false), None);
+    }
+
+    #[test]
+    fn install_start_request_delete_staging_defaults_true() {
+        // Back-compat: an older client that omits delete_staging must keep the
+        // historical always-clean behaviour (true), not silently flip to keep.
+        let json = r#"{"ps5_addr":"1.2.3.4:9114","local_ps5_path":"/x.pkg"}"#;
+        let req: InstallStartRequest = serde_json::from_str(json).unwrap();
+        assert!(
+            req.delete_staging,
+            "omitted delete_staging must default true"
+        );
+    }
+
+    #[test]
+    fn install_start_request_delete_staging_false_round_trips() {
+        // The current client sends the real preference; false must be honoured.
+        let json =
+            r#"{"ps5_addr":"1.2.3.4:9114","local_ps5_path":"/x.pkg","delete_staging":false}"#;
+        let req: InstallStartRequest = serde_json::from_str(json).unwrap();
+        assert!(!req.delete_staging);
+        // And it must flow through to a kept pkg.
+        assert_eq!(
+            staging_path_for(&req.local_ps5_path, req.delete_staging),
+            None
+        );
+    }
 
     #[test]
     fn strip_host_port_handles_ipv4_and_ipv6() {

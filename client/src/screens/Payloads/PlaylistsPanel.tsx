@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { pickPath } from "../../lib/pickPath";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { pickPaths } from "../../lib/pickPath";
 import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
   CircleDashed,
   Clock,
+  FilePlus,
   FolderOpen,
   Loader2,
   ListPlus,
@@ -16,7 +17,9 @@ import {
   Trash2,
   X,
   XCircle,
+  Zap,
 } from "lucide-react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { Button, Modal } from "../../components";
 import { ConsoleChip } from "../../components/ConsoleChip";
@@ -25,7 +28,14 @@ import {
   runStatusForHost,
   usePayloadPlaylistsStore,
 } from "../../state/payloadPlaylists";
-import { sanitiseSleepMs, type Playlist } from "../../lib/playlistOps";
+import {
+  isPayloadPath,
+  sanitiseSleepMs,
+  type Playlist,
+} from "../../lib/playlistOps";
+import { isAndroid } from "../../lib/platform";
+import { isTauriEnv, safeUnlisten } from "../../lib/tauriEnv";
+import { log } from "../../state/logs";
 
 /**
  * Playlist editor + runner panel for the SendPayload screen.
@@ -49,6 +59,109 @@ export function PlaylistsPanel({ host, port }: { host: string; port: number }) {
   useEffect(() => {
     if (!loaded) void hydrate();
   }, [loaded, hydrate]);
+
+  // Create a playlist from a set of paths (dropped or multi-selected),
+  // keeping only real payload files. Reads the store via getState() rather
+  // than closing over the reactive `playlists` value, so the drag-drop
+  // effect below can depend on a STABLE callback (no re-subscribe churn).
+  // Returns the number of steps added (0 = nothing usable was supplied).
+  const createFromPaths = useCallback((paths: string[]): number => {
+    const payloads = paths.filter(isPayloadPath);
+    if (payloads.length === 0) {
+      // Leave a trace when a drop/pick produced nothing usable, so a user who
+      // dropped (say) a .pkg and saw "nothing happen" shows up in a bug report.
+      if (paths.length > 0) {
+        log.warn(
+          "playlist",
+          `drop/pick ignored — no payload files among ${paths.length} path(s)`,
+        );
+      }
+      return 0;
+    }
+    const st = usePayloadPlaylistsStore.getState();
+    const base =
+      basename(payloads[0]).replace(/\.[^.]+$/, "") || "New playlist";
+    const existing = new Set(st.playlists.map((p) => p.name));
+    let name = base;
+    let n = 2;
+    while (existing.has(name)) name = `${base} ${n++}`;
+    const id = st.createPlaylist(name);
+    for (const p of payloads) st.addStep(id, { path: p, sleepMs: 0 });
+    log.info(
+      "playlist",
+      `created "${name}" with ${payloads.length} step(s) from drop/pick`,
+    );
+    return payloads.length;
+  }, []);
+
+  // Drag one or more payload files onto the DROPZONE to spin up a playlist in
+  // one gesture. Desktop only — Android has no webview drag-drop, so the
+  // "From files…" multi-picker below covers it there.
+  const [dropActive, setDropActive] = useState(false);
+  // Tauri's drag-drop is a single window-global event with no element
+  // targeting, so we hit-test the drop position against the dropzone's rect.
+  // Without this, dropping a payload file ANYWHERE on the Payloads screen
+  // (sidebar, a card, the send form) would silently fabricate a playlist.
+  const dropZoneRef = useRef<HTMLDivElement | null>(null);
+  const dragHasPayloadRef = useRef(false);
+  useEffect(() => {
+    if (!isTauriEnv() || isAndroid()) return;
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    // Tauri reports drop position in PHYSICAL pixels; getBoundingClientRect is
+    // CSS pixels — divide by devicePixelRatio to compare in the same space.
+    const inZone = (pos: { x: number; y: number }): boolean => {
+      const zone = dropZoneRef.current;
+      if (!zone) return false;
+      const r = zone.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const x = pos.x / dpr;
+      const y = pos.y / dpr;
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
+    const p = getCurrentWebview().onDragDropEvent((e) => {
+      if (cancelled) return;
+      if (e.payload.type === "enter") {
+        dragHasPayloadRef.current = e.payload.paths.some(isPayloadPath);
+        setDropActive(
+          dragHasPayloadRef.current && inZone(e.payload.position),
+        );
+      } else if (e.payload.type === "over") {
+        // "over" has no paths; reuse the flag captured on enter. Highlight only
+        // while actually hovering the zone with a payload-bearing drag.
+        setDropActive(
+          dragHasPayloadRef.current && inZone(e.payload.position),
+        );
+      } else if (e.payload.type === "leave") {
+        dragHasPayloadRef.current = false;
+        setDropActive(false);
+      } else if (e.payload.type === "drop") {
+        setDropActive(false);
+        dragHasPayloadRef.current = false;
+        // Only OUR zone's drops build a playlist — a drop elsewhere on the
+        // window is someone else's concern (or nobody's).
+        if (inZone(e.payload.position)) createFromPaths(e.payload.paths);
+      }
+    });
+    p.then((fn) => {
+      if (cancelled) safeUnlisten(fn);
+      else unlisten = fn;
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      if (unlisten) safeUnlisten(unlisten);
+    };
+  }, [createFromPaths]);
+
+  const handleFromFiles = async () => {
+    const picked = await pickPaths({
+      filters: [
+        { name: "Payload", extensions: ["elf", "bin", "js", "lua", "jar"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    });
+    createFromPaths(picked);
+  };
 
   const handleNew = () => {
     // window.prompt doesn't work in Tauri webview by default — clicking
@@ -106,6 +219,32 @@ export function PlaylistsPanel({ host, port }: { host: string; port: number }) {
             </Button>
           )}
           <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<FilePlus size={12} />}
+            onClick={handleFromFiles}
+            disabled={isBusy}
+            title={
+              isAndroid()
+                ? tr(
+                    "playlist_from_file_title_android",
+                    undefined,
+                    "Pick a payload to start a playlist (add more with Add step)",
+                  )
+                : tr(
+                    "playlist_from_files_title",
+                    undefined,
+                    "Pick one or more payloads to make a playlist",
+                  )
+            }
+          >
+            {/* Android's picker is single-select, so 'From files…' (which
+                implies bulk) would over-promise — label it honestly there. */}
+            {isAndroid()
+              ? tr("playlist_from_file_android", undefined, "From a file…")
+              : tr("playlist_from_files", undefined, "From files…")}
+          </Button>
+          <Button
             variant="primary"
             size="sm"
             leftIcon={<Plus size={12} />}
@@ -117,7 +256,29 @@ export function PlaylistsPanel({ host, port }: { host: string; port: number }) {
         </div>
       </header>
 
+      {/* Drag-to-create zone (desktop). Drop one or more payloads to spin up
+          a playlist; auto-detected by extension, so a stray .pkg or folder
+          in the selection is simply ignored. */}
+      {!isAndroid() && (
+        <div
+          ref={dropZoneRef}
+          className={`mb-4 rounded-md border-2 border-dashed p-3 text-center text-xs transition-colors ${
+            dropActive
+              ? "border-[var(--color-accent)] bg-[var(--color-surface-3)]"
+              : "border-[var(--color-border)] text-[var(--color-muted)]"
+          }`}
+        >
+          {tr(
+            "playlist_drop_hint",
+            undefined,
+            "Drag one or more payloads here to create a playlist",
+          )}
+        </div>
+      )}
+
       <RunStatusBanner host={host} />
+
+      <AutoLoaderCard />
 
       {recentlyRun.length > 0 && (
         <div className="mb-4">
@@ -198,6 +359,125 @@ export function PlaylistsPanel({ host, port }: { host: string; port: number }) {
         ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * Auto-loader config card. One playlist that runs by itself whenever any
+ * console's helper payload becomes ready — covers "after first-time setup"
+ * and "on reconnect" with a single edge (see AppShell's status poller). The
+ * trigger lives in AppShell; this card is just the enable toggle + picker.
+ */
+function AutoLoaderCard() {
+  const tr = useTr();
+  const autoLoader = usePayloadPlaylistsStore((s) => s.autoLoader);
+  const playlists = usePayloadPlaylistsStore((s) => s.playlists);
+  const setAutoLoader = usePayloadPlaylistsStore((s) => s.setAutoLoader);
+
+  const selected = autoLoader.playlistId
+    ? playlists.find((p) => p.id === autoLoader.playlistId)
+    : undefined;
+  // "Armed" = enabled AND it will actually do something. The icon lights up
+  // only when armed so the state is legible at a glance.
+  const armed = autoLoader.enabled && !!selected && selected.steps.length > 0;
+  // Enabled but inert — surface why so the toggle doesn't look broken.
+  const warn = autoLoader.enabled && (!selected || selected.steps.length === 0);
+
+  return (
+    <div className="mb-4 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          <Zap
+            size={14}
+            className={`mt-0.5 shrink-0 ${
+              armed ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"
+            }`}
+          />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold">
+              {tr("autoloader_title", undefined, "Auto-loader")}
+            </div>
+            <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+              {tr(
+                "autoloader_description",
+                undefined,
+                "Automatically run a playlist whenever a PS5's helper becomes ready — after first-time setup or a reconnect.",
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={autoLoader.playlistId ?? ""}
+            onChange={(e) =>
+              setAutoLoader({ playlistId: e.target.value || null })
+            }
+            className="min-w-[min(100%,10rem)] rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs"
+          >
+            <option value="">
+              {tr("autoloader_pick", undefined, "Choose playlist…")}
+            </option>
+            {playlists.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <label className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={autoLoader.enabled}
+              onChange={(e) => setAutoLoader({ enabled: e.target.checked })}
+              className="h-3.5 w-3.5"
+            />
+            {tr("autoloader_enable", undefined, "Enable")}
+          </label>
+        </div>
+      </div>
+      {/* Bring-up playlist: the PRE-helper chain (kernel-R/W payload, SMP, …)
+          that "Quick bring-up" (Connection screen) runs before sending the
+          helper. Separate from the auto-loader's post-helper playlist above. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-[var(--color-muted)]">
+          {tr(
+            "autoloader_bringup_label",
+            undefined,
+            "Bring-up playlist (kernel R/W, SMP):",
+          )}
+        </span>
+        <select
+          value={autoLoader.bringUpPlaylistId ?? ""}
+          onChange={(e) =>
+            setAutoLoader({ bringUpPlaylistId: e.target.value || null })
+          }
+          className="min-w-[min(100%,10rem)] rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs"
+        >
+          <option value="">
+            {tr("autoloader_bringup_none", undefined, "None (send helper only)")}
+          </option>
+          {playlists.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {warn && (
+        <div className="mt-2 text-xs text-[var(--color-warn)]">
+          {!selected
+            ? tr(
+                "autoloader_warn_none",
+                undefined,
+                "Pick a playlist for the auto-loader to run.",
+              )
+            : tr(
+                "autoloader_warn_empty",
+                undefined,
+                "The chosen playlist has no steps yet.",
+              )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -398,15 +678,15 @@ function PlaylistCard({
   };
 
   const handleAddStep = async () => {
-    const picked = await pickPath({
-      mode: "file",
+    // Multi-select: pick several payloads at once and append them all as
+    // steps (each with no post-send sleep — the user tunes timing after).
+    const picked = await pickPaths({
       filters: [
         { name: "Payload", extensions: ["elf", "bin", "js", "lua", "jar"] },
         { name: "All files", extensions: ["*"] },
       ],
     });
-    if (typeof picked !== "string") return;
-    addStep(playlist.id, { path: picked, sleepMs: 0 });
+    for (const path of picked) addStep(playlist.id, { path, sleepMs: 0 });
   };
 
   const canRun = playlist.steps.length > 0 && !!host?.trim() && !anyRunning;
@@ -600,7 +880,12 @@ function PlaylistCard({
           {playlist.steps.map((step, i) => (
             <li
               key={`${step.path}-${i}`}
-              className={`flex flex-col gap-2 rounded border p-2 text-xs sm:flex-row sm:items-center ${
+              // sm:flex-wrap (not just flex-row): at a large Text size the
+              // fixed-width ip/port/sleep controls grow and used to crush the
+              // step path to 0px on one nowrap line. Allowing the row to wrap
+              // — with a floored path min-width below — drops the controls to
+              // their own line instead, keeping the payload path visible.
+              className={`flex flex-col gap-2 rounded border p-2 text-xs sm:flex-row sm:flex-wrap sm:items-center ${
                 i === activeStepIndex
                   ? "border-[var(--color-accent)] bg-[var(--color-surface-2)]"
                   : "border-[var(--color-border)] bg-[var(--color-surface-2)]"
@@ -609,7 +894,7 @@ function PlaylistCard({
               {/* Status + index + path. On phones this is its own line so
                   the fixed-width controls below can wrap underneath instead
                   of pushing the row off-screen. */}
-              <div className="flex min-w-0 items-center gap-2 sm:flex-1">
+              <div className="flex min-w-0 items-center gap-2 sm:min-w-[12rem] sm:flex-1">
                 <StepStatusIcon
                   index={i}
                   activeIndex={activeStepIndex}
@@ -624,7 +909,7 @@ function PlaylistCard({
               </div>
               {/* Per-step ip/port/sleep overrides + reorder/remove. Wraps on
                   narrow viewports; single trailing row on sm+. */}
-              <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 {/* Per-step IP override. Empty = use the playlist-wide
                   IP entered above. Useful for sequences targeting
                   multiple PS5s (push a loader to dev kit, push

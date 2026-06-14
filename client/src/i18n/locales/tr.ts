@@ -1654,6 +1654,17 @@ err_payload_rejected: "PS5 isteği reddetti: {reason}",
   upload_register_after_desc: "Yükleme biter bitmez oyunu PS5'e kaydeder, böylece başlatmaya hazır olur — Kütüphane'ye uğramak gerekmez. Bu adım başarısız olursa yüklemenin kendisi etkilenmez ve oyunu yine Kütüphane'den ekleyebilirsiniz.",
   upload_done_next_hint: "Sıradaki: PS5 ana ekranında görünmesi için Kütüphane'yi açıp oyunu kaydedin veya bağlayın.",
   upload_done_open_library: "Kütüphaneyi Aç",
+  autoloader_title: "Otomatik yükleyici",
+  autoloader_description: "Bir PS5'in yardımcısı hazır olduğunda bir oynatma listesini otomatik çalıştır — ilk kurulumdan veya yeniden bağlanmadan sonra.",
+  autoloader_pick: "Oynatma listesi seç…",
+  autoloader_enable: "Etkinleştir",
+  autoloader_warn_none: "Otomatik yükleyicinin çalıştıracağı bir oynatma listesi seçin.",
+  autoloader_warn_empty: "Seçilen oynatma listesinde henüz adım yok.",
+  upload_browse: "Gözat",
+  upload_browse_title: "Bir dosya veya klasör seç",
+  playlist_from_files: "Dosyalardan…",
+  playlist_from_files_title: "Bir oynatma listesi oluşturmak için bir veya daha fazla yük seçin",
+  playlist_drop_hint: "Oynatma listesi oluşturmak için bir veya daha fazla yükü buraya sürükleyin",
 };
 
 export default tr;

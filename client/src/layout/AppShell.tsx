@@ -7,7 +7,12 @@ import ConsoleTabs from "./ConsoleTabs";
 import ActivityBar from "./ActivityBar";
 import UpdateToast from "./UpdateToast";
 import { Button } from "../components/Button";
-import { useConnectionStore, EMPTY_HOST_RUNTIME } from "../state/connection";
+import {
+  useConnectionStore,
+  EMPTY_HOST_RUNTIME,
+  PS5_LOADER_PORT,
+} from "../state/connection";
+import { usePayloadPlaylistsStore } from "../state/payloadPlaylists";
 import { log } from "../state/logs";
 import { useUpdateStore } from "../state/update";
 import { engineApi } from "../api/engine";
@@ -53,6 +58,18 @@ import { getVersion } from "@tauri-apps/api/app";
  *  - Payload: the PS5's :9113 via `payload_check`, every 10s, and only
  *    when a host is configured (no point spamming DOWN probes against
  *    the default IP if the user hasn't entered theirs). */
+/** Consecutive failed payload probes required before the UI flips a host
+ *  from "up" to "down". At a 10s poll interval, 2 means a real drop is
+ *  reflected within ~20s, while a single jittery/busy poll is absorbed. */
+const PROBE_MISS_THRESHOLD = 2;
+
+/** Minimum gap between auto-loader fires for the same console. The auto-run
+ *  playlist sends ELFs to the loader, which briefly drops the helper (a
+ *  down→up flap); this window swallows that self-induced edge so the
+ *  auto-loader can't re-trigger itself. A genuine reconnect past the window
+ *  fires again. Comfortably longer than a typical short playlist. */
+const AUTO_LOADER_COOLDOWN_MS = 90_000;
+
 function useStatusPolling() {
   const setStatus = useConnectionStore((s) => s.setStatus);
   const setHostStatus = useConnectionStore((s) => s.setHostStatus);
@@ -79,6 +96,17 @@ function useStatusPolling() {
   const appVersionRef = useRef<string | null>(null);
   const warnedMismatchRef = useRef<Record<string, string>>({});
   const warnedNoUcredRef = useRef<Record<string, boolean>>({});
+  // Consecutive failed-probe counter per host. Used to debounce the up→down
+  // transition: a single missed 10s poll (busy mgmt thread during a Library
+  // scan, momentary network jitter) shouldn't flash "Helper isn't running"
+  // when the helper is actually alive. Require N misses in a row first.
+  const missCountRef = useRef<Record<string, number>>({});
+  // Auto-loader: last wall-clock ms we auto-ran the playlist for a host, used
+  // to suppress re-triggering. The playlist itself sends ELFs to the loader,
+  // which momentarily drops the helper (down→up flap) — without a cooldown
+  // that flap would re-fire the auto-loader in a loop. One fire per cooldown
+  // window per host; a genuine later reconnect (past the window) fires again.
+  const autoLoaderFiredAtRef = useRef<Record<string, number>>({});
   useEffect(() => {
     void getVersion()
       .then((v) => {
@@ -133,6 +161,20 @@ function useStatusPolling() {
       return;
     }
     let cancelled = false;
+    // Prune per-host bookkeeping for consoles that left the roster, so these
+    // refs don't accumulate dead keys across a long session of adding/removing
+    // PS5s. Keyed the same way as the refs (hostOf-normalized).
+    const liveKeys = new Set(hosts.map((h) => hostOf(h) || "_"));
+    for (const ref of [
+      autoLoaderFiredAtRef,
+      missCountRef,
+      warnedMismatchRef,
+      warnedNoUcredRef,
+    ]) {
+      for (const k of Object.keys(ref.current)) {
+        if (!liveKeys.has(k)) delete ref.current[k];
+      }
+    }
     const isActive = (key: string) =>
       key === (hostOf(useConnectionStore.getState().host) || "_");
     const probeOne = async (probedHost: string) => {
@@ -146,7 +188,21 @@ function useStatusPolling() {
         // Transient miss: keep this host's last-known version/kernel/ucred
         // rather than blanking the UI on a single dropped poll.
         const carryOver = !s.reachable;
-        const newStatus = s.reachable ? "up" : "down";
+        // Debounce up→down: a reachable probe clears the miss counter; an
+        // unreachable one only flips to "down" after MISS_THRESHOLD misses in
+        // a row, so one busy/jittery poll holds the last-known "up".
+        let newStatus: "up" | "down";
+        if (s.reachable) {
+          missCountRef.current[key] = 0;
+          newStatus = "up";
+        } else {
+          const misses = (missCountRef.current[key] ?? 0) + 1;
+          missCountRef.current[key] = misses;
+          newStatus =
+            prev.payloadStatus === "up" && misses < PROBE_MISS_THRESHOLD
+              ? "up"
+              : "down";
+        }
         // Log only on an up<->down TRANSITION (not every poll).
         if (
           prev.payloadStatus !== "unknown" &&
@@ -154,7 +210,42 @@ function useStatusPolling() {
         ) {
           if (newStatus === "down")
             log.warn("connection", `helper went DOWN on ${probedHost}`);
-          else log.info("connection", `helper came UP on ${probedHost}`);
+          else {
+            log.info("connection", `helper came UP on ${probedHost}`);
+            // Auto-loader: a genuine cold→ready edge on this console (the
+            // `prev !== "unknown"` guard above means this does NOT fire when
+            // the app launches and finds the helper already up — only after a
+            // real reconnect or first-time-setup completion). Run the chosen
+            // playlist against the console that just came up, once per
+            // cooldown window so the playlist's own loader sends don't loop.
+            const pl = usePayloadPlaylistsStore.getState();
+            const cfg = pl.autoLoader;
+            const auto = cfg.playlistId
+              ? pl.playlists.find((p) => p.id === cfg.playlistId)
+              : undefined;
+            const firedAt = autoLoaderFiredAtRef.current[key] ?? 0;
+            const onCooldown = Date.now() - firedAt < AUTO_LOADER_COOLDOWN_MS;
+            if (cfg.enabled && auto && auto.steps.length > 0 && !onCooldown) {
+              autoLoaderFiredAtRef.current[key] = Date.now();
+              log.info(
+                "connection",
+                `auto-loader: running "${auto.name}" on ${probedHost}`,
+              );
+              void pl.run(auto.id, probedHost, PS5_LOADER_PORT);
+            } else if (cfg.enabled) {
+              // Enabled but didn't fire — record WHY, so "the auto-loader
+              // didn't run" reports have a trace instead of silence.
+              const why = !auto
+                ? "no playlist selected"
+                : auto.steps.length === 0
+                  ? "playlist is empty"
+                  : "within cooldown window";
+              log.info(
+                "connection",
+                `auto-loader skipped on ${probedHost}: ${why}`,
+              );
+            }
+          }
         }
         setHostStatus(probedHost, {
           payloadStatus: newStatus,
@@ -208,13 +299,21 @@ function useStatusPolling() {
         const prev =
           useConnectionStore.getState().runtimeByHost[key] ??
           EMPTY_HOST_RUNTIME;
-        if (prev.payloadStatus === "up") {
+        // A probe exception is also a miss — apply the same debounce so a
+        // single transient error doesn't flip a live helper to "down".
+        const misses = (missCountRef.current[key] ?? 0) + 1;
+        missCountRef.current[key] = misses;
+        const newStatus =
+          prev.payloadStatus === "up" && misses < PROBE_MISS_THRESHOLD
+            ? "up"
+            : "down";
+        if (prev.payloadStatus === "up" && newStatus === "down") {
           log.warn(
             "connection",
             `helper went DOWN on ${probedHost} (probe error: ${e instanceof Error ? e.message : String(e)})`,
           );
         }
-        setHostStatus(probedHost, { payloadStatus: "down" });
+        setHostStatus(probedHost, { payloadStatus: newStatus });
         if (isActive(key)) setStatus({ payloadProbing: false });
       }
     };
@@ -341,13 +440,26 @@ function usePkgAutoRoute() {
     const p = getCurrentWebview().onDragDropEvent((e) => {
       if (cancelled) return;
       if (e.payload.type !== "drop") return;
-      const first = e.payload.paths?.[0];
-      if (!first) return;
-      if (!first.toLowerCase().endsWith(".pkg")) return;
-      if (location.pathname === "/install-package") return;
+      // Find the FIRST .pkg ANYWHERE in the drop, not just paths[0] — a mixed
+      // or reordered drop like [game.elf, patch.pkg] should still route the
+      // pkg to Install Package instead of being missed.
+      const pkg = (e.payload.paths ?? []).find((p) =>
+        p.toLowerCase().endsWith(".pkg"),
+      );
+      if (!pkg) return;
+      // Screens that own their own drag-drop opt out of the app-wide pkg
+      // auto-route, so a drop meant for them doesn't also yank the user to
+      // Install Package: /install-package itself, and /payloads (the playlist
+      // dropzone). Without this a mixed .elf+.pkg drop on Payloads both built
+      // a playlist AND navigated away.
+      if (
+        location.pathname === "/install-package" ||
+        location.pathname === "/payloads"
+      )
+        return;
       // Pass the picked path via navigation state — InstallPackage
       // can pick it up and pre-fill its source field.
-      navigate("/install-package", { state: { droppedPath: first } });
+      navigate("/install-package", { state: { droppedPath: pkg } });
     });
     p.then((fn) => {
       // (2.11.0) Use safeUnlisten — was bare try/catch inline. Upload

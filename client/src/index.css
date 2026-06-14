@@ -440,7 +440,9 @@ button {
     var(--color-surface-2) 60%
   );
   background-size: 200% 100%;
-  animation: ps-shimmer 1.6s linear infinite;
+  /* 2.2s (was 1.6s) — a slower, gentler sweep reads as "loading" rather than
+   * a fast strobe across a tall stack of placeholder rows. */
+  animation: ps-shimmer 2.2s linear infinite;
 }
 
 /* Gentle status pulse — calmer than Tailwind's animate-pulse, for live
@@ -558,5 +560,26 @@ button {
   textarea,
   input:not([type="checkbox"]):not([type="radio"]) {
     min-height: 44px;
+  }
+}
+
+/* Checkboxes & radios render at the browser's tiny intrinsic size, which
+ * looks cramped at the app's 18px root — and many call sites don't set an
+ * explicit size. Bump them a bit and theme the check to the accent colour.
+ * A plain attribute selector outweighs Tailwind's h-*/w-* utility classes,
+ * so this uniformly resizes EVERY checkbox/radio (settings + everywhere).
+ * On touch they grow a touch more for comfortable tapping. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 1.4rem;
+    height: 1.4rem;
   }
 }

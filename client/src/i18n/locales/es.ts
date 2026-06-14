@@ -1594,6 +1594,17 @@ upload_register_after_title: "Añadir a la pantalla de inicio de la PS5 al termi
 upload_register_after_desc: "Registra el juego en la PS5 justo después de terminar la subida, para que esté listo para iniciarse — sin pasar por la Biblioteca. Si este paso falla, la subida en sí no se ve afectada y aún puedes añadirlo desde la Biblioteca.",
 upload_done_next_hint: "Siguiente: abre la Biblioteca para registrarlo o montarlo y que aparezca en la pantalla de inicio de la PS5.",
 upload_done_open_library: "Abrir Biblioteca",
+  autoloader_title: "Cargador automático",
+  autoloader_description: "Ejecuta una lista de reproducción automáticamente cuando el ayudante de una PS5 esté listo, tras la configuración inicial o una reconexión.",
+  autoloader_pick: "Elegir lista…",
+  autoloader_enable: "Activar",
+  autoloader_warn_none: "Elige una lista para que la ejecute el cargador automático.",
+  autoloader_warn_empty: "La lista elegida aún no tiene pasos.",
+  upload_browse: "Examinar",
+  upload_browse_title: "Elegir un archivo o carpeta",
+  playlist_from_files: "Desde archivos…",
+  playlist_from_files_title: "Elige una o más payloads para crear una lista",
+  playlist_drop_hint: "Arrastra una o más payloads aquí para crear una lista",
 };
 
 export default es;

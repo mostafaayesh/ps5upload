@@ -4,6 +4,7 @@ import { useLogsStore } from "../state/logs";
 import { useRosterStore } from "../state/roster";
 import { useScheduleStore } from "../state/schedules";
 import { useConnectionStore } from "../state/connection";
+import { useInstallSettingsStore } from "../state/installSettings";
 import { usePlayTimeStore } from "../state/playTime";
 
 /**
@@ -59,6 +60,14 @@ export interface DiagnosticBundle {
     last_seen_payload: string | null | undefined;
     notes: string | null | undefined;
   }>;
+  /** User settings snapshot — the behaviour toggles. Essential for "the tool
+   *  did X even though I had Y off" reports: captures the ACTUAL stored value
+   *  so triage doesn't have to guess (a real Titanfall/Guardians report was
+   *  unanswerable because these weren't captured). */
+  settings: {
+    auto_install_after_upload: boolean;
+    auto_remove_after_install: boolean;
+  };
   schedules_count: number;
   play_time_titles: number;
   recent_activity: Array<{
@@ -108,6 +117,7 @@ export function buildDiagnosticBundle(opts: {
   logLimit?: number;
 }): DiagnosticBundle {
   const conn = useConnectionStore.getState();
+  const installSettings = useInstallSettingsStore.getState();
   const roster = useRosterStore.getState().profiles;
   const schedules = useScheduleStore.getState().schedules;
   const playTimesByHost = usePlayTimeStore.getState().byHost;
@@ -153,6 +163,10 @@ export function buildDiagnosticBundle(opts: {
       last_seen_payload: p.last_seen_payload,
       notes: p.notes,
     })),
+    settings: {
+      auto_install_after_upload: installSettings.autoInstallAfterUpload,
+      auto_remove_after_install: installSettings.autoRemoveAfterInstall,
+    },
     schedules_count: schedules.length,
     // Count distinct (host, title) pairs tracked across all consoles.
     play_time_titles: Object.values(playTimesByHost).reduce(

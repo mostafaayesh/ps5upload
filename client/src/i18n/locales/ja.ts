@@ -1689,6 +1689,17 @@ err_payload_rejected: "PS5 がリクエストを拒否しました: {reason}",
   upload_done_next_hint:
     "次のステップ: ライブラリを開いて登録またはマウントすると、PS5 のホーム画面に表示されます。",
   upload_done_open_library: "ライブラリを開く",
+  autoloader_title: "オートローダー",
+  autoloader_description: "PS5 のヘルパーが準備完了になるたびに、プレイリストを自動実行します（初回セットアップ後または再接続後）。",
+  autoloader_pick: "プレイリストを選択…",
+  autoloader_enable: "有効化",
+  autoloader_warn_none: "オートローダーで実行するプレイリストを選択してください。",
+  autoloader_warn_empty: "選択したプレイリストにはまだステップがありません。",
+  upload_browse: "参照",
+  upload_browse_title: "ファイルまたはフォルダーを選択",
+  playlist_from_files: "ファイルから…",
+  playlist_from_files_title: "プレイリストを作成するペイロードを1つ以上選択",
+  playlist_drop_hint: "ペイロードを1つ以上ここにドラッグしてプレイリストを作成",
 };
 
 export default ja;

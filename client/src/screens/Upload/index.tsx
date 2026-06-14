@@ -46,11 +46,13 @@ import {
   type UploadStrategy,
 } from "../../state/transfer";
 import { useConnectionStore, PS5_PAYLOAD_PORT } from "../../state/connection";
+import { log } from "../../state/logs";
 import { hostOf } from "../../lib/addr";
 import { pushNotification } from "../../state/notifications";
 import { useRosterStore } from "../../state/roster";
 import { useNavigate } from "react-router-dom";
 import { PageHeader, WarningCard, Button, ConsoleChip } from "../../components";
+import { OverflowMenu } from "../../components/OverflowMenu";
 import FfpkgInspectorPanel from "./FfpkgInspectorPanel";
 import FolderDiffPanel from "./FolderDiffPanel";
 import { useUploadSettingsStore } from "../../state/uploadSettings";
@@ -218,24 +220,40 @@ export default function UploadScreen() {
   }, [pickFile, pickFolder]);
 
   const handleChooseFile = async () => {
-    // Android: the native dialog returns content:// URIs the engine
-    // can't read, so browse the real filesystem in-app instead.
-    const selected = isAndroid()
-      ? await pickLocalPath({ mode: "file" })
-      : await openDialog({ directory: false, multiple: false });
-    if (typeof selected !== "string") return;
-    // .pkg is handled as a first-class "pkg" source by pickFile (it becomes a
-    // queue item that uploads → installs → cleans up). No special redirect.
-    await pickFile(selected);
+    try {
+      // Android: the native dialog returns content:// URIs the engine
+      // can't read, so browse the real filesystem in-app instead.
+      const selected = isAndroid()
+        ? await pickLocalPath({ mode: "file" })
+        : await openDialog({ directory: false, multiple: false });
+      if (typeof selected !== "string") return;
+      // .pkg is handled as a first-class "pkg" source by pickFile (it becomes a
+      // queue item that uploads → installs → cleans up). No special redirect.
+      await pickFile(selected);
+    } catch (e) {
+      // A picker/dialog throw would otherwise surface only as an uncategorized
+      // unhandled rejection — log which gesture failed for the bug bundle.
+      log.warn(
+        "upload",
+        `file picker failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   };
 
   const handleChooseFolder = async () => {
-    // Android: directory:true is a no-op in plugin-dialog; use the
-    // in-app real-path browser so folder upload works.
-    const selected = isAndroid()
-      ? await pickLocalPath({ mode: "folder" })
-      : await openDialog({ directory: true, multiple: false });
-    if (typeof selected === "string") await pickFolder(selected);
+    try {
+      // Android: directory:true is a no-op in plugin-dialog; use the
+      // in-app real-path browser so folder upload works.
+      const selected = isAndroid()
+        ? await pickLocalPath({ mode: "folder" })
+        : await openDialog({ directory: true, multiple: false });
+      if (typeof selected === "string") await pickFolder(selected);
+    } catch (e) {
+      log.warn(
+        "upload",
+        `folder picker failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   };
 
   const host = useConnectionStore((s) => s.host);
@@ -611,15 +629,40 @@ function Step1Picker({
               undefined,
               "Pick a file or folder to upload",
             )
-          : tr("upload_drop_here", undefined, "Drop a file or folder here")}
+          : tr(
+              "upload_drop_here",
+              undefined,
+              "Drop a file or folder here — it's detected automatically",
+            )}
       </div>
       <div className="mt-4 flex items-center justify-center gap-2">
-        <Button variant="secondary" size="sm" onClick={onFile}>
-          {tr("upload_choose_file", undefined, "Choose file")}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={onFolder}>
-          {tr("upload_choose_folder", undefined, "Choose folder")}
-        </Button>
+        {/* One unified picker. Native OS dialogs can't offer "file or folder"
+            in a single prompt, so the menu splits them — but drag-drop above
+            needs no choice at all (it stats the path and auto-detects). */}
+        <OverflowMenu
+          align="left"
+          triggerVariant="secondary"
+          triggerLabel={tr("upload_browse", undefined, "Browse")}
+          triggerIcon={<FolderOpen size={14} />}
+          ariaLabel={tr("upload_browse", undefined, "Browse")}
+          buttonTitle={tr(
+            "upload_browse_title",
+            undefined,
+            "Pick a file or folder",
+          )}
+          items={[
+            {
+              label: tr("upload_choose_file", undefined, "Choose file"),
+              icon: <FileIcon size={14} />,
+              onSelect: onFile,
+            },
+            {
+              label: tr("upload_choose_folder", undefined, "Choose folder"),
+              icon: <FolderOpen size={14} />,
+              onSelect: onFolder,
+            },
+          ]}
+        />
       </div>
       <p className="mx-auto mt-3 max-w-md text-xs text-[var(--color-muted)]">
         {tr(

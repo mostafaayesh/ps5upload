@@ -47,6 +47,53 @@ export interface Playlist {
   lastRunAt?: number;
 }
 
+/**
+ * Auto-loader config: a single playlist that runs by itself whenever a
+ * console's helper payload becomes ready (cold boot, first-time-setup
+ * completion, or a reconnect after the helper had gone down). One global
+ * setting — the playlist runs against whichever console just came up.
+ *
+ * Opt-in: disabled by default, because auto-sending payloads the instant
+ * a PS5 appears is a surprising side effect unless the user asked for it.
+ * The trigger edge (helper went down → up) is what makes it fire once per
+ * reconnect rather than on every status poll; see AppShell's status poller.
+ */
+export interface AutoLoaderConfig {
+  enabled: boolean;
+  /** Id of the playlist to auto-run when the helper becomes ready (the
+   *  POST-helper chain — your usual apps/payloads). Null = none chosen. */
+  playlistId: string | null;
+  /** Id of the PRE-helper bring-up playlist (kernel-R/W payload, SMP, etc.)
+   *  that "Quick bring-up" runs against the loader before sending the helper.
+   *  Null = bring-up sends only the helper (no pre-helper chain). */
+  bringUpPlaylistId: string | null;
+}
+
+export const DEFAULT_AUTO_LOADER: AutoLoaderConfig = {
+  enabled: false,
+  playlistId: null,
+  bringUpPlaylistId: null,
+};
+
+/** Payload file extensions the loaders accept: .elf/.bin are the common
+ *  ELF loaders (port 9021); .js/.lua/.jar target the scripting loaders on
+ *  their own ports. Used to filter dropped/multi-selected files when
+ *  building a playlist so non-payloads — and .pkg installs, which go
+ *  through a different flow — are ignored. */
+export const PAYLOAD_EXTENSIONS = ["elf", "bin", "js", "lua", "jar"] as const;
+
+/** True if `path` ends in a known payload extension (case-insensitive).
+ *  Pure + extension-only: it never touches the filesystem, so a path that
+ *  doesn't exist still classifies by name (the send call surfaces a real
+ *  read error later if the file is missing). */
+export function isPayloadPath(path: string): boolean {
+  const m = /\.([a-z0-9]+)$/i.exec(path.trim());
+  if (!m) return false;
+  return (PAYLOAD_EXTENSIONS as readonly string[]).includes(
+    m[1].toLowerCase(),
+  );
+}
+
 export type PlaylistRunStatus =
   | { kind: "idle" }
   | { kind: "running"; playlistId: string; stepIndex: number; host: string }

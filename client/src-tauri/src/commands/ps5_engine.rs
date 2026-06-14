@@ -1457,6 +1457,10 @@ pub async fn pkg_install_start(
     package_type_override: Option<String>,
     local_ps5_path: Option<String>,
     content_id: Option<String>,
+    // The user's "Auto Delete after installation" preference. When false, the
+    // engine keeps the staged pkg instead of deleting it post-install. Optional
+    // so any caller that omits it gets the safe default (true) via serde.
+    delete_staging: Option<bool>,
 ) -> Result<JsonValue, String> {
     let url = format!("{}/api/pkg/install/start", engine::url());
     let body = serde_json::json!({
@@ -1466,6 +1470,7 @@ pub async fn pkg_install_start(
         "package_type_override": package_type_override,
         "local_ps5_path": local_ps5_path,
         "content_id": content_id,
+        "delete_staging": delete_staging.unwrap_or(true),
     });
     post_json(&url, &body).await
 }

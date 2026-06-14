@@ -4,6 +4,130 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 3.3.2
+
+A data-loss fix.
+
+- **"Auto Delete after installation" is now actually respected.** With it OFF,
+  an uploaded PKG was still being deleted after install — because the engine
+  always cleaned up the staged file regardless of the setting. It now keeps the
+  PKG when you ask it to. The same fix stops the File System → Install action
+  from deleting a PKG you point it at in place.
+- **Better install logging.** Bug reports now capture your Auto Install / Auto
+  Delete settings and log the exact install/delete decision for each PKG, so
+  issues like this are diagnosable without a repro.
+
+## 3.3.1
+
+A polish + fixes release.
+
+- **Hardware temperatures now show °F as well as °C** (e.g. `62°C / 144°F`).
+- **Bigger checkboxes.** Checkboxes everywhere (Settings included) were tiny;
+  they're now comfortably sized and accent-coloured, and larger still on touch.
+- **File System drive list is consistent.** `/data` used to look dimmer than
+  your USB/external drives; now every drive reads equally clearly, with just the
+  border + icon marking which is active/external/internal.
+- **Quieter PS5 kernel log.** The Hardware screen used to query `hw.physmem`,
+  which the PS5 rejects and logs as an error on every read. It now uses only
+  approved sources for the same RAM figure — no more log spam.
+- Fixed a handful of UI strings that weren't translatable.
+
+## 3.3.0
+
+A big feature release.
+
+- **Process manager (new Processes tab).** A live task-manager for your PS5:
+  see every running process with its memory and thread count, **Kill** anything,
+  or **Restart** a game (closes + relaunches it). User payloads and games show by
+  default; a toggle reveals system processes, and killing a system or game
+  process asks first. Hardware-verified.
+- **Quick bring-up.** One tap on the Connection screen runs your bring-up
+  payloads (kernel R/W, SMP), sends the helper, and waits until the PS5 is ready
+  — instead of sending each one by hand every boot. Configure the chain in
+  Payloads → Playlists.
+- **Auto-loader.** Pick a playlist that runs by itself whenever a PS5's helper
+  becomes ready (after first-time setup or a reconnect).
+- **Drag-and-drop payloads into a playlist.** Drag one or more payloads onto the
+  Playlists panel to build a playlist in one gesture (or "From files…").
+- **Unified file/folder picker.** The Upload screen's two buttons are now one
+  **Browse** menu, and drag-drop auto-detects file vs folder.
+- **Game art on the upload queue.** Queue rows now show the game's cover, name,
+  and PS4/PS5 badge so you can tell what's what at a glance.
+- **Faster Library.** Big libraries no longer lag on search and refresh —
+  rows are memoized, the list reconciles in place, search is debounced, and
+  thumbnails load as you scroll.
+- Plus a sweep of bug, logging, performance, and cross-platform fixes from a
+  multi-perspective review (kill/playlist failures now leave a trace in bug
+  reports, drag-drop hit-testing, process-poll throttling, and more).
+
+## 3.2.9
+
+- **Shutdown now fully powers off the PS5.** The Shutdown button was putting the
+  console into rest mode instead of turning it off, because the API it used
+  respects the system's rest-mode setting. It now does a true power-off (use the
+  separate **Rest mode** button if you want standby). Hardware-verified.
+
+## 3.2.8
+
+- **More large-Text-size layout fixes on the Payloads screen.** 3.2.6 fixed the
+  send form at the top; this fixes the rest. The payload catalog cards no
+  longer crush a payload's name to one letter per line, and playlist steps keep
+  the payload path visible instead of hiding it behind the controls. Verified
+  across a range of screen sizes and text scales.
+
+## 3.2.7
+
+- **Download files from mounted disc images.** Browsing a ShadowMount+ game
+  under `/mnt/shadowmnt` worked, but downloading a file from it (e.g.
+  `eboot.bin`) failed with "path not allowed". You can now read/download files
+  from mounted disc images.
+- **Preview SDR screenshots.** Consoles that save screenshots as `.jpg` (rather
+  than HDR `.jxr`) hit a "not a JPEG XR file" error on Preview. `.jpg`/`.png`
+  screenshots now preview and save directly; only HDR `.jxr` shots are
+  converted.
+
+## 3.2.6
+
+- **Properly fixed the Payloads "Send file" screen at large Text sizes.** The
+  previous attempt only fixed part of it — on some tablets (especially with a
+  bigger Text-size setting) the form still collapsed and the labels wrapped one
+  letter per line. The whole screen now reflows correctly at any text size and
+  window width. Verified across a range of phone, tablet, and desktop sizes.
+
+## 3.2.5
+
+A stability + bug-fix release from a round of user reports.
+
+**The helper is much better behaved.**
+
+- It no longer risks interfering with your *other* homebrew. A safety bug
+  could, after a reboot, target an unrelated tool you'd autoloaded (a cheat
+  loader, nanoDNS) when clearing a stale instance — it now only ever touches
+  an instance from the current boot session.
+- "Helper keeps dropping randomly" is fixed: the app no longer flips to
+  "Helper isn't running" on a single missed status check, and the helper
+  itself survives transient network hiccups instead of exiting.
+- Spurious "Delete failed" errors after installing a package (when
+  auto-delete is on) are gone — a file that's already gone or still briefly
+  in use is no longer treated as a hard error.
+
+**UI fixes.**
+
+- Deleting a PS5 in Manage PS5s now shows the confirmation dialog on top
+  instead of just dimming the background.
+- Larger Text-size settings no longer break the Payloads send screen
+  layout.
+- The Library no longer flickers a wall of placeholder rows during a scan.
+- Installed Apps gained an **Open folder** button (for homebrew/disc titles)
+  that jumps to the app's folder in the File System browser.
+
+**Payloads.**
+
+- Added **CheatRunner** to the catalog.
+- Added a **search box** to the payload catalog.
+- A payload source that's temporarily unreachable now shows a quiet note
+  instead of a loud error, so it no longer looks broken or removed.
+
 ## 3.2.4
 
 A big polish release built from real-user feedback and a full UI/UX pass.
