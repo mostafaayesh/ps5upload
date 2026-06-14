@@ -1149,6 +1149,11 @@ export async function webInvoke<T>(
     case "peripheral_usb_on":
       return undefined as T;
 
+    case "plugin:app|version": {
+      const ver = await getJson<{ version: string }>("/version");
+      return ver.version as T;
+    }
+
     case "proc_modules_get":
       return { modules: [] } as T;
 
