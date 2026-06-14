@@ -64,6 +64,28 @@ export function metaSourceForTitleId(titleId: string): MetaSource | null {
   return null;
 }
 
+/** Extract the PS title id (4 letters + 5 digits, e.g. PPSA01342 / CUSA12345)
+ *  from a ContentID like "EP4040-PPSA01342_00-DEADSPACEPS5BB00". Returns null
+ *  when the id has no recognizable title id (headerless pkg, empty string). */
+export function titleIdFromContentId(
+  contentId: string | null | undefined,
+): string | null {
+  if (!contentId) return null;
+  const m = /[A-Z]{4}\d{5}/.exec(contentId);
+  return m ? m[0] : null;
+}
+
+/** Map a title id to its console for a PlatformBadge: CUSA → ps4,
+ *  PPSA/PCSA → ps5. Null when the prefix isn't recognized. */
+export function platformForTitleId(
+  titleId: string | null | undefined,
+): "ps4" | "ps5" | null {
+  if (!titleId) return null;
+  if (titleId.startsWith("CUSA")) return "ps4";
+  if (titleId.startsWith("PPSA") || titleId.startsWith("PCSA")) return "ps5";
+  return null;
+}
+
 export interface TitleInfo {
   /** Display title scraped from the page's `<title>` tag (after
    *  stripping the "TITLEID: " prefix and " | sitename" suffix). */

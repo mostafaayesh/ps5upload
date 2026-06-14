@@ -16,8 +16,15 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../components";
+import { GameIcon } from "../../components/GameIcon";
+import { PlatformBadge } from "../../components/PlatformBadge";
 import { humanizeJobErrorReason } from "../../api/ps5";
 import { hostOf } from "../../lib/addr";
+import {
+  platformForTitleId,
+  titleIdFromContentId,
+} from "../../lib/titleDetails";
+import { useTitleInfo } from "../../lib/useTitleInfo";
 import { formatBytes, formatDuration } from "../../lib/format";
 import { MAX_AUTO_RECOVER_ATTEMPTS } from "../../lib/uploadRecovery";
 import { useTr } from "../../state/lang";
@@ -415,6 +422,23 @@ function QueueRow({
   onRemove: () => void;
 }) {
   const tr = useTr();
+  // Game identity for the row — so you can tell what's what at a glance.
+  // pkg: title id parsed out of the ContentID drives the cover (appmeta/CDN)
+  // and the PS4/PS5 badge. game-folder: the folder's own sce_sys/icon0.png.
+  // Other kinds (plain file, archive, image) have no game art, so no thumb.
+  const titleId =
+    item.sourceKind === "pkg"
+      ? titleIdFromContentId(item.contentId)
+      : null;
+  const titleInfo = useTitleInfo(titleId);
+  const platform = platformForTitleId(titleId);
+  const hasGameArt =
+    item.sourceKind === "pkg" || item.sourceKind === "game-folder";
+  // Prefer the resolved/online title over the raw basename for pkgs.
+  const rowName =
+    (item.sourceKind === "pkg" &&
+      (item.installedTitle || titleInfo?.title)) ||
+    item.displayName;
   const pct =
     item.totalBytes > 0
       ? Math.max(0, Math.min(100, (item.bytesSent / item.totalBytes) * 100))
@@ -462,8 +486,22 @@ function QueueRow({
     >
       <div className="flex items-start gap-3">
         <StatusIcon status={item.status} />
+        {hasGameArt && (
+          <GameIcon
+            host={hostOf(item.addr)}
+            size={40}
+            titleId={titleId}
+            gamePath={
+              item.sourceKind === "game-folder" ? item.sourcePath : null
+            }
+            fallbackSrc={titleInfo?.coverImageUrl ?? null}
+          />
+        )}
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium">{item.displayName}</div>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-medium">{rowName}</span>
+            {platform && <PlatformBadge platform={platform} />}
+          </div>
           <div className="mt-0.5 truncate font-mono text-xs text-[var(--color-muted)]">
             → {item.resolvedDest}
           </div>
