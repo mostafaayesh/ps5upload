@@ -11,6 +11,7 @@ vi.mock("../api/ps5", () => ({
   fsMkdir: vi.fn(async () => {}),
 }));
 
+import { invoke } from "@tauri-apps/api/core";
 import { fsDelete, fsListDir } from "../api/ps5";
 import {
   titleIdFromContentId,
@@ -20,6 +21,7 @@ import {
   isFinishedPkg,
   pkgInstallMayNotLaunch,
   installedLastResult,
+  runPkgInstall,
   PKG_MAY_NOT_LAUNCH_MESSAGE,
   type PkgEntry,
 } from "./pkgLibrary";
@@ -137,6 +139,44 @@ describe("pkgInstallMayNotLaunch", () => {
     expect(
       pkgInstallMayNotLaunch({ register_path: "appinst-local", launchable: null }),
     ).toBe(true);
+  });
+});
+
+// ── delete_staging threading (the Auto-Delete data-loss fix) ────────────────
+//
+// runPkgInstall MUST forward the caller's delete-staging intent to the engine
+// (pkg_install_start). Before the fix the engine always deleted the uploaded
+// pkg regardless; the regression we're guarding is "Auto Delete off but the pkg
+// was deleted anyway". We make pkg_install_start return no session_id so the
+// post-install verify short-circuits (no polling), keeping the test fast.
+describe("runPkgInstall — forwards deleteStaging to the engine", () => {
+  const mockedInvoke = vi.mocked(invoke);
+
+  beforeEach(() => {
+    mockedInvoke.mockReset();
+    mockedInvoke.mockImplementation(async (cmd: unknown) => {
+      if (cmd === "pkg_install_start") {
+        // err_code 0 + no session_id ⇒ accepted, verify skipped → installed.
+        return { err_code: 0, register_path: "shellui-rpc" };
+      }
+      return {};
+    });
+  });
+
+  const startArgs = () =>
+    mockedInvoke.mock.calls.find((c) => c[0] === "pkg_install_start")?.[1] as
+      | { deleteStaging?: boolean }
+      | undefined;
+
+  it("passes deleteStaging=false → engine KEEPS the pkg (Auto Delete off)", async () => {
+    const r = await runPkgInstall("192.168.1.50", "/user/data/x.pkg", "CID", false);
+    expect(r.installed).toBe(true);
+    expect(startArgs()?.deleteStaging).toBe(false);
+  });
+
+  it("passes deleteStaging=true → engine cleans the pkg (Auto Delete on)", async () => {
+    await runPkgInstall("192.168.1.50", "/user/data/x.pkg", "CID", true);
+    expect(startArgs()?.deleteStaging).toBe(true);
   });
 });
 

@@ -44,6 +44,7 @@ import { useRecentHostMetricsStore } from "./recentHostMetrics";
 import { pushNotification } from "./notifications";
 import { withConsolePrefix } from "./roster";
 import { hostOf, mgmtAddr } from "../lib/addr";
+import { log } from "./logs";
 import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
 import { effectiveUploadStreams } from "../lib/uploadStreams";
 import {
@@ -601,6 +602,18 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
         // ONE unit, alongside every other upload in the same queue.
         let installPhase: QueueItem["installPhase"] = undefined;
         let installedTitle: string | null = null;
+        // Record the post-upload decision for EVERY pkg (install or not), so a
+        // "it installed/deleted even though I turned that off" report shows the
+        // exact flags this item carried — captured from the settings at add
+        // time. Without this the decision was invisible in bug bundles.
+        if (isLive() && item.sourceKind === "pkg") {
+          log.info(
+            "install",
+            `pkg "${item.displayName}" uploaded — auto-install=${
+              item.installAfterUpload !== false
+            }, auto-delete=${item.deletePkgAfterInstall !== false}`,
+          );
+        }
         if (
           isLive() &&
           item.sourceKind === "pkg" &&

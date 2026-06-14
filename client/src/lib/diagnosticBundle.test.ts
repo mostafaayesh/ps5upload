@@ -65,6 +65,15 @@ describe("buildDiagnosticBundle (crash-report enrichment)", () => {
     expect(b.trigger).toBeNull();
   });
 
+  it("captures the install-settings snapshot (the Auto Install/Delete report gap)", () => {
+    // These were missing from bundles, which made the Titanfall/Guardians
+    // "it installed/deleted with the toggle off" report unanswerable.
+    const b = buildDiagnosticBundle({ appVersion: "1.0.0", redact: true });
+    expect(b.settings).toBeTruthy();
+    expect(typeof b.settings.auto_install_after_upload).toBe("boolean");
+    expect(typeof b.settings.auto_remove_after_install).toBe("boolean");
+  });
+
   it("honours logLimit (crash reports keep more context)", () => {
     const big = buildDiagnosticBundle({
       appVersion: "1.0.0",

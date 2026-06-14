@@ -16,6 +16,7 @@ import { ensurePayloadCurrent } from "../lib/ensurePayloadCurrent";
 import { transferScreenBusy } from "../lib/ps5Transfers";
 import { useInstallSettingsStore } from "./installSettings";
 import { useConnectionStore } from "./connection";
+import { log } from "./logs";
 import { parsePS5Firmware } from "../lib/ps5Firmware";
 
 /**
@@ -815,8 +816,18 @@ const makePkgLibraryStore = () =>
       // installed → staged copy removed" becomes one action. It never throws
       // (try/finally inside), so awaiting it here is safe; the caller already
       // treats addAndUpload as fire-and-forget.
-      if (useInstallSettingsStore.getState().autoInstallAfterUpload) {
-        await get().install(destPath, host);
+      {
+        const s = useInstallSettingsStore.getState();
+        // Log the post-upload decision (install or not) with the settings that
+        // drove it, so a "it auto-installed/deleted even though I disabled that"
+        // report is answerable from the bundle alone.
+        log.info(
+          "install",
+          `staged pkg uploaded: ${destPath} — auto-install=${s.autoInstallAfterUpload}, auto-delete=${s.autoRemoveAfterInstall}`,
+        );
+        if (s.autoInstallAfterUpload) {
+          await get().install(destPath, host);
+        }
       }
     } catch (e) {
       // Drop the optimistic row and surface the error.
@@ -906,9 +917,17 @@ const makePkgLibraryStore = () =>
         // Optional: auto-delete the spent staged .pkg so the library
         // doesn't accumulate installed packages. Best-effort + awaited so
         // the row vanishes deterministically; remove() swallows its own
-        // errors (surfaces via store.error, never throws here).
-        if (useInstallSettingsStore.getState().autoRemoveAfterInstall) {
+        // errors (surfaces via store.error, never throws here). The ENGINE
+        // already cleaned the staged file (delete_staging=autoRemove), so this
+        // mainly drops the library ROW; logged so the deletion is traceable.
+        if (autoRemove) {
+          log.info("install", `auto-deleting staged pkg after install: ${path}`);
           await get().remove(path, host);
+        } else {
+          log.info(
+            "install",
+            `keeping staged pkg after install (auto-delete off): ${path}`,
+          );
         }
       } else {
         patch({
