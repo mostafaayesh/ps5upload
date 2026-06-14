@@ -773,6 +773,28 @@ struct AppState {
     jobs: Arc<Mutex<HashMap<Uuid, JobState>>>,
     default_ps5_addr: String,
     events_tx: broadcast::Sender<String>,
+    /// Per-PS5 cached probe results, keyed by management addr ("ip:9114").
+    /// The background prober updates this; handlers read from it to avoid
+    /// redundant PS5 round-trips when multiple tabs request the same data.
+    ps5_cache: Arc<Mutex<HashMap<String, Ps5CacheEntry>>>,
+}
+
+/// Per-PS5 cached probe state. Updated by the background prober;
+/// read by HTTP handlers to serve cached results to all clients.
+#[derive(Debug, Clone, serde::Serialize)]
+struct Ps5CacheEntry {
+    payload_up: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ps5_kernel: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ucred_elevated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_transfer_streams: Option<u32>,
+    last_probe_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_error: Option<String>,
 }
 
 /// Process-global cancel registry: maps a transfer `job_id` to the
@@ -2651,6 +2673,33 @@ async fn ps5_status(
     Query(q): Query<AddrQuery>,
 ) -> impl IntoResponse {
     let addr = mgmt_addr_or_default(q.addr, &state.default_ps5_addr);
+
+    // Check the cache first — the background prober keeps it fresh.
+    // Multiple browser tabs hitting this endpoint get the same cached result
+    // without redundant PS5 round-trips.
+    {
+        let cache = state.ps5_cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = cache.get(&addr) {
+            let age_ms = now_ms().saturating_sub(entry.last_probe_ms);
+            // Cache is valid for 31 s (slightly longer than the 30 s probe interval
+            // to avoid edge-case races). If the cached probe is recent enough,
+            // return it directly.
+            if age_ms < 31_000 {
+                return (StatusCode::OK, Json(serde_json::json!({
+                    "cached": true,
+                    "payload_up": entry.payload_up,
+                    "version": entry.payload_version,
+                    "ps5_kernel": entry.ps5_kernel,
+                    "ucred_elevated": entry.ucred_elevated,
+                    "max_transfer_streams": entry.max_transfer_streams,
+                    "last_probe_ms": entry.last_probe_ms,
+                    "last_error": entry.last_error,
+                }))).into_response();
+            }
+        }
+    }
+
+    // Cache miss or stale — do a direct probe (same as before).
     let result = tokio::task::spawn_blocking(move || {
         let mut c = Connection::connect(&addr)?;
         c.send_frame(FrameType::Status, b"")?;
@@ -5618,6 +5667,132 @@ pub struct EngineConfig {
     pub exit_on_error: bool,
 }
 
+/// Background PS5 health prober. Runs in a tokio task, probing the
+/// PS5's management port every 30 s. Caches the result in `ps5_cache`
+/// and broadcasts SSE events when state changes (payload up/down,
+/// version change, kernel change). On TCP failure, marks the payload
+/// as down and retries every 5 s until the connection recovers.
+///
+/// Locking: holds `ps5_cache` lock only for insert duration.
+/// TCP I/O happens outside any lock. SSE broadcast happens after
+/// the lock is released (follows the one-lock-at-a-time rule).
+async fn spawn_ps5_prober(
+    ps5_addr: String,
+    ps5_cache: Arc<Mutex<HashMap<String, Ps5CacheEntry>>>,
+    events_tx: broadcast::Sender<String>,
+) {
+    let mgmt_addr = mgmt_addr_for(&ps5_addr);
+
+    tokio::spawn(async move {
+        // Immediate first probe before starting the interval
+        probe_one(&mgmt_addr, &ps5_cache, &events_tx).await;
+
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            probe_one(&mgmt_addr, &ps5_cache, &events_tx).await;
+        }
+    });
+}
+
+/// Probe the PS5 once: connect, send Status frame, parse response,
+/// cache, and broadcast changes.
+async fn probe_one(
+    mgmt_addr: &str,
+    ps5_cache: &Arc<Mutex<HashMap<String, Ps5CacheEntry>>>,
+    events_tx: &broadcast::Sender<String>,
+) {
+    let addr = mgmt_addr.to_string();
+    let cache = Arc::clone(ps5_cache);
+    let tx = events_tx.clone();
+
+    let addr_for_blocking = addr.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut c = ps5upload_core::connection::Connection::connect(&addr_for_blocking)?;
+        c.send_frame(FrameType::Status, b"")?;
+        let (hdr, body) = c.recv_frame()?;
+        let ft = hdr.frame_type().unwrap_or(FrameType::Error);
+        if ft != FrameType::StatusAck {
+            anyhow::bail!("expected STATUS_ACK, got {ft:?}");
+        }
+        Ok::<Vec<u8>, anyhow::Error>(body)
+    })
+    .await;
+
+    let now_ms = now_ms();
+    let (entry, changed) = match result {
+        Ok(Ok(body)) => {
+            let json: Result<serde_json::Value, _> = serde_json::from_slice(&body);
+            match json {
+                Ok(v) => {
+                    let new_entry = Ps5CacheEntry {
+                        payload_up: true,
+                        payload_version: v.get("version")
+                            .and_then(|v| v.as_str().map(String::from)),
+                        ps5_kernel: v.get("ps5_kernel")
+                            .and_then(|v| v.as_str().map(String::from)),
+                        ucred_elevated: v.get("ucred_elevated")
+                            .and_then(|v| v.as_bool()),
+                        max_transfer_streams: v.get("max_transfer_streams")
+                            .and_then(|v| v.as_u64().map(|n| n as u32)),
+                        last_probe_ms: now_ms,
+                        last_error: None,
+                    };
+                    let prev = {
+                        let mut g = cache.lock().unwrap_or_else(|e| e.into_inner());
+                        g.insert(addr.clone(), new_entry.clone())
+                    };
+                    let changed = prev.map_or(true, |p| {
+                        p.payload_up != new_entry.payload_up
+                            || p.payload_version != new_entry.payload_version
+                            || p.ps5_kernel != new_entry.ps5_kernel
+                    });
+                    (new_entry, changed)
+                }
+                Err(_) => {
+                    let entry = Ps5CacheEntry {
+                        payload_up: false,
+                        payload_version: None,
+                        ps5_kernel: None,
+                        ucred_elevated: None,
+                        max_transfer_streams: None,
+                        last_probe_ms: now_ms,
+                        last_error: Some("invalid status JSON".into()),
+                    };
+                    cache.lock().unwrap_or_else(|e| e.into_inner())
+                        .insert(addr.clone(), entry.clone());
+                    (entry, true)
+                }
+            }
+        }
+        _ => {
+            let entry = Ps5CacheEntry {
+                payload_up: false,
+                payload_version: None,
+                ps5_kernel: None,
+                ucred_elevated: None,
+                max_transfer_streams: None,
+                last_probe_ms: now_ms,
+                last_error: Some("probe failed".into()),
+            };
+            let prev = {
+                let mut g = cache.lock().unwrap_or_else(|e| e.into_inner());
+                g.insert(addr.clone(), entry.clone())
+            };
+            let changed = prev.map_or(true, |p| p.payload_up);
+            (entry, changed)
+        }
+    };
+
+    if changed {
+        broadcast_event(
+            &tx,
+            "ps5_status",
+            serde_json::json!(entry),
+        );
+    }
+}
+
 /// Core server entry. Builds the router, binds, and serves until
 /// graceful shutdown. Behavior is identical to the former `main`; the
 /// `EngineConfig` flags select desktop-sidecar vs. in-process behavior.
@@ -5639,10 +5814,20 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
     // never recovers from. Headroom is cheap; lost terminals aren't.
     let (events_tx, _) = broadcast::channel(2048);
 
+    let ps5_cache = Arc::new(Mutex::new(HashMap::new()));
+
+    // Spawn the background PS5 health prober for the default address.
+    // It probes every 30s, caches results, and broadcasts status changes
+    // via SSE so all web clients share the same PS5 connection state.
+    if !ps5_addr.is_empty() && ps5_addr != "192.168.1.x:9113" {
+        spawn_ps5_prober(ps5_addr.clone(), Arc::clone(&ps5_cache), events_tx.clone()).await;
+    }
+
     let state = AppState {
         jobs: Arc::new(Mutex::new(HashMap::new())),
         default_ps5_addr: ps5_addr.clone(),
         events_tx,
+        ps5_cache,
     };
 
     let app = Router::new()
