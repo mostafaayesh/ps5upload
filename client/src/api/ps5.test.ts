@@ -5,6 +5,9 @@ import { searchPS5 } from "./ps5";
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
+vi.mock("../lib/tauriEnv", () => ({
+  isTauriEnv: () => true,
+}));
 
 const mockedInvoke = vi.mocked(invoke);
 

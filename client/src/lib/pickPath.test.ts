@@ -9,6 +9,7 @@ const { mockIsAndroid, mockPickLocal, mockOpenDialog } = vi.hoisted(() => ({
 }));
 
 vi.mock("./platform", () => ({ isAndroid: () => mockIsAndroid() }));
+vi.mock("./tauriEnv", () => ({ isTauriEnv: () => true }));
 vi.mock("../state/localPicker", () => ({
   pickLocalPath: (...a: unknown[]) => mockPickLocal(...a),
 }));
