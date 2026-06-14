@@ -6459,7 +6459,7 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         .route("/api/activity", get(get_activity).post(post_activity))
         .route("/api/notifications", get(get_notifications).post(post_notification))
         // Generic collaborative document store (schedules, roster, pkgLibrary, …)
-        .route("/api/store/:key", get(get_store_key).put(put_store_key))
+        .route("/api/store/{key}", get(get_store_key).put(put_store_key))
         // Durable resume tx-id store (replaces per-browser localStorage)
         .route("/api/resume-txid/lookup", post(resume_txid_lookup))
         .route("/api/resume-txid/remember", post(resume_txid_remember))
