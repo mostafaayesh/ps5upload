@@ -6,8 +6,8 @@
  * and firing simulated SSE events, then asserting store state.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { onJobState, onEngineEvent } from "../lib/engineEvents";
+import { describe, it, expect, beforeEach } from "vitest";
+import { onJobState } from "../lib/engineEvents";
 import { useTransferStore } from "../state/transfer";
 import { useConnectionStore } from "../state/connection";
 import { useUploadQueueStore, type QueueItem } from "../state/uploadQueue";
@@ -26,7 +26,7 @@ function resetStores(): void {
   useUploadQueueStore.setState({
     items: [],
     running: false,
-    runningHosts: new Set(),
+    runningHosts: new Set() as unknown as Record<string, boolean>,
     loaded: false,
     continueOnFailure: false,
   });
@@ -130,23 +130,14 @@ describe("useEngineSync callback logic", () => {
             skippedFiles: 0,
             skippedBytes: 0,
             filesFinalized: 0,
-          } as import("../state/transfer").TransferPhase,
+            filesFinalizingTotal: 0,
+            bytesFinalized: 0,
+          } as unknown as import("../state/transfer").TransferPhase,
         },
       });
 
       const unsub = simulateUseEngineSyncJobCallback();
 
-      // Fire progress event via engineEvents dispatch
-      // (We need to go through the actual dispatch path)
-      // Since engineEvents auto-connects EventSource which we can't mock per-test,
-      // let's directly call the registered callback.
-      // The callback was captured by onJobState — fire it manually.
-      const capturedCb = (onJobState as ReturnType<typeof vi.fn>).mock?.calls?.[0]?.[0];
-      // Actually onJobState is the real function — it stores the callback in a Set.
-      // We can't extract it. Let's test differently: fire through the dispatch chain.
-
-      // Alternative: instead of testing through engineEvents, test the store
-      // update logic directly by calling setState with what the SSE handler would do.
       const store = useTransferStore.getState();
       const prev = store.phasesByHost["192.168.1.50"];
       if (prev && prev.kind === "running") {
@@ -187,7 +178,9 @@ describe("useEngineSync callback logic", () => {
             skippedFiles: 0,
             skippedBytes: 0,
             filesFinalized: 0,
-          } as import("../state/transfer").TransferPhase,
+            filesFinalizingTotal: 0,
+            bytesFinalized: 0,
+          } as unknown as import("../state/transfer").TransferPhase,
         },
       });
 
@@ -228,7 +221,9 @@ describe("useEngineSync callback logic", () => {
             skippedFiles: 0,
             skippedBytes: 0,
             filesFinalized: 0,
-          } as import("../state/transfer").TransferPhase,
+            filesFinalizingTotal: 0,
+            bytesFinalized: 0,
+          } as unknown as import("../state/transfer").TransferPhase,
         },
       });
 

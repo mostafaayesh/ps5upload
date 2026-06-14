@@ -38,7 +38,7 @@ vi.stubGlobal("EventSource", MockEventSource);
 // auto-connects on import. Use vi.hoisted for the mock and
 // dynamic import in beforeEach.
 
-let engineEvents: typeof import("../src/lib/engineEvents");
+let engineEvents: typeof import("./engineEvents");
 
 async function loadModule() {
   // Reset the module registry to get a fresh import

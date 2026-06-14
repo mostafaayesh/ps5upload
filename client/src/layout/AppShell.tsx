@@ -23,6 +23,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isTauriEnv, safeUnlisten } from "../lib/tauriEnv";
 import { useDocumentVisible } from "../lib/visibility";
 import { useScheduleRunner } from "../state/schedules";
+import { useEngineSync } from "../hooks/useEngineSync";
 import {
   pushNotification,
   runNotificationAutoPrune,
@@ -542,6 +543,7 @@ function AndroidStorageAccessBanner() {
 }
 
 export default function AppShell() {
+  useEngineSync(); // SSE job state → stores (shared-state Phase 1)
   useStatusPolling();
   useUpdateCheckOnMount();
   useKeepPs5Awake();
