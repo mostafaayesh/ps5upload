@@ -419,6 +419,11 @@ export async function runPkgInstall(
   host: string,
   localPs5Path: string,
   contentId: string | null,
+  // The user's "Auto Delete after installation" preference. When false, the
+  // engine KEEPS the staged pkg after install instead of deleting it. This is
+  // the single source of truth for staging deletion now — previously the engine
+  // always deleted, ignoring the setting (the reported data-loss bug).
+  deleteStaging: boolean,
 ): Promise<PkgInstallOutcome> {
   const ip = hostOf(host);
   let installed = false;
@@ -439,6 +444,7 @@ export async function runPkgInstall(
       packageTypeOverride: null,
       localPs5Path,
       contentId: contentId || null,
+      deleteStaging,
     })) as {
       err_code?: number;
       register_path?: string;
@@ -887,8 +893,13 @@ const makePkgLibraryStore = () =>
       // the shared `runPkgInstall` helper (also used by the upload queue's pkg
       // finisher), so the mechanism stays identical across both surfaces.
       const entry = get().entries.find((e) => e.path === path);
+      // delete_staging = the user's Auto Delete preference: the engine keeps
+      // the uploaded pkg when this is off (the separate client-side remove()
+      // below is also gated on the same setting, so OFF means truly kept).
+      const autoRemove =
+        useInstallSettingsStore.getState().autoRemoveAfterInstall;
       const { installed, mayNotLaunch, errMessage: mainErr } =
-        await runPkgInstall(host, path, entry?.contentId || null);
+        await runPkgInstall(host, path, entry?.contentId || null, autoRemove);
 
       if (installed) {
         patch({ status: "idle", lastResult: installedLastResult(mayNotLaunch) });
@@ -965,11 +976,14 @@ const makePkgLibraryStore = () =>
       }
       set({ busyNotice: null });
 
-      // 2. Install from the internal copy via the shared cascade.
+      // 2. Install from the internal copy via the shared cascade. The internal
+      //    copy is a TRANSIENT staging file (the user's USB/external original is
+      //    untouched), so always clean it — deleteStaging: true.
       const { installed, mayNotLaunch, errMessage } = await runPkgInstall(
         host,
         internalPath,
         pkg.contentId || null,
+        true,
       );
 
       // 3. Clean up the transient copy regardless of outcome.
@@ -1024,10 +1038,14 @@ const makePkgLibraryStore = () =>
         }
       }
       set({ busyNotice: `Installing ${name}…` });
+      // In-place install of a pkg the user pointed at on the console's disk
+      // (e.g. from the File System browser). It's THEIR file at THEIR path, not
+      // a staging copy we made — never delete it. deleteStaging: false.
       const { installed, mayNotLaunch, errMessage } = await runPkgInstall(
         host,
         path,
         null,
+        false,
       );
       return installed
         ? { ok: true, mayNotLaunch }

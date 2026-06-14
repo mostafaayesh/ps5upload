@@ -614,10 +614,14 @@ export const useUploadQueueStore = create<QueueState>((set, get) => {
           const pkgStore = pkgLibraryStore(item.addr);
           pkgStore.setState({ installing: true });
           try {
+            // delete_staging = the per-item Auto Delete preference (captured
+            // from the setting at queue-add time). When off, the engine keeps
+            // the uploaded pkg instead of deleting it post-install.
             const r = await runPkgInstall(
               item.addr,
               finalDest,
               item.contentId ?? null,
+              item.deletePkgAfterInstall !== false,
             );
             if (r.installed) {
               installPhase = r.mayNotLaunch ? "warn" : "done";

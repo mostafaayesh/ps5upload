@@ -257,6 +257,19 @@ pub struct InstallStartRequest {
     /// pkg itself, so an empty value still installs.
     #[serde(default)]
     pub content_id: Option<String>,
+    /// Whether to DELETE the staged `local_ps5_path` pkg after the install
+    /// reaches a terminal phase (the "Tier-1 staging cleanup"). This is the
+    /// user's "Auto Delete after installation" preference. Defaults TRUE for
+    /// backward-compatibility (older clients that don't send it keep the old
+    /// always-clean behaviour), but the current client always sends the real
+    /// setting — so "Auto Delete off" now actually KEEPS the uploaded pkg
+    /// instead of the engine silently deleting it regardless.
+    #[serde(default = "default_true")]
+    pub delete_staging: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize)]
@@ -389,7 +402,15 @@ async fn install_start_handler(
         detail: String::new(),
         cancelled: false,
         created_at_unix: now_unix(),
-        staging_path: req.local_ps5_path.clone().filter(|s| !s.is_empty()),
+        // Only record a staging_path (which the terminal-phase handler then
+        // deletes) when the caller asked us to clean up. With delete_staging
+        // == false, staging_path stays None and the uploaded pkg is KEPT —
+        // honouring the user's "Auto Delete after installation" = off.
+        staging_path: if req.delete_staging {
+            req.local_ps5_path.clone().filter(|s| !s.is_empty())
+        } else {
+            None
+        },
         terminal_status: None,
         verify_started_unix: None,
         launchable: None,
