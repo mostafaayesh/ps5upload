@@ -24,7 +24,7 @@ use ps5upload_core::connection::Connection;
 use ps5upload_core::diagnostics::shell_run;
 use ps5upload_core::fs_ops::{app_launch, app_list_registered, app_register, app_unregister};
 use ps5upload_core::hash_shard;
-use ps5upload_core::hw::{hw_info, hw_temps};
+use ps5upload_core::hw::{hw_info, hw_temps, syslog_tail};
 use ps5upload_core::saves::list_saves;
 use ps5upload_core::transfer::{
     inspect_zip, transfer_dir, transfer_file, transfer_zip, TransferConfig,
@@ -707,6 +707,10 @@ fn main() -> Result<()> {
         // kernel-R/W path that must serialize against installs. Used to stress
         // the kernel_rw_lock concurrently from many connections.
         "hw-info" => do_hw_info(addr),
+        "syslog" => {
+            print!("{}", syslog_tail(addr)?);
+            Ok(())
+        }
         // power <tick|standby|reboot|shutdown>: drives the SystemControl
         // mgmt frame. `tick` (sceSystemServicePowerTick) is the keep-awake
         // primitive — non-destructive, resets the console's auto-standby
