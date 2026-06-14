@@ -1155,6 +1155,28 @@ export async function webInvoke<T>(
     case "proc_list_get":
       return { ok: true, procs: [] } as T;
 
+    case "process_list_get": {
+      // Engine returns ProcList { ok, procs: [{pid, name}], truncated }
+      // Client expects ProcessListResult { processes: ProcessInfo[], truncated }
+      const raw = await getJson<{ ok: boolean; procs: { pid: number; name: string }[]; truncated: boolean }>(
+        "/ps5/proc/list",
+        { addr: req.addr },
+      );
+      return {
+        processes: (raw.procs ?? []).map((p) => ({
+          pid: p.pid,
+          name: p.name,
+          comm: p.name,
+          title_id: "",
+          app_id: 0,
+          memory_mib: 0,
+          threads: 0,
+          kind: "system" as const,
+        })),
+        truncated: raw.truncated ?? false,
+      } as T;
+    }
+
     case "crc32_file_get":
       return { crc32: 0 } as T;
 
