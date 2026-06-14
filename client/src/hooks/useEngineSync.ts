@@ -195,6 +195,18 @@ export function useEngineSync(): void {
           detail: (event as { data: unknown }).data,
         }));
       }
+
+      if (event.type === "activity") {
+        window.dispatchEvent(new CustomEvent("ps5upload:activity", {
+          detail: (event as { data: unknown }).data,
+        }));
+      }
+
+      if (event.type === "notification") {
+        window.dispatchEvent(new CustomEvent("ps5upload:notification", {
+          detail: (event as { data: unknown }).data,
+        }));
+      }
     });
 
     return () => {

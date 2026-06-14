@@ -784,6 +784,10 @@ struct AppState {
     payload_playlists: Arc<Mutex<serde_json::Value>>,
     /// Shared user config — replaces per-browser localStorage.
     user_config: Arc<Mutex<serde_json::Value>>,
+    /// Shared activity log — capped ring buffer (max 256 entries).
+    activity_log: Arc<Mutex<Vec<serde_json::Value>>>,
+    /// Shared notifications — capped ring buffer (max 64 entries).
+    notifications: Arc<Mutex<Vec<serde_json::Value>>>,
 }
 
 /// Per-PS5 cached probe state. Updated by the background prober;
@@ -5545,6 +5549,60 @@ async fn put_config(
     (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
 }
 
+const MAX_ACTIVITY_ENTRIES: usize = 256;
+const MAX_NOTIFICATION_ENTRIES: usize = 64;
+
+/// GET /api/activity — return the shared activity log.
+async fn get_activity(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let g = state.activity_log.lock().unwrap_or_else(|e| e.into_inner());
+    (StatusCode::OK, Json(serde_json::json!(g.clone()))).into_response()
+}
+
+/// POST /api/activity — append an entry to the shared activity log.
+/// Broadcasts an `activity` SSE event so all clients see the new entry.
+async fn post_activity(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    {
+        let mut g = state.activity_log.lock().unwrap_or_else(|e| e.into_inner());
+        g.push(body.clone());
+        if g.len() > MAX_ACTIVITY_ENTRIES {
+            let excess = g.len() - MAX_ACTIVITY_ENTRIES;
+            g.drain(..excess);
+        }
+    }
+    broadcast_event(&state.events_tx, "activity", body);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}
+
+/// GET /api/notifications — return the shared notifications.
+async fn get_notifications(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let g = state.notifications.lock().unwrap_or_else(|e| e.into_inner());
+    (StatusCode::OK, Json(serde_json::json!(g.clone()))).into_response()
+}
+
+/// POST /api/notifications — append a notification.
+async fn post_notification(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    {
+        let mut g = state.notifications.lock().unwrap_or_else(|e| e.into_inner());
+        g.push(body.clone());
+        if g.len() > MAX_NOTIFICATION_ENTRIES {
+            let excess = g.len() - MAX_NOTIFICATION_ENTRIES;
+            g.drain(..excess);
+        }
+    }
+    broadcast_event(&state.events_tx, "notification", body);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}
+
 /// GET /api/version — engine self-identification.
 ///
 /// Returned shape: `{"version": "x.y.z"}`. Used by the Tauri shell
@@ -5904,6 +5962,8 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         upload_queue: Arc::new(Mutex::new(serde_json::json!({"items": [], "continueOnFailure": false}))),
         payload_playlists: Arc::new(Mutex::new(serde_json::json!({"playlists": []}))),
         user_config: Arc::new(Mutex::new(serde_json::json!({}))),
+        activity_log: Arc::new(Mutex::new(Vec::new())),
+        notifications: Arc::new(Mutex::new(Vec::new())),
     };
 
     let app = Router::new()
@@ -5999,6 +6059,8 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         .route("/api/queue", get(get_upload_queue).put(put_upload_queue))
         .route("/api/playlists", get(get_playlists).put(put_playlists))
         .route("/api/config", get(get_config).put(put_config))
+        .route("/api/activity", get(get_activity).post(post_activity))
+        .route("/api/notifications", get(get_notifications).post(post_notification))
         .with_state(state)
         // .pkg install — sessions live in their own state because the
         // HTTP-host serving handler needs Mutex-guarded session lookup
