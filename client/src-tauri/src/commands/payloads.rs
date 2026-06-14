@@ -1073,9 +1073,7 @@ pub async fn payloads_releases(
         if let Some((releases, age)) = read_cached_releases(&cache_path, false) {
             return Ok(releases
                 .iter()
-                .map(|r| {
-                    release_to_info_with_refresh_error(entry, r, age, Some(reason.clone()))
-                })
+                .map(|r| release_to_info_with_refresh_error(entry, r, age, Some(reason.clone())))
                 .collect());
         }
         Err(reason)

@@ -10,7 +10,7 @@ import {
   AlertTriangle,
   Activity as ActivityIcon,
 } from "lucide-react";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { openExternalUrl as openExternal } from "../../lib/openExternalUrl";
 import { useConnectionStore } from "../../state/connection";
 import { pushNotification } from "../../state/notifications";
 import { withConsolePrefix } from "../../state/roster";

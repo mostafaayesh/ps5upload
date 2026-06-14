@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
 
+import { openExternalUrl } from "../lib/openExternalUrl";
 import {
   updateCheck,
   updateDownload,
@@ -279,18 +279,19 @@ export const useUpdateStore = create<UpdateStore>((set, get) => {
       // from there. Phase stays `available` so the button remains usable.
       if (isMobile()) {
         const target = result.download_url || RELEASES_URL;
-        try {
-          await openExternal(target);
-          set({ phase: { kind: "available", result } });
-        } catch (e) {
-          set({
-            phase: {
-              kind: "download-failed",
-              result,
-              message: e instanceof Error ? e.message : String(e),
-            },
-          });
-        }
+        const ok = await openExternalUrl(target);
+        set({
+          phase: ok
+            ? { kind: "available", result }
+            : {
+                kind: "download-failed",
+                result,
+                // openExternalUrl already logged the underlying error; give the
+                // user an actionable message + the in-panel browser button.
+                message:
+                  "Couldn't open the download link. Tap “Get APK in browser”, or grab it from the GitHub releases page.",
+              },
+        });
         return;
       }
       if (!result.download_url || !result.download_filename) {

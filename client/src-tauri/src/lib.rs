@@ -125,6 +125,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        // Opener: the cross-platform way to open external URLs / reveal files.
+        // Unlike the shell plugin's `open` (which tries to spawn a system
+        // opener process and fails on Android with "No such file or directory"),
+        // the opener plugin uses an Android Intent — so in-app links AND the
+        // self-update "open the APK/release in the browser" flow work on mobile.
+        .plugin(tauri_plugin_opener::init())
         // Native OS notifications. The renderer mirrors important in-app
         // inbox entries to the system notification center / Android shade
         // (see lib/osNotify.ts). Works on every platform.
