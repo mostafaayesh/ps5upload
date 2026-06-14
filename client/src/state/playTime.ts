@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { hostOf } from "../lib/addr";
 import { useRunningAppsStore } from "./runningApps";
+import { useSharedSync } from "../lib/sharedPersist";
 
 /**
  * Per-title play-time accumulator.
@@ -137,6 +138,26 @@ export const usePlayTimeStore = create<PlayTimeState>((set, get) => ({
     persist(newState);
   },
 }));
+
+/** In web/Docker mode, syncs play-time data with the engine. Mount once in AppShell. */
+export function usePlayTimeSharedSync(): void {
+  useSharedSync<{ byHost: Record<string, Record<string, number>>; lastSampleMs: number }>(
+    "playTime",
+    (cb) =>
+      usePlayTimeStore.subscribe((s) =>
+        cb({ byHost: s.byHost, lastSampleMs: s.lastSampleMs }),
+      ),
+    (data) => {
+      if (data && typeof data === "object" && typeof data.byHost === "object") {
+        usePlayTimeStore.setState({
+          byHost: data.byHost ?? {},
+          lastSampleMs: typeof data.lastSampleMs === "number" ? data.lastSampleMs : 0,
+        });
+      }
+    },
+    { byHost: {}, lastSampleMs: 0 },
+  );
+}
 
 /** Install the cross-store subscription. Call once at app boot
  *  (idempotent). The runner subscribes for the lifetime of the app. */

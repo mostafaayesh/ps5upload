@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Ensure the shared-state directory exists before the engine starts so
+# the first write doesn't race with directory creation. The engine will
+# also create it on startup, but doing it here avoids any startup log
+# noise about falling back to the temp-dir path.
+SHARED_STATE_DIR="${PS5UPLOAD_STATE_DIR:-/var/log/ps5upload/shared-state}"
+mkdir -p "${SHARED_STATE_DIR}" 2>/dev/null || true
+
 # Start the ps5upload engine in the background.
 # PS5_ADDR can be overridden at runtime via docker compose environment.
 PS5_ADDR="${PS5_ADDR:-192.168.1.x:9113}"

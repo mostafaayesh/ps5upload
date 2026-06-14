@@ -34,6 +34,7 @@
 
 mod engine_log;
 mod pkg_install;
+mod shared_store;
 
 use axum::{
     extract::{ConnectInfo, Path, Query, Request, State},
@@ -777,17 +778,13 @@ struct AppState {
     /// The background prober updates this; handlers read from it to avoid
     /// redundant PS5 round-trips when multiple tabs request the same data.
     ps5_cache: Arc<Mutex<HashMap<String, Ps5CacheEntry>>>,
-    /// Shared upload queue — replaces per-browser localStorage.
-    /// All web clients see and mutate the same queue.
-    upload_queue: Arc<Mutex<serde_json::Value>>,
-    /// Shared payload playlists — replaces per-browser localStorage.
-    payload_playlists: Arc<Mutex<serde_json::Value>>,
-    /// Shared user config — replaces per-browser localStorage.
-    user_config: Arc<Mutex<serde_json::Value>>,
-    /// Shared activity log — capped ring buffer (max 256 entries).
-    activity_log: Arc<Mutex<Vec<serde_json::Value>>>,
-    /// Shared notifications — capped ring buffer (max 64 entries).
-    notifications: Arc<Mutex<Vec<serde_json::Value>>>,
+    /// Durable, versioned shared state — replaces per-browser localStorage
+    /// AND the former in-memory `Arc<Mutex<Value>>` blobs. Backs the upload
+    /// queue, playlists, config, capped activity/notification logs, the
+    /// generic `/api/store/:key` collaborative documents, and resume tx-ids.
+    /// All web clients read and mutate the same SQLite-backed documents,
+    /// with optimistic-concurrency versioning (see `shared_store`).
+    store: Arc<shared_store::SharedStore>,
 }
 
 /// Per-PS5 cached probe state. Updated by the background prober;
@@ -5508,123 +5505,483 @@ async fn payload_send_handler(
 }
 
 // ─── Shared state endpoints (upload queue, playlists, config) ──────────────
+//
+// Every document is stored in the SQLite-backed `SharedStore` so state
+// persists across container restarts and is identical for all browser tabs.
+//
+// Optimistic concurrency via ETag / If-Match:
+//   GET  → response includes `ETag: "{version}"`.
+//   PUT  → if the client sends `If-Match: "{version}"` and the stored
+//           version differs, the server returns 409 Conflict with the
+//           current version in the ETag so the client can refetch and retry.
+//           Omitting If-Match retains the original last-write-wins behavior.
 
-/// GET /api/queue — return the shared upload queue.
-async fn get_upload_queue(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let g = state.upload_queue.lock().unwrap_or_else(|e| e.into_inner());
-    (StatusCode::OK, Json(g.clone())).into_response()
+const KEY_QUEUE:         &str = "queue";
+const KEY_PLAYLISTS:     &str = "playlists";
+const KEY_CONFIG:        &str = "config";
+const KEY_ACTIVITY:      &str = "activity";
+const KEY_NOTIFICATIONS: &str = "notifications";
+const KEY_RESUME_TXIDS:  &str = "resume_txids";
+
+const MAX_ACTIVITY_ENTRIES:     usize = 256;
+const MAX_NOTIFICATION_ENTRIES: usize = 64;
+const RESUME_TXID_MAX_RECORDS:  usize = 128;
+const RESUME_TXID_TTL_MS:       u64   = 24 * 60 * 60 * 1000;
+
+/// Collaborative store keys accepted by the generic `/api/store/:key` endpoint.
+/// Per-device prefs (theme, uiScale, lang) are NOT in this list — those stay
+/// in browser localStorage so each user gets their own UI settings.
+const ALLOWED_STORE_KEYS: &[&str] = &[
+    "schedules",
+    "roster",
+    "pkgLibrary",
+    "recentPaths",
+    "playTime",
+    "auditLog",
+    "payloads_local_inventory",
+];
+
+/// Parse an `If-Match: "{n}"` header into an integer version. Returns `None`
+/// when the header is absent (→ unconditional write) or malformed (→ reject).
+fn parse_if_match(headers: &axum::http::HeaderMap) -> Option<Result<i64, ()>> {
+    headers
+        .get(axum::http::header::IF_MATCH)
+        .map(|v| {
+            v.to_str()
+                .ok()
+                .map(|s| s.trim_matches('"'))
+                .and_then(|s| s.parse::<i64>().ok())
+                .ok_or(())
+        })
+}
+
+/// Format a version as an HTTP ETag value: 42 → `"42"`.
+fn etag_value(version: i64) -> String {
+    format!("\"{version}\"")
+}
+
+// ── Document GET helper ──────────────────────────────────────────────────────
+
+fn doc_get_response(
+    store: &shared_store::SharedStore,
+    key: &str,
+    default: serde_json::Value,
+) -> axum::response::Response {
+    let doc = store.get(key, default);
+    (
+        StatusCode::OK,
+        [(axum::http::header::ETAG, etag_value(doc.version))],
+        Json(doc.value),
+    )
+        .into_response()
+}
+
+// ── Document PUT helper ──────────────────────────────────────────────────────
+
+fn doc_put_response(
+    store: &shared_store::SharedStore,
+    events_tx: &broadcast::Sender<String>,
+    key: &str,
+    body: serde_json::Value,
+    expected: Option<i64>,
+    event_type: &str,
+) -> axum::response::Response {
+    match store.put(key, &body, expected) {
+        Ok(new_version) => {
+            broadcast_event(events_tx, event_type, body);
+            (
+                StatusCode::OK,
+                [(axum::http::header::ETAG, etag_value(new_version))],
+                Json(serde_json::json!({"ok": true, "version": new_version})),
+            )
+                .into_response()
+        }
+        Err(shared_store::PutError::Conflict { current }) => (
+            StatusCode::CONFLICT,
+            [(axum::http::header::ETAG, etag_value(current))],
+            Json(serde_json::json!({
+                "ok": false,
+                "error": "version_conflict",
+                "current_version": current,
+            })),
+        )
+            .into_response(),
+        Err(shared_store::PutError::Io(e)) => {
+            json_err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response()
+        }
+    }
+}
+
+// ── Queue ────────────────────────────────────────────────────────────────────
+
+/// GET /api/queue — return the shared upload queue with ETag.
+async fn get_upload_queue(State(state): State<AppState>) -> impl IntoResponse {
+    doc_get_response(
+        &state.store,
+        KEY_QUEUE,
+        serde_json::json!({"items": [], "continueOnFailure": false}),
+    )
 }
 
 /// PUT /api/queue — replace the shared upload queue.
-/// Broadcasts a `queue_changed` SSE event so all clients see the update.
+/// Honors `If-Match` for optimistic concurrency. Broadcasts `queue_changed`.
 async fn put_upload_queue(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    {
-        let mut g = state.upload_queue.lock().unwrap_or_else(|e| e.into_inner());
-        *g = body.clone();
-    }
-    broadcast_event(&state.events_tx, "queue_changed", body);
-    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+    let expected = match parse_if_match(&headers) {
+        None => None,
+        Some(Ok(v)) => Some(v),
+        Some(Err(())) => {
+            return json_err(StatusCode::BAD_REQUEST, "malformed If-Match".to_string())
+                .into_response()
+        }
+    };
+    doc_put_response(&state.store, &state.events_tx, KEY_QUEUE, body, expected, "queue_changed")
 }
 
-/// GET /api/playlists — return the shared payload playlists.
-async fn get_playlists(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let g = state.payload_playlists.lock().unwrap_or_else(|e| e.into_inner());
-    (StatusCode::OK, Json(g.clone())).into_response()
+// ── Playlists ────────────────────────────────────────────────────────────────
+
+/// GET /api/playlists — return the shared payload playlists with ETag.
+async fn get_playlists(State(state): State<AppState>) -> impl IntoResponse {
+    doc_get_response(
+        &state.store,
+        KEY_PLAYLISTS,
+        serde_json::json!({"playlists": []}),
+    )
 }
 
-/// PUT /api/playlists — replace the shared playlists.
+/// PUT /api/playlists — replace the shared playlists. Broadcasts `playlists_changed`.
 async fn put_playlists(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    {
-        let mut g = state.payload_playlists.lock().unwrap_or_else(|e| e.into_inner());
-        *g = body.clone();
-    }
-    broadcast_event(&state.events_tx, "playlists_changed", body);
-    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+    let expected = match parse_if_match(&headers) {
+        None => None,
+        Some(Ok(v)) => Some(v),
+        Some(Err(())) => {
+            return json_err(StatusCode::BAD_REQUEST, "malformed If-Match".to_string())
+                .into_response()
+        }
+    };
+    doc_put_response(
+        &state.store,
+        &state.events_tx,
+        KEY_PLAYLISTS,
+        body,
+        expected,
+        "playlists_changed",
+    )
 }
 
-/// GET /api/config — return the shared user config.
-async fn get_config(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let g = state.user_config.lock().unwrap_or_else(|e| e.into_inner());
-    (StatusCode::OK, Json(g.clone())).into_response()
+// ── Config ───────────────────────────────────────────────────────────────────
+
+/// GET /api/config — return the shared user config with ETag.
+async fn get_config(State(state): State<AppState>) -> impl IntoResponse {
+    doc_get_response(&state.store, KEY_CONFIG, serde_json::json!({}))
 }
 
-/// PUT /api/config — replace the shared user config.
+/// PUT /api/config — replace the shared user config. Broadcasts `config_changed`.
 async fn put_config(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    {
-        let mut g = state.user_config.lock().unwrap_or_else(|e| e.into_inner());
-        *g = body.clone();
-    }
-    broadcast_event(&state.events_tx, "config_changed", body);
-    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+    let expected = match parse_if_match(&headers) {
+        None => None,
+        Some(Ok(v)) => Some(v),
+        Some(Err(())) => {
+            return json_err(StatusCode::BAD_REQUEST, "malformed If-Match".to_string())
+                .into_response()
+        }
+    };
+    doc_put_response(
+        &state.store,
+        &state.events_tx,
+        KEY_CONFIG,
+        body,
+        expected,
+        "config_changed",
+    )
 }
 
-const MAX_ACTIVITY_ENTRIES: usize = 256;
-const MAX_NOTIFICATION_ENTRIES: usize = 64;
+// ── Activity log (capped append-only) ───────────────────────────────────────
 
 /// GET /api/activity — return the shared activity log.
-async fn get_activity(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let g = state.activity_log.lock().unwrap_or_else(|e| e.into_inner());
-    (StatusCode::OK, Json(serde_json::json!(g.clone()))).into_response()
+async fn get_activity(State(state): State<AppState>) -> impl IntoResponse {
+    doc_get_response(&state.store, KEY_ACTIVITY, serde_json::json!([]))
 }
 
-/// POST /api/activity — append an entry to the shared activity log.
-/// Broadcasts an `activity` SSE event so all clients see the new entry.
+/// POST /api/activity — append an entry; broadcasts `activity`.
 async fn post_activity(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    {
-        let mut g = state.activity_log.lock().unwrap_or_else(|e| e.into_inner());
-        g.push(body.clone());
-        if g.len() > MAX_ACTIVITY_ENTRIES {
-            let excess = g.len() - MAX_ACTIVITY_ENTRIES;
-            g.drain(..excess);
-        }
-    }
+    state.store.append(KEY_ACTIVITY, body.clone(), MAX_ACTIVITY_ENTRIES);
     broadcast_event(&state.events_tx, "activity", body);
     (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
 }
 
+// ── Notifications (capped append-only) ──────────────────────────────────────
+
 /// GET /api/notifications — return the shared notifications.
-async fn get_notifications(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let g = state.notifications.lock().unwrap_or_else(|e| e.into_inner());
-    (StatusCode::OK, Json(serde_json::json!(g.clone()))).into_response()
+async fn get_notifications(State(state): State<AppState>) -> impl IntoResponse {
+    doc_get_response(&state.store, KEY_NOTIFICATIONS, serde_json::json!([]))
 }
 
-/// POST /api/notifications — append a notification.
+/// POST /api/notifications — append a notification; broadcasts `notification`.
 async fn post_notification(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    {
-        let mut g = state.notifications.lock().unwrap_or_else(|e| e.into_inner());
-        g.push(body.clone());
-        if g.len() > MAX_NOTIFICATION_ENTRIES {
-            let excess = g.len() - MAX_NOTIFICATION_ENTRIES;
-            g.drain(..excess);
-        }
-    }
+    state.store.append(KEY_NOTIFICATIONS, body.clone(), MAX_NOTIFICATION_ENTRIES);
     broadcast_event(&state.events_tx, "notification", body);
     (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}
+
+// ── Generic collaborative store (/api/store/:key) ────────────────────────────
+//
+// Used by the client-side `sharedPersist` helper to back the stores that
+// previously lived in per-browser localStorage:
+//   schedules, roster, pkgLibrary, recentPaths, playTime, auditLog,
+//   payloads_local_inventory.
+// Keys not in ALLOWED_STORE_KEYS are rejected with 400 to prevent the
+// generic endpoint from becoming a free-form KV store.
+
+/// GET /api/store/:key — return a collaborative document with ETag.
+async fn get_store_key(
+    State(state): State<AppState>,
+    axum::extract::Path(key): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    if !ALLOWED_STORE_KEYS.contains(&key.as_str()) {
+        return json_err(StatusCode::BAD_REQUEST, format!("unknown store key: {key}"))
+            .into_response();
+    }
+    doc_get_response(&state.store, &key, serde_json::json!(null))
+}
+
+/// PUT /api/store/:key — collaborative document, version-aware. Broadcasts
+/// `store_changed` with `{key, version}` so clients can filter by key.
+async fn put_store_key(
+    State(state): State<AppState>,
+    axum::extract::Path(key): axum::extract::Path<String>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !ALLOWED_STORE_KEYS.contains(&key.as_str()) {
+        return json_err(StatusCode::BAD_REQUEST, format!("unknown store key: {key}"))
+            .into_response();
+    }
+    let expected = match parse_if_match(&headers) {
+        None => None,
+        Some(Ok(v)) => Some(v),
+        Some(Err(())) => {
+            return json_err(StatusCode::BAD_REQUEST, "malformed If-Match".to_string())
+                .into_response()
+        }
+    };
+    match state.store.put(&key, &body, expected) {
+        Ok(new_version) => {
+            broadcast_event(
+                &state.events_tx,
+                "store_changed",
+                serde_json::json!({"key": key, "version": new_version}),
+            );
+            (
+                StatusCode::OK,
+                [(axum::http::header::ETAG, etag_value(new_version))],
+                Json(serde_json::json!({"ok": true, "version": new_version})),
+            )
+                .into_response()
+        }
+        Err(shared_store::PutError::Conflict { current }) => (
+            StatusCode::CONFLICT,
+            [(axum::http::header::ETAG, etag_value(current))],
+            Json(serde_json::json!({
+                "ok": false,
+                "error": "version_conflict",
+                "current_version": current,
+            })),
+        )
+            .into_response(),
+        Err(shared_store::PutError::Io(e)) => {
+            json_err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response()
+        }
+    }
+}
+
+// ── Resume tx-id store (/api/resume-txid/*) ──────────────────────────────────
+//
+// Replaces the per-browser localStorage that webInvoke used for
+// `resume_txid_lookup / remember / forget`. Storing it server-side means a
+// page reload or a second browser tab can resume the same upload.
+//
+// Storage format: a single JSON document under KEY_RESUME_TXIDS containing
+// an array of records:
+//   [{key, host, src, dest, tx_id_hex, created_at_ms, last_seen_ms}, …]
+// Entries expire after RESUME_TXID_TTL_MS (24 h) and are pruned on access.
+
+#[derive(serde::Deserialize)]
+struct ResumeTxidLookupReq {
+    host: String,
+    src: String,
+    dest: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumeTxidRememberReq {
+    host: String,
+    src: String,
+    dest: String,
+    tx_id_hex: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumeTxidForgetReq {
+    host: String,
+    src: String,
+    dest: String,
+}
+
+fn resume_txid_key(host: &str, src: &str, dest: &str) -> String {
+    format!("{host}|{src}|{dest}")
+}
+
+/// POST /api/resume-txid/lookup — return the saved tx_id for (host,src,dest).
+async fn resume_txid_lookup(
+    State(state): State<AppState>,
+    Json(req): Json<ResumeTxidLookupReq>,
+) -> impl IntoResponse {
+    let now = now_ms();
+    let cutoff = now.saturating_sub(RESUME_TXID_TTL_MS);
+    let key_str = resume_txid_key(&req.host, &req.src, &req.dest);
+
+    let doc = state.store.get(KEY_RESUME_TXIDS, serde_json::json!({"records": []}));
+
+    let mut records: Vec<serde_json::Value> = doc
+        .value
+        .get("records")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // Prune expired.
+    let before = records.len();
+    records.retain(|r| {
+        r.get("last_seen_ms")
+            .and_then(|v| v.as_u64())
+            .map(|t| t >= cutoff)
+            .unwrap_or(false)
+    });
+    let pruned = records.len() != before;
+
+    let tx_id_hex = records.iter().rev().find_map(|r| {
+        let rk = r.get("key").and_then(|v| v.as_str())?;
+        if rk == key_str {
+            r.get("tx_id_hex").and_then(|v| v.as_str()).map(|s| s.to_string())
+        } else {
+            None
+        }
+    });
+
+    if pruned {
+        let new_doc = serde_json::json!({"records": records});
+        // Best-effort prune flush (unconditional write — no conflict check needed).
+        let _ = state.store.put(KEY_RESUME_TXIDS, &new_doc, None);
+    }
+
+    Json(serde_json::json!({"tx_id_hex": tx_id_hex})).into_response()
+}
+
+/// POST /api/resume-txid/remember — upsert a tx_id for (host,src,dest).
+async fn resume_txid_remember(
+    State(state): State<AppState>,
+    Json(req): Json<ResumeTxidRememberReq>,
+) -> impl IntoResponse {
+    if req.tx_id_hex.is_empty() {
+        return json_err(StatusCode::BAD_REQUEST, "tx_id_hex is required".to_string())
+            .into_response();
+    }
+    let now = now_ms();
+    let cutoff = now.saturating_sub(RESUME_TXID_TTL_MS);
+    let key_str = resume_txid_key(&req.host, &req.src, &req.dest);
+
+    // Read-modify-write via unconditional put (single writer per store key,
+    // serialized by the SharedStore's internal Mutex).
+    let doc = state.store.get(KEY_RESUME_TXIDS, serde_json::json!({"records": []}));
+
+    let mut records: Vec<serde_json::Value> = doc
+        .value
+        .get("records")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    records.retain(|r| {
+        let expired = r
+            .get("last_seen_ms")
+            .and_then(|v| v.as_u64())
+            .map(|t| t < cutoff)
+            .unwrap_or(true);
+        let same_key = r.get("key").and_then(|v| v.as_str()) == Some(&key_str);
+        !expired && !same_key
+    });
+
+    records.push(serde_json::json!({
+        "key": key_str,
+        "host": req.host,
+        "src": req.src,
+        "dest": req.dest,
+        "tx_id_hex": req.tx_id_hex,
+        "created_at_ms": now,
+        "last_seen_ms": now,
+    }));
+
+    while records.len() > RESUME_TXID_MAX_RECORDS {
+        records.remove(0);
+    }
+
+    let new_doc = serde_json::json!({"records": records, "updated_at": now});
+    match state.store.put(KEY_RESUME_TXIDS, &new_doc, None) {
+        Ok(_) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(e) => json_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            e.to_string(),
+        )
+        .into_response(),
+    }
+}
+
+/// POST /api/resume-txid/forget — remove the tx_id record for (host,src,dest).
+async fn resume_txid_forget(
+    State(state): State<AppState>,
+    Json(req): Json<ResumeTxidForgetReq>,
+) -> impl IntoResponse {
+    let key_str = resume_txid_key(&req.host, &req.src, &req.dest);
+
+    let doc = state.store.get(KEY_RESUME_TXIDS, serde_json::json!({"records": []}));
+
+    let mut records: Vec<serde_json::Value> = doc
+        .value
+        .get("records")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let before = records.len();
+    records.retain(|r| r.get("key").and_then(|v| v.as_str()) != Some(&key_str));
+
+    if records.len() != before {
+        let now = now_ms();
+        let new_doc = serde_json::json!({"records": records, "updated_at": now});
+        if let Err(e) = state.store.put(KEY_RESUME_TXIDS, &new_doc, None) {
+            return json_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    }
+
+    Json(serde_json::json!({"ok": true})).into_response()
 }
 
 /// GET /api/version — engine self-identification.
@@ -5981,16 +6338,29 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         spawn_ps5_prober(ps5_addr.clone(), Arc::clone(&ps5_cache), events_tx.clone()).await;
     }
 
+    // Open the durable shared-state store. Falls back to in-memory when no
+    // writable path is available (state non-durable but endpoints still work).
+    let state_dir = shared_store::resolve_state_dir();
+    let store = match shared_store::SharedStore::open(&state_dir) {
+        Ok(s) => {
+            log_info!("shared state dir: {}", state_dir.display());
+            s
+        }
+        Err(e) => {
+            log_warn!(
+                "cannot open shared state dir {:?}: {e} — using in-memory fallback (non-durable)",
+                state_dir
+            );
+            shared_store::SharedStore::open_in_memory()
+        }
+    };
+
     let state = AppState {
         jobs: Arc::new(Mutex::new(HashMap::new())),
         default_ps5_addr: ps5_addr.clone(),
         events_tx,
         ps5_cache,
-        upload_queue: Arc::new(Mutex::new(serde_json::json!({"items": [], "continueOnFailure": false}))),
-        payload_playlists: Arc::new(Mutex::new(serde_json::json!({"playlists": []}))),
-        user_config: Arc::new(Mutex::new(serde_json::json!({}))),
-        activity_log: Arc::new(Mutex::new(Vec::new())),
-        notifications: Arc::new(Mutex::new(Vec::new())),
+        store,
     };
 
     let app = Router::new()
@@ -6088,6 +6458,12 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         .route("/api/config", get(get_config).put(put_config))
         .route("/api/activity", get(get_activity).post(post_activity))
         .route("/api/notifications", get(get_notifications).post(post_notification))
+        // Generic collaborative document store (schedules, roster, pkgLibrary, …)
+        .route("/api/store/:key", get(get_store_key).put(put_store_key))
+        // Durable resume tx-id store (replaces per-browser localStorage)
+        .route("/api/resume-txid/lookup", post(resume_txid_lookup))
+        .route("/api/resume-txid/remember", post(resume_txid_remember))
+        .route("/api/resume-txid/forget", post(resume_txid_forget))
         .with_state(state)
         // .pkg install — sessions live in their own state because the
         // HTTP-host serving handler needs Mutex-guarded session lookup

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useSharedSync } from "../lib/sharedPersist";
 
 /**
  * Persistent audit log for destructive actions.
@@ -114,6 +115,30 @@ export const useAuditLogStore = create<AuditState>((set, get) => ({
   // loop. Consumers should subscribe to `entries` and derive the
   // reversed view in a `useMemo`.
 }));
+
+/** In web/Docker mode, syncs the audit log with the engine. Mount once in AppShell. */
+export function useAuditLogSharedSync(): void {
+  useSharedSync<AuditEntry[]>(
+    "auditLog",
+    (cb) => useAuditLogStore.subscribe((s) => cb(s.entries)),
+    (data) => {
+      if (Array.isArray(data)) {
+        useAuditLogStore.setState({
+          entries: data
+            .filter(
+              (e): e is AuditEntry =>
+                typeof e?.id === "string" &&
+                typeof e?.ts === "number" &&
+                typeof e?.kind === "string" &&
+                typeof e?.what === "string",
+            )
+            .slice(-MAX_ENTRIES),
+        });
+      }
+    },
+    [],
+  );
+}
 
 /** Convenience for fire-and-forget audit pushes from anywhere in the
  *  renderer. Avoids needing each caller to subscribe to the store. */

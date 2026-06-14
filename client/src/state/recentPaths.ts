@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useSharedSync } from "../lib/sharedPersist";
 
 /**
  * MRU list of remote PS5 filesystem paths the user has navigated to
@@ -69,3 +70,19 @@ export const useRecentPathsStore = create<RecentPathsState>((set, get) => ({
     persist([]);
   },
 }));
+
+/** In web/Docker mode, syncs recent paths with the engine. Mount once in AppShell. */
+export function useRecentPathsSharedSync(): void {
+  useSharedSync<string[]>(
+    "recentPaths",
+    (cb) => useRecentPathsStore.subscribe((s) => cb(s.paths)),
+    (data) => {
+      if (Array.isArray(data)) {
+        useRecentPathsStore.setState({
+          paths: data.filter((p): p is string => typeof p === "string").slice(0, MAX_ENTRIES),
+        });
+      }
+    },
+    [],
+  );
+}

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { useEffect, useRef } from "react";
+import { useSharedSync } from "../lib/sharedPersist";
 
 /**
  * Browser-side scheduled operations.
@@ -123,6 +124,20 @@ export const useScheduleStore = create<ScheduleState>((set, get) => ({
     persist(next);
   },
 }));
+
+/** In web/Docker mode, syncs the schedule list with the engine. Mount once in AppShell. */
+export function useScheduleSharedSync(): void {
+  useSharedSync<Schedule[]>(
+    "schedules",
+    (cb) => useScheduleStore.subscribe((s) => cb(s.schedules)),
+    (data) => {
+      if (Array.isArray(data)) {
+        useScheduleStore.setState({ schedules: data as Schedule[] });
+      }
+    },
+    [],
+  );
+}
 
 /** Returns true when the schedule should fire at the given moment. */
 export function shouldFire(s: Schedule, now: Date): boolean {

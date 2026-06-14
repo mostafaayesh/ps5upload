@@ -72,31 +72,55 @@ async function putJson<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ─── localStorage persistence (replaces Tauri file-based persistence) ────────
+// ─── Version-aware GET / PUT helpers (ETag / If-Match) ───────────────────────
+//
+// The engine returns an ETag: "{version}" on every GET and enforces
+// If-Match: "{version}" on PUTs, returning 409 on conflict. The version
+// cache is module-level so consecutive saves on the same page don't need
+// to re-fetch just to get the current version.
 
-function lsGet<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(`ps5upload:${key}`);
-    return raw !== null ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
+const _etags = new Map<string, string>();
+
+async function getJsonEtag<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status} ${res.statusText}`);
   }
+  const etag = res.headers.get("ETag");
+  if (etag) _etags.set(path, etag);
+  return res.json() as Promise<T>;
 }
 
-function lsSet(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(`ps5upload:${key}`, JSON.stringify(value));
-  } catch {
-    /* quota exceeded — silently ignore */
+/**
+ * PUT with optimistic concurrency. Sends the cached ETag as If-Match.
+ * On 409 (conflict): refreshes the etag cache and re-throws so the
+ * caller can merge and retry. On success, updates the etag cache.
+ */
+async function putJsonEtag<T>(path: string, body: unknown): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const etag = _etags.get(path);
+  if (etag) headers["If-Match"] = etag;
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) {
+    // Stale — update the cached etag from the response header so the next
+    // attempt can proceed without a full re-fetch round trip.
+    const newEtag = res.headers.get("ETag");
+    if (newEtag) _etags.set(path, newEtag);
+    const text = await res.text().catch(() => "");
+    throw new Error(text || "version_conflict");
   }
-}
-
-function lsRemove(key: string): void {
-  try {
-    localStorage.removeItem(`ps5upload:${key}`);
-  } catch {
-    /* ignore */
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status} ${res.statusText}`);
   }
+  const newEtag = res.headers.get("ETag");
+  if (newEtag) _etags.set(path, newEtag);
+  return res.json() as Promise<T>;
 }
 
 // ─── SSE / streaming helper ────────────────────────────────────────────────
@@ -908,18 +932,18 @@ export async function webInvoke<T>(
     }
 
     case "payloads_local_inventory":
-      return lsGet<T>("payloads_local_inventory", [] as T);
+      return getJsonEtag<T>("/store/payloads_local_inventory");
 
     case "payloads_local_path": {
-      const inventory = lsGet<any[]>("payloads_local_inventory", []);
-      const item = inventory.find(i => i.payload_id === args?.id);
+      const inventory = await getJsonEtag<any[]>("/store/payloads_local_inventory");
+      const item = inventory.find((i: any) => i.payload_id === args?.id);
       return (item?.path || null) as T;
     }
 
     case "payloads_download": {
       const entry = CATALOGUE.find(e => e.id === args?.id);
       if (!entry) throw new Error(`unknown payload id: ${args?.id}`);
-      const inventory = lsGet<any[]>("payloads_local_inventory", []);
+      const inventory = await getJsonEtag<any[]>("/store/payloads_local_inventory");
       const newEntry = {
         payload_id: entry.id,
         version: args?.version || "v1.0.0",
@@ -927,9 +951,9 @@ export async function webInvoke<T>(
         size: 1024 * 1024,
         mtime: Math.floor(Date.now() / 1000),
       };
-      const filtered = inventory.filter(i => i.payload_id !== entry.id);
+      const filtered = inventory.filter((i: any) => i.payload_id !== entry.id);
       filtered.push(newEntry);
-      lsSet("payloads_local_inventory", filtered);
+      await putJsonEtag("/store/payloads_local_inventory", filtered);
       return newEntry as T;
     }
 
@@ -1159,10 +1183,16 @@ export async function webInvoke<T>(
       return "LocalStorage (web mode)" as T;
 
     case "app_data_reset": {
-      const keys = ["upload_queue", "payload_playlists", "user_config", "payloads_local_inventory"];
-      for (const k of keys) {
-        localStorage.removeItem(`ps5upload:${k}`);
-      }
+      // Clear engine-side shared stores by writing empty defaults.
+      // Unconditional (no If-Match) so stale ETags don't block the reset.
+      await Promise.all([
+        putJson("/queue", null),
+        putJson("/playlists", null),
+        putJson("/config", null),
+        putJson("/store/payloads_local_inventory", []),
+      ]);
+      // Also evict our local ETag cache so next reads fetch fresh versions.
+      _etags.clear();
       return 4 as T;
     }
 
@@ -1172,49 +1202,53 @@ export async function webInvoke<T>(
     case "title_meta_fetch":
       return { title: null, cover_url: null } as T;
 
-    // ── Persistence / config — engine-side shared state ───────────────────
+    // ── Persistence / config — engine-side shared state (version-aware) ──────
+    //
+    // GET requests use getJsonEtag() which caches the ETag from the response.
+    // PUT requests use putJsonEtag() which sends If-Match and retries are the
+    // caller's responsibility (the store debounces, so conflicts are rare).
+
     case "upload_queue_load":
-      return getJson<T>("/queue");
+      return getJsonEtag<T>("/queue");
 
     case "upload_queue_save":
-      return putJson<T>("/queue", args?.doc);
+      return putJsonEtag<T>("/queue", args?.doc);
 
     case "payload_playlists_load":
-      return getJson<T>("/playlists");
+      return getJsonEtag<T>("/playlists");
 
     case "payload_playlists_save":
-      return putJson<T>("/playlists", args?.doc);
+      return putJsonEtag<T>("/playlists", args?.doc);
 
     case "user_config_load":
-      return getJson<T>("/config");
+      return getJsonEtag<T>("/config");
 
     case "user_config_save":
-      return putJson<T>("/config", args?.config ?? args?.doc);
+      return putJsonEtag<T>("/config", args?.config ?? args?.doc);
 
-    case "resume_txid_lookup": {
-      const key = `resume:${req.host}:${req.src}:${req.dest}`;
-      const record = lsGet<{ tx_id_hex: string; expires: number } | null>(key, null);
-      if (record && record.expires > Date.now()) {
-        return { tx_id_hex: record.tx_id_hex } as T;
-      }
-      lsRemove(key);
-      return { tx_id_hex: null } as T;
-    }
+    // ── Resume tx-ids — now server-side so page reloads + other tabs can resume
 
-    case "resume_txid_remember": {
-      const key = `resume:${req.host}:${req.src}:${req.dest}`;
-      lsSet(key, {
-        tx_id_hex: req.tx_id_hex,
-        expires: Date.now() + 24 * 60 * 60 * 1000,
+    case "resume_txid_lookup":
+      return postJson<T>("/resume-txid/lookup", {
+        host: req.host,
+        src: req.src,
+        dest: req.dest,
       });
-      return undefined as T;
-    }
 
-    case "resume_txid_forget": {
-      const key = `resume:${req.host}:${req.src}:${req.dest}`;
-      lsRemove(key);
-      return undefined as T;
-    }
+    case "resume_txid_remember":
+      return postJson<T>("/resume-txid/remember", {
+        host: req.host,
+        src: req.src,
+        dest: req.dest,
+        tx_id_hex: req.tx_id_hex,
+      });
+
+    case "resume_txid_forget":
+      return postJson<T>("/resume-txid/forget", {
+        host: req.host,
+        src: req.src,
+        dest: req.dest,
+      });
 
     case "payload_check": {
       try {

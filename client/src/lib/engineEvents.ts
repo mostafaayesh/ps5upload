@@ -83,6 +83,11 @@ export interface NotificationEvent {
   data: unknown;
 }
 
+export interface StoreChangedEvent {
+  type: "store_changed";
+  data: { key: string; version: number };
+}
+
 export type EngineEvent =
   | JobStateEvent
   | Ps5StatusEvent
@@ -90,7 +95,8 @@ export type EngineEvent =
   | PlaylistsChangedEvent
   | ConfigChangedEvent
   | ActivityEvent
-  | NotificationEvent;
+  | NotificationEvent
+  | StoreChangedEvent;
 
 // ─── Callback types ────────────────────────────────────────────────────────
 

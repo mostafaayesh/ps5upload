@@ -12,9 +12,15 @@ services:
       - PS5_ADDR
       - FTX2_BANDWIDTH_MBPS
       - PORT
+      # Optional: override where the engine stores shared state (queue, playlists,
+      # config, schedules, roster, …). Defaults to /var/log/ps5upload/shared-state
+      # which lives inside the logs volume below — no extra mount needed.
+      - PS5UPLOAD_STATE_DIR
     volumes:
       # Host path to your game library — set GAMES_PATH in .env (or shell env).
       # Inside the container files are always accessible at /games.
       - ${GAMES_PATH:-/mnt/games}:/games:ro
-      # Host directory for engine logs — set LOGS_PATH in .env (or shell env).
+      # Host directory for engine logs AND shared state — set LOGS_PATH in .env.
+      # Shared state is written to a shared-state/ subdirectory here and persists
+      # across container restarts without any extra volume or database.
       - ${LOGS_PATH:-./logs}:/var/log/ps5upload

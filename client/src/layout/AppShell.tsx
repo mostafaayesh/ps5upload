@@ -27,8 +27,12 @@ import {
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isTauriEnv, safeUnlisten } from "../lib/tauriEnv";
 import { useDocumentVisible } from "../lib/visibility";
-import { useScheduleRunner } from "../state/schedules";
+import { useScheduleRunner, useScheduleSharedSync } from "../state/schedules";
 import { useEngineSync } from "../hooks/useEngineSync";
+import { useRosterSharedSync } from "../state/roster";
+import { useRecentPathsSharedSync } from "../state/recentPaths";
+import { useAuditLogSharedSync } from "../state/auditLog";
+import { usePlayTimeSharedSync } from "../state/playTime";
 import {
   pushNotification,
   runNotificationAutoPrune,
@@ -656,6 +660,12 @@ function AndroidStorageAccessBanner() {
 
 export default function AppShell() {
   useEngineSync(); // SSE job state → stores (shared-state Phase 1)
+  // Collaborative shared stores — engine-backed in web/Docker mode.
+  useScheduleSharedSync();
+  useRosterSharedSync();
+  useRecentPathsSharedSync();
+  useAuditLogSharedSync();
+  usePlayTimeSharedSync();
   useStatusPolling();
   useUpdateCheckOnMount();
   useKeepPs5Awake();

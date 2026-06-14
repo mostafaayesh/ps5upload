@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useSharedSync } from "../lib/sharedPersist";
 import { useConnectionStore } from "./connection";
 import { useRunningAppsStore } from "./runningApps";
 import { useFsClipboardStore, evictFsClipboard } from "./fsClipboard";
@@ -399,6 +400,30 @@ export function useActiveProfile(): PS5Profile | null {
     if (!s.active_id) return null;
     return s.profiles.find((p) => p.id === s.active_id) ?? null;
   });
+}
+
+/** In web/Docker mode, syncs the roster with the engine. Mount once in AppShell. */
+export function useRosterSharedSync(): void {
+  useSharedSync<{ profiles: PS5Profile[]; active_id: string | null }>(
+    "roster",
+    (cb) =>
+      useRosterStore.subscribe((s) =>
+        cb({ profiles: s.profiles, active_id: s.active_id }),
+      ),
+    (data) => {
+      if (data && typeof data === "object" && Array.isArray(data.profiles)) {
+        // Use setState directly to populate without triggering setActive side effects.
+        useRosterStore.setState({
+          profiles: data.profiles,
+          active_id:
+            typeof data.active_id === "string" || data.active_id === null
+              ? data.active_id
+              : useRosterStore.getState().active_id,
+        });
+      }
+    },
+    { profiles: [], active_id: null },
+  );
 }
 
 /** One-time migration: if the connection store has a host but the
