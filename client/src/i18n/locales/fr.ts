@@ -1684,6 +1684,12 @@ err_payload_rejected: "La PS5 a rejeté la requête : {reason}",
   upload_done_next_hint:
     "Ensuite : ouvrez la Library pour l'enregistrer ou le monter afin qu'il apparaisse sur l'écran d'accueil PS5.",
   upload_done_open_library: "Ouvrir la Library",
+  autoloader_title: "Chargeur auto",
+  autoloader_description: "Exécuter automatiquement une playlist dès que l'assistant d'une PS5 est prêt — après la configuration initiale ou une reconnexion.",
+  autoloader_pick: "Choisir une playlist…",
+  autoloader_enable: "Activer",
+  autoloader_warn_none: "Choisissez une playlist à exécuter par le chargeur auto.",
+  autoloader_warn_empty: "La playlist choisie n'a pas encore d'étapes.",
 };
 
 export default fr;

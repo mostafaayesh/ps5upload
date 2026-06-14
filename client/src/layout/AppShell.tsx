@@ -7,7 +7,12 @@ import ConsoleTabs from "./ConsoleTabs";
 import ActivityBar from "./ActivityBar";
 import UpdateToast from "./UpdateToast";
 import { Button } from "../components/Button";
-import { useConnectionStore, EMPTY_HOST_RUNTIME } from "../state/connection";
+import {
+  useConnectionStore,
+  EMPTY_HOST_RUNTIME,
+  PS5_LOADER_PORT,
+} from "../state/connection";
+import { usePayloadPlaylistsStore } from "../state/payloadPlaylists";
 import { log } from "../state/logs";
 import { useUpdateStore } from "../state/update";
 import { engineApi } from "../api/engine";
@@ -57,6 +62,13 @@ import { getVersion } from "@tauri-apps/api/app";
  *  reflected within ~20s, while a single jittery/busy poll is absorbed. */
 const PROBE_MISS_THRESHOLD = 2;
 
+/** Minimum gap between auto-loader fires for the same console. The auto-run
+ *  playlist sends ELFs to the loader, which briefly drops the helper (a
+ *  down→up flap); this window swallows that self-induced edge so the
+ *  auto-loader can't re-trigger itself. A genuine reconnect past the window
+ *  fires again. Comfortably longer than a typical short playlist. */
+const AUTO_LOADER_COOLDOWN_MS = 90_000;
+
 function useStatusPolling() {
   const setStatus = useConnectionStore((s) => s.setStatus);
   const setHostStatus = useConnectionStore((s) => s.setHostStatus);
@@ -88,6 +100,12 @@ function useStatusPolling() {
   // scan, momentary network jitter) shouldn't flash "Helper isn't running"
   // when the helper is actually alive. Require N misses in a row first.
   const missCountRef = useRef<Record<string, number>>({});
+  // Auto-loader: last wall-clock ms we auto-ran the playlist for a host, used
+  // to suppress re-triggering. The playlist itself sends ELFs to the loader,
+  // which momentarily drops the helper (down→up flap) — without a cooldown
+  // that flap would re-fire the auto-loader in a loop. One fire per cooldown
+  // window per host; a genuine later reconnect (past the window) fires again.
+  const autoLoaderFiredAtRef = useRef<Record<string, number>>({});
   useEffect(() => {
     void getVersion()
       .then((v) => {
@@ -177,7 +195,30 @@ function useStatusPolling() {
         ) {
           if (newStatus === "down")
             log.warn("connection", `helper went DOWN on ${probedHost}`);
-          else log.info("connection", `helper came UP on ${probedHost}`);
+          else {
+            log.info("connection", `helper came UP on ${probedHost}`);
+            // Auto-loader: a genuine cold→ready edge on this console (the
+            // `prev !== "unknown"` guard above means this does NOT fire when
+            // the app launches and finds the helper already up — only after a
+            // real reconnect or first-time-setup completion). Run the chosen
+            // playlist against the console that just came up, once per
+            // cooldown window so the playlist's own loader sends don't loop.
+            const pl = usePayloadPlaylistsStore.getState();
+            const cfg = pl.autoLoader;
+            const auto = cfg.playlistId
+              ? pl.playlists.find((p) => p.id === cfg.playlistId)
+              : undefined;
+            const firedAt = autoLoaderFiredAtRef.current[key] ?? 0;
+            const onCooldown = Date.now() - firedAt < AUTO_LOADER_COOLDOWN_MS;
+            if (cfg.enabled && auto && auto.steps.length > 0 && !onCooldown) {
+              autoLoaderFiredAtRef.current[key] = Date.now();
+              log.info(
+                "connection",
+                `auto-loader: running "${auto.name}" on ${probedHost}`,
+              );
+              void pl.run(auto.id, probedHost, PS5_LOADER_PORT);
+            }
+          }
         }
         setHostStatus(probedHost, {
           payloadStatus: newStatus,

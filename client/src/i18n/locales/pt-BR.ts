@@ -1682,6 +1682,12 @@ upload_register_after_desc:
 upload_done_next_hint:
   "Próximo passo: abra a Biblioteca para registrá-lo ou montá-lo, e ele aparecerá na tela inicial do PS5.",
 upload_done_open_library: "Abrir Biblioteca",
+  autoloader_title: "Carregador automático",
+  autoloader_description: "Executa uma playlist automaticamente quando o auxiliar de um PS5 fica pronto — após a configuração inicial ou uma reconexão.",
+  autoloader_pick: "Escolher playlist…",
+  autoloader_enable: "Ativar",
+  autoloader_warn_none: "Escolha uma playlist para o carregador automático executar.",
+  autoloader_warn_empty: "A playlist escolhida ainda não tem etapas.",
 };
 
 export default pt_BR;

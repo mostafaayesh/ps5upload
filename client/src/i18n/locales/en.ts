@@ -1922,6 +1922,12 @@ shortcuts_help: "Show this help",
 shortcuts_close: "Close any open modal or overlay",
 shortcuts_move_selection: "Move selection in lists / palette",
 shortcuts_activate: "Open / activate",
+  autoloader_title: "Auto-loader",
+  autoloader_description: "Automatically run a playlist whenever a PS5's helper becomes ready — after first-time setup or a reconnect.",
+  autoloader_pick: "Choose playlist…",
+  autoloader_enable: "Enable",
+  autoloader_warn_none: "Pick a playlist for the auto-loader to run.",
+  autoloader_warn_empty: "The chosen playlist has no steps yet.",
 };
 
 export default en;

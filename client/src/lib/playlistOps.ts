@@ -47,6 +47,30 @@ export interface Playlist {
   lastRunAt?: number;
 }
 
+/**
+ * Auto-loader config: a single playlist that runs by itself whenever a
+ * console's helper payload becomes ready (cold boot, first-time-setup
+ * completion, or a reconnect after the helper had gone down). One global
+ * setting — the playlist runs against whichever console just came up.
+ *
+ * Opt-in: disabled by default, because auto-sending payloads the instant
+ * a PS5 appears is a surprising side effect unless the user asked for it.
+ * The trigger edge (helper went down → up) is what makes it fire once per
+ * reconnect rather than on every status poll; see AppShell's status poller.
+ */
+export interface AutoLoaderConfig {
+  enabled: boolean;
+  /** Id of the playlist to auto-run. Null = none chosen; the toggle is
+   *  inert until a playlist is picked. If the referenced playlist is
+   *  later deleted, the runner no-ops and the UI falls back to "none". */
+  playlistId: string | null;
+}
+
+export const DEFAULT_AUTO_LOADER: AutoLoaderConfig = {
+  enabled: false,
+  playlistId: null,
+};
+
 export type PlaylistRunStatus =
   | { kind: "idle" }
   | { kind: "running"; playlistId: string; stepIndex: number; host: string }

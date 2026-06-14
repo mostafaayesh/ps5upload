@@ -1674,6 +1674,12 @@ err_payload_rejected: "PS5 ปฏิเสธคำขอ: {reason}",
   upload_done_next_hint:
     "ขั้นต่อไป: เปิดไลบรารีเพื่อลงทะเบียนหรือเมานต์ ให้เกมปรากฏบนหน้าจอหลัก PS5",
   upload_done_open_library: "เปิดไลบรารี",
+  autoloader_title: "ตัวโหลดอัตโนมัติ",
+  autoloader_description: "เรียกใช้เพลย์ลิสต์โดยอัตโนมัติเมื่อตัวช่วยของ PS5 พร้อมใช้งาน — หลังการตั้งค่าครั้งแรกหรือการเชื่อมต่อใหม่",
+  autoloader_pick: "เลือกเพลย์ลิสต์…",
+  autoloader_enable: "เปิดใช้งาน",
+  autoloader_warn_none: "เลือกเพลย์ลิสต์เพื่อให้ตัวโหลดอัตโนมัติเรียกใช้",
+  autoloader_warn_empty: "เพลย์ลิสต์ที่เลือกยังไม่มีขั้นตอน",
 };
 
 export default th;

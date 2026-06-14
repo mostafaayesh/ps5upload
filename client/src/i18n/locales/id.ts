@@ -1656,6 +1656,12 @@ upload_register_after_title: "Tambahkan ke layar utama PS5 setelah selesai",
 upload_register_after_desc: "Mendaftarkan game ke PS5 segera setelah unggahan selesai, sehingga siap diluncurkan — tanpa perlu membuka Pustaka. Jika langkah ini gagal, unggahan itu sendiri tidak terpengaruh dan Anda tetap bisa menambahkannya dari Pustaka.",
 upload_done_next_hint: "Berikutnya: buka Pustaka untuk mendaftarkan atau memasangnya agar muncul di layar utama PS5.",
 upload_done_open_library: "Buka Pustaka",
+  autoloader_title: "Pemuat otomatis",
+  autoloader_description: "Jalankan playlist secara otomatis setiap kali helper PS5 siap — setelah penyiapan pertama kali atau penyambungan ulang.",
+  autoloader_pick: "Pilih playlist…",
+  autoloader_enable: "Aktifkan",
+  autoloader_warn_none: "Pilih playlist untuk dijalankan oleh pemuat otomatis.",
+  autoloader_warn_empty: "Playlist yang dipilih belum memiliki langkah.",
 };
 
 export default id;

@@ -1594,6 +1594,12 @@ err_payload_rejected: "La PS5 ha rifiutato la richiesta: {reason}",
   upload_register_after_desc: "Registra il gioco sulla PS5 subito dopo la fine del caricamento, così è pronto da avviare — senza passare dalla Library. Se questo passaggio fallisce, il caricamento in sé non ne risente e puoi sempre aggiungerlo dalla Library.",
   upload_done_next_hint: "Prossimo passo: apri la Library per registrarlo o montarlo, così compare nella home della PS5.",
   upload_done_open_library: "Apri Library",
+  autoloader_title: "Caricatore automatico",
+  autoloader_description: "Esegui automaticamente una playlist quando l'helper di una PS5 è pronto, dopo la configurazione iniziale o una riconnessione.",
+  autoloader_pick: "Scegli playlist…",
+  autoloader_enable: "Attiva",
+  autoloader_warn_none: "Scegli una playlist da eseguire con il caricatore automatico.",
+  autoloader_warn_empty: "La playlist scelta non ha ancora passaggi.",
 };
 
 export default it;

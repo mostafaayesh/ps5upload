@@ -1685,6 +1685,12 @@ err_payload_rejected: "PS5가 요청을 거부했습니다: {reason}",
   upload_done_next_hint:
     "다음: 라이브러리를 열어 등록하거나 마운트하면 PS5 홈 화면에 표시됩니다.",
   upload_done_open_library: "라이브러리 열기",
+  autoloader_title: "자동 로더",
+  autoloader_description: "PS5 헬퍼가 준비될 때마다 플레이리스트를 자동으로 실행합니다 — 최초 설정 후 또는 재연결 후.",
+  autoloader_pick: "플레이리스트 선택…",
+  autoloader_enable: "사용",
+  autoloader_warn_none: "자동 로더가 실행할 플레이리스트를 선택하세요.",
+  autoloader_warn_empty: "선택한 플레이리스트에 아직 단계가 없습니다.",
 };
 
 export default ko;

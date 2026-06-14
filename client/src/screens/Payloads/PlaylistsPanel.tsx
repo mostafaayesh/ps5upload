@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
   XCircle,
+  Zap,
 } from "lucide-react";
 
 import { Button, Modal } from "../../components";
@@ -119,6 +120,8 @@ export function PlaylistsPanel({ host, port }: { host: string; port: number }) {
 
       <RunStatusBanner host={host} />
 
+      <AutoLoaderCard />
+
       {recentlyRun.length > 0 && (
         <div className="mb-4">
           <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--color-muted)]">
@@ -198,6 +201,97 @@ export function PlaylistsPanel({ host, port }: { host: string; port: number }) {
         ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * Auto-loader config card. One playlist that runs by itself whenever any
+ * console's helper payload becomes ready — covers "after first-time setup"
+ * and "on reconnect" with a single edge (see AppShell's status poller). The
+ * trigger lives in AppShell; this card is just the enable toggle + picker.
+ */
+function AutoLoaderCard() {
+  const tr = useTr();
+  const autoLoader = usePayloadPlaylistsStore((s) => s.autoLoader);
+  const playlists = usePayloadPlaylistsStore((s) => s.playlists);
+  const setAutoLoader = usePayloadPlaylistsStore((s) => s.setAutoLoader);
+
+  const selected = autoLoader.playlistId
+    ? playlists.find((p) => p.id === autoLoader.playlistId)
+    : undefined;
+  // "Armed" = enabled AND it will actually do something. The icon lights up
+  // only when armed so the state is legible at a glance.
+  const armed = autoLoader.enabled && !!selected && selected.steps.length > 0;
+  // Enabled but inert — surface why so the toggle doesn't look broken.
+  const warn = autoLoader.enabled && (!selected || selected.steps.length === 0);
+
+  return (
+    <div className="mb-4 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          <Zap
+            size={14}
+            className={`mt-0.5 shrink-0 ${
+              armed ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"
+            }`}
+          />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold">
+              {tr("autoloader_title", undefined, "Auto-loader")}
+            </div>
+            <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+              {tr(
+                "autoloader_description",
+                undefined,
+                "Automatically run a playlist whenever a PS5's helper becomes ready — after first-time setup or a reconnect.",
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={autoLoader.playlistId ?? ""}
+            onChange={(e) =>
+              setAutoLoader({ playlistId: e.target.value || null })
+            }
+            className="min-w-[min(100%,10rem)] rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs"
+          >
+            <option value="">
+              {tr("autoloader_pick", undefined, "Choose playlist…")}
+            </option>
+            {playlists.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <label className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={autoLoader.enabled}
+              onChange={(e) => setAutoLoader({ enabled: e.target.checked })}
+              className="h-3.5 w-3.5"
+            />
+            {tr("autoloader_enable", undefined, "Enable")}
+          </label>
+        </div>
+      </div>
+      {warn && (
+        <div className="mt-2 text-xs text-[var(--color-warn)]">
+          {!selected
+            ? tr(
+                "autoloader_warn_none",
+                undefined,
+                "Pick a playlist for the auto-loader to run.",
+              )
+            : tr(
+                "autoloader_warn_empty",
+                undefined,
+                "The chosen playlist has no steps yet.",
+              )}
+        </div>
+      )}
+    </div>
   );
 }
 

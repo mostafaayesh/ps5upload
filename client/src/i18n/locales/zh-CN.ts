@@ -1600,6 +1600,12 @@ err_payload_rejected: "PS5 拒绝了该请求：{reason}",
   upload_register_after_desc: "上传完成后立即将游戏注册到 PS5，使其可以直接启动 — 无需再去库操作。即使此步骤失败，上传本身也不受影响，您仍可在库中添加它。",
   upload_done_next_hint: "下一步：打开库进行注册或挂载，让它显示在 PS5 主屏幕上。",
   upload_done_open_library: "打开库",
+  autoloader_title: "自动加载器",
+  autoloader_description: "每当 PS5 的助手就绪时自动运行一个播放列表——在首次设置或重新连接之后。",
+  autoloader_pick: "选择播放列表…",
+  autoloader_enable: "启用",
+  autoloader_warn_none: "请选择一个供自动加载器运行的播放列表。",
+  autoloader_warn_empty: "所选播放列表还没有任何步骤。",
 };
 
 export default zh_CN;

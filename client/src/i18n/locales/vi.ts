@@ -1649,6 +1649,12 @@ err_payload_rejected: "PS5 đã từ chối yêu cầu: {reason}",
   upload_register_after_desc: "Đăng ký game với PS5 ngay sau khi tải lên xong, để sẵn sàng khởi chạy — không cần vào Thư viện. Nếu bước này thất bại, bản tải lên không bị ảnh hưởng và bạn vẫn có thể thêm từ Thư viện.",
   upload_done_next_hint: "Tiếp theo: mở Thư viện để đăng ký hoặc mount, để game hiện trên màn hình chính của PS5.",
   upload_done_open_library: "Mở Thư viện",
+  autoloader_title: "Tự động tải",
+  autoloader_description: "Tự động chạy một danh sách phát mỗi khi trình trợ giúp của PS5 sẵn sàng — sau khi thiết lập lần đầu hoặc kết nối lại.",
+  autoloader_pick: "Chọn danh sách phát…",
+  autoloader_enable: "Bật",
+  autoloader_warn_none: "Chọn một danh sách phát để trình tự động tải chạy.",
+  autoloader_warn_empty: "Danh sách phát đã chọn chưa có bước nào.",
 };
 
 export default vi;

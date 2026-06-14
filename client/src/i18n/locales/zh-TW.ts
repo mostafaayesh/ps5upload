@@ -1595,6 +1595,12 @@ err_payload_rejected: "PS5 拒絕了此請求:{reason}",
   upload_register_after_desc: "上傳完成後立即向 PS5 註冊該遊戲，讓它可以直接啟動 — 不必再到資源庫操作。如果此步驟失敗，上傳本身不受影響，您仍可從資源庫加入。",
   upload_done_next_hint: "下一步：開啟資源庫進行註冊或掛載，讓它顯示在 PS5 主畫面。",
   upload_done_open_library: "開啟資源庫",
+  autoloader_title: "自動載入器",
+  autoloader_description: "每當 PS5 的小幫手就緒時自動執行一個播放清單——在首次設定或重新連線之後。",
+  autoloader_pick: "選擇播放清單…",
+  autoloader_enable: "啟用",
+  autoloader_warn_none: "請選擇一個供自動載入器執行的播放清單。",
+  autoloader_warn_empty: "所選播放清單還沒有任何步驟。",
 };
 
 export default zh_TW;
