@@ -858,7 +858,21 @@ fn set_job(
         }
         g.insert(job_id, state.clone());
     }
-    let msg = serde_json::json!({ "job_id": job_id.to_string(), "job": state });
+    let msg = serde_json::json!({
+        "type": "job_state",
+        "job_id": job_id.to_string(),
+        "job": state
+    });
+    let _ = events_tx.send(msg.to_string());
+}
+
+/// Broadcast a typed SSE event to all connected clients.
+/// All events carry a `"type"` discriminator so the client can switch on event kind.
+fn broadcast_event(events_tx: &broadcast::Sender<String>, event_type: &str, payload: serde_json::Value) {
+    let msg = serde_json::json!({
+        "type": event_type,
+        "data": payload
+    });
     let _ = events_tx.send(msg.to_string());
 }
 
