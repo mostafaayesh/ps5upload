@@ -16,7 +16,7 @@ import { onJobState, onEngineEvent } from "../lib/engineEvents";
 import { useTransferStore } from "../state/transfer";
 import type { TransferPhase } from "../state/transfer";
 import { useConnectionStore } from "../state/connection";
-import { useUploadQueueStore } from "../state/uploadQueue";
+import { useUploadQueueStore, type QueueItem } from "../state/uploadQueue";
 import { patchItem } from "../lib/queueOps";
 import type { Ps5StatusEvent } from "../lib/engineEvents";
 
@@ -160,6 +160,40 @@ export function useEngineSync(): void {
           ucredElevated: e.ucred_elevated,
           maxTransferStreams: e.max_transfer_streams,
         });
+      }
+
+      // ── Shared state sync: when another client changes the queue,
+      //     playlists, or config, update our Zustand stores ──────────────────
+      if (event.type === "queue_changed") {
+        const data = (event as { data: unknown }).data;
+        if (data && typeof data === "object") {
+          const d = data as Record<string, unknown>;
+          useUploadQueueStore.setState({
+            items: (Array.isArray(d.items) ? d.items : []) as QueueItem[],
+            continueOnFailure: (d.continueOnFailure as boolean) ?? false,
+          } as Partial<ReturnType<typeof useUploadQueueStore.getState>>);
+        }
+      }
+
+      if (event.type === "playlists_changed") {
+        const data = (event as { data: unknown }).data;
+        if (data && typeof data === "object") {
+          // Import lazily to avoid circular dep
+          import("../state/payloadPlaylists").then((mod) => {
+            mod.usePayloadPlaylistsStore.setState({
+              playlists:
+                (data as { playlists?: unknown[] }).playlists as never ?? [],
+            });
+          }).catch(() => {});
+        }
+      }
+
+      if (event.type === "config_changed") {
+        // Config changes are applied by the hydrateFromUserConfig system.
+        // We trigger a re-hydrate by dispatching a custom event.
+        window.dispatchEvent(new CustomEvent("ps5upload:config_changed", {
+          detail: (event as { data: unknown }).data,
+        }));
       }
     });
 

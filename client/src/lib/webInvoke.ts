@@ -59,6 +59,19 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function putJson<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 // ─── localStorage persistence (replaces Tauri file-based persistence) ────────
 
 function lsGet<T>(key: string, fallback: T): T {
@@ -1159,20 +1172,24 @@ export async function webInvoke<T>(
     case "title_meta_fetch":
       return { title: null, cover_url: null } as T;
 
-    // ── Persistence / config fallbacks ────────────────────────────────────
+    // ── Persistence / config — engine-side shared state ───────────────────
     case "upload_queue_load":
-      return lsGet<T>("upload_queue", {} as T);
+      return getJson<T>("/queue");
 
     case "upload_queue_save":
-      lsSet("upload_queue", args?.doc);
-      return undefined as T;
+      return putJson<T>("/queue", args?.doc);
 
     case "payload_playlists_load":
-      return lsGet<T>("payload_playlists", {} as T);
+      return getJson<T>("/playlists");
 
     case "payload_playlists_save":
-      lsSet("payload_playlists", args?.doc);
-      return undefined as T;
+      return putJson<T>("/playlists", args?.doc);
+
+    case "user_config_load":
+      return getJson<T>("/config");
+
+    case "user_config_save":
+      return putJson<T>("/config", args?.config ?? args?.doc);
 
     case "resume_txid_lookup": {
       const key = `resume:${req.host}:${req.src}:${req.dest}`;
@@ -1198,13 +1215,6 @@ export async function webInvoke<T>(
       lsRemove(key);
       return undefined as T;
     }
-
-    case "user_config_load":
-      return lsGet<T>("user_config", {} as T);
-
-    case "user_config_save":
-      lsSet("user_config", args?.config ?? args?.doc);
-      return undefined as T;
 
     case "payload_check": {
       try {

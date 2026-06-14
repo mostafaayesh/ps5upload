@@ -777,6 +777,13 @@ struct AppState {
     /// The background prober updates this; handlers read from it to avoid
     /// redundant PS5 round-trips when multiple tabs request the same data.
     ps5_cache: Arc<Mutex<HashMap<String, Ps5CacheEntry>>>,
+    /// Shared upload queue — replaces per-browser localStorage.
+    /// All web clients see and mutate the same queue.
+    upload_queue: Arc<Mutex<serde_json::Value>>,
+    /// Shared payload playlists — replaces per-browser localStorage.
+    payload_playlists: Arc<Mutex<serde_json::Value>>,
+    /// Shared user config — replaces per-browser localStorage.
+    user_config: Arc<Mutex<serde_json::Value>>,
 }
 
 /// Per-PS5 cached probe state. Updated by the background prober;
@@ -5472,6 +5479,72 @@ async fn payload_send_handler(
     })).into_response()
 }
 
+// ─── Shared state endpoints (upload queue, playlists, config) ──────────────
+
+/// GET /api/queue — return the shared upload queue.
+async fn get_upload_queue(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let g = state.upload_queue.lock().unwrap_or_else(|e| e.into_inner());
+    (StatusCode::OK, Json(g.clone())).into_response()
+}
+
+/// PUT /api/queue — replace the shared upload queue.
+/// Broadcasts a `queue_changed` SSE event so all clients see the update.
+async fn put_upload_queue(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    {
+        let mut g = state.upload_queue.lock().unwrap_or_else(|e| e.into_inner());
+        *g = body.clone();
+    }
+    broadcast_event(&state.events_tx, "queue_changed", body);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}
+
+/// GET /api/playlists — return the shared payload playlists.
+async fn get_playlists(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let g = state.payload_playlists.lock().unwrap_or_else(|e| e.into_inner());
+    (StatusCode::OK, Json(g.clone())).into_response()
+}
+
+/// PUT /api/playlists — replace the shared playlists.
+async fn put_playlists(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    {
+        let mut g = state.payload_playlists.lock().unwrap_or_else(|e| e.into_inner());
+        *g = body.clone();
+    }
+    broadcast_event(&state.events_tx, "playlists_changed", body);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}
+
+/// GET /api/config — return the shared user config.
+async fn get_config(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let g = state.user_config.lock().unwrap_or_else(|e| e.into_inner());
+    (StatusCode::OK, Json(g.clone())).into_response()
+}
+
+/// PUT /api/config — replace the shared user config.
+async fn put_config(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    {
+        let mut g = state.user_config.lock().unwrap_or_else(|e| e.into_inner());
+        *g = body.clone();
+    }
+    broadcast_event(&state.events_tx, "config_changed", body);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}
+
 /// GET /api/version — engine self-identification.
 ///
 /// Returned shape: `{"version": "x.y.z"}`. Used by the Tauri shell
@@ -5828,6 +5901,9 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         default_ps5_addr: ps5_addr.clone(),
         events_tx,
         ps5_cache,
+        upload_queue: Arc::new(Mutex::new(serde_json::json!({"items": [], "continueOnFailure": false}))),
+        payload_playlists: Arc::new(Mutex::new(serde_json::json!({"playlists": []}))),
+        user_config: Arc::new(Mutex::new(serde_json::json!({}))),
     };
 
     let app = Router::new()
@@ -5920,6 +5996,9 @@ async fn run(cfg: EngineConfig) -> anyhow::Result<()> {
         .route("/api/local-fs/list-dir", get(local_fs_list_dir))
         .route("/api/ps5/shell", post(ps5_shell_run))
         .route("/api/payload/send", post(payload_send_handler))
+        .route("/api/queue", get(get_upload_queue).put(put_upload_queue))
+        .route("/api/playlists", get(get_playlists).put(put_playlists))
+        .route("/api/config", get(get_config).put(put_config))
         .with_state(state)
         // .pkg install — sessions live in their own state because the
         // HTTP-host serving handler needs Mutex-guarded session lookup
