@@ -1114,15 +1114,39 @@ async fn ui_handler() -> impl IntoResponse {
     )
 }
 
-/// GET /api/events — SSE stream of job state changes
+/// GET /api/events — SSE stream of job state changes + PS5 status
+///
+/// On first connect, sends a snapshot of all cached PS5 states so new
+/// clients (browser tabs, devices) immediately see the current PS5
+/// connection state without waiting for the next background probe.
+/// After the snapshot, streams live events from the broadcast channel.
 async fn events_stream(
     State(state): State<AppState>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
+    // Build snapshot events from the PS5 cache
+    let snapshot_events: Vec<Result<Event, Infallible>> = {
+        let cache = state.ps5_cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache
+            .iter()
+            .map(|(addr, entry)| {
+                let mut payload = serde_json::json!(entry);
+                payload["addr"] = serde_json::Value::String(addr.clone());
+                let msg = serde_json::json!({
+                    "type": "ps5_status",
+                    "data": payload,
+                });
+                Ok(Event::default().data(msg.to_string()))
+            })
+            .collect()
+    };
+
     let rx = state.events_tx.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
+    let live = BroadcastStream::new(rx).filter_map(|msg| match msg {
         Ok(data) => Some(Ok(Event::default().data(data))),
-        Err(_) => None, // lagged or channel closed — skip
+        Err(_) => None,
     });
+
+    let stream = tokio_stream::iter(snapshot_events).chain(live);
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
@@ -5916,10 +5940,13 @@ async fn probe_one(
     };
 
     if changed {
+        let mut payload = serde_json::json!(entry);
+        // Include the management address so clients know which PS5 this is
+        payload["addr"] = serde_json::Value::String(addr.clone());
         broadcast_event(
             &tx,
             "ps5_status",
-            serde_json::json!(entry),
+            payload,
         );
     }
 }

@@ -18,7 +18,6 @@ import type { TransferPhase } from "../state/transfer";
 import { useConnectionStore } from "../state/connection";
 import { useUploadQueueStore, type QueueItem } from "../state/uploadQueue";
 import { patchItem } from "../lib/queueOps";
-import type { Ps5StatusEvent } from "../lib/engineEvents";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -151,14 +150,17 @@ export function useEngineSync(): void {
     // ── PS5 status → connection store ──────────────────────────────────────
     const unsubGeneric = onEngineEvent((event) => {
       if (event.type === "ps5_status") {
-        const e = event as Ps5StatusEvent;
-        const host = hostOf(e.addr);
+        // broadcast_event nests fields under "data" — extract from there
+        const data = (event as unknown as { data: Record<string, unknown> }).data;
+        const addr = data?.addr as string | undefined;
+        if (!addr) return;
+        const host = hostOf(addr);
         useConnectionStore.getState().setHostStatus(host, {
-          payloadStatus: e.payload_up ? "up" : "down",
-          payloadVersion: e.version,
-          ps5Kernel: e.ps5_kernel,
-          ucredElevated: e.ucred_elevated,
-          maxTransferStreams: e.max_transfer_streams,
+          payloadStatus: (data.payload_up as boolean) ? "up" : "down",
+          payloadVersion: data.version as string | undefined,
+          ps5Kernel: data.ps5_kernel as string | undefined,
+          ucredElevated: data.ucred_elevated as boolean | undefined,
+          maxTransferStreams: data.max_transfer_streams as number | undefined,
         });
       }
 
