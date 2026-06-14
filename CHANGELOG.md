@@ -4,6 +4,14 @@ What's new in ps5upload, written for humans.
 
 ---
 
+## 3.2.8
+
+- **More large-Text-size layout fixes on the Payloads screen.** 3.2.6 fixed the
+  send form at the top; this fixes the rest. The payload catalog cards no
+  longer crush a payload's name to one letter per line, and playlist steps keep
+  the payload path visible instead of hiding it behind the controls. Verified
+  across a range of screen sizes and text scales.
+
 ## 3.2.7
 
 - **Download files from mounted disc images.** Browsing a ShadowMount+ game
